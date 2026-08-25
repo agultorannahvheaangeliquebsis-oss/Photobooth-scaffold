@@ -1,0 +1,17 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+## Rider / VS Code
+.idea/
+*.swp
+
+## OS
+.DS_Store
+Thumbs.db
+
+## Local captures from the mock camera
+captures/
