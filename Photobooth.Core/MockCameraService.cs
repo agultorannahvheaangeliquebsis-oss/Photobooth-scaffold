@@ -26,7 +26,15 @@ public class MockCameraService : ICameraService
         }
 
         _captureCount++;
-        string path = $"./captures/mock_{_captureCount:D4}.jpg";
+
+        // Write a real file at the returned path. Returning a path to nothing
+        // meant the Reviewing screen always fell back to placeholder text, so
+        // the image-loading half of that screen was never actually exercised
+        // until real hardware showed up. BMP rather than JPEG because the
+        // placeholder is written without any imaging dependency -- see
+        // PlaceholderImage.
+        string path = $"./captures/mock_{_captureCount:D4}.bmp";
+        PlaceholderImage.Write(path, _captureCount, DateTime.Now);
         return path;
     }
 }

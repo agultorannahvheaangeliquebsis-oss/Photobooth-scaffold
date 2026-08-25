@@ -23,7 +23,10 @@
         </Style>
     </Window.Resources>
 
-    <Grid MouseLeftButtonUp="Surface_MouseLeftButtonUp">
+    <!-- Background="Transparent" is required, not cosmetic: a panel with a null
+         Background is not hit-test visible, so taps landing on empty space
+         (most of a full-screen booth window) would never reach this handler. -->
+    <Grid Background="Transparent" MouseLeftButtonUp="Surface_MouseLeftButtonUp">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
