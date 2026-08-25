@@ -1,4 +1,4 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
@@ -6,6 +6,8 @@ MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Photobooth.Core", "Photobooth.Core\Photobooth.Core.csproj", "{BE7EF7C7-9C01-435F-9A3A-C2B24F3CF564}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Photobooth.ConsoleDemo", "Photobooth.ConsoleDemo\Photobooth.ConsoleDemo.csproj", "{FBAFFD5B-8CD8-4F7D-A03D-20A07B191CAB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Photobooth.UI", "Photobooth.UI\Photobooth.UI.csproj", "{8A1C7D42-4F8D-4F22-9D1C-6B4C9F3E2A77}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -24,5 +26,9 @@ Global
 		{FBAFFD5B-8CD8-4F7D-A03D-20A07B191CAB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{FBAFFD5B-8CD8-4F7D-A03D-20A07B191CAB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{FBAFFD5B-8CD8-4F7D-A03D-20A07B191CAB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8A1C7D42-4F8D-4F22-9D1C-6B4C9F3E2A77}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8A1C7D42-4F8D-4F22-9D1C-6B4C9F3E2A77}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8A1C7D42-4F8D-4F22-9D1C-6B4C9F3E2A77}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8A1C7D42-4F8D-4F22-9D1C-6B4C9F3E2A77}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

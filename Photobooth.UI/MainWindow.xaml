@@ -1,0 +1,89 @@
+<Window x:Class="Photobooth.UI.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Photobooth"
+        Background="{StaticResource CanvasBrush}"
+        WindowStartupLocation="CenterScreen"
+        WindowState="Maximized"
+        MinWidth="800"
+        MinHeight="600">
+    <Window.Resources>
+        <Style x:Key="ScreenTitle" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="42" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="TextAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="ScreenSubtitle" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="20" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="TextAlignment" Value="Center" />
+        </Style>
+    </Window.Resources>
+
+    <Grid MouseLeftButtonUp="Surface_MouseLeftButtonUp">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="STUDIO MOMENTS" FontSize="13" FontWeight="SemiBold"
+                   Foreground="{StaticResource AccentBrush}" Margin="0,34,0,0"
+                   HorizontalAlignment="Center" />
+
+        <Grid Grid.Row="1" Margin="48,24,48,24">
+            <StackPanel x:Name="IdleView" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock Text="Make a moment of it." Style="{StaticResource ScreenTitle}" />
+                <TextBlock Text="Your photo is waiting." Style="{StaticResource ScreenSubtitle}" Margin="0,18,0,54" />
+                <Border Background="{StaticResource AccentBrush}" CornerRadius="4" Padding="36,20" HorizontalAlignment="Center">
+                    <TextBlock Text="TAP TO START" Foreground="White" FontSize="16" FontWeight="SemiBold" />
+                </Border>
+            </StackPanel>
+
+            <StackPanel x:Name="CountdownView" Visibility="Collapsed" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock Text="Get ready" Style="{StaticResource ScreenSubtitle}" />
+                <TextBlock x:Name="CountdownNumber" Text="3" FontSize="180" FontWeight="SemiBold"
+                           Foreground="{StaticResource AccentBrush}" TextAlignment="Center" Margin="0,8,0,0" />
+            </StackPanel>
+
+            <StackPanel x:Name="CapturingView" Visibility="Collapsed" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock Text="Say cheese!" Style="{StaticResource ScreenTitle}" />
+                <TextBlock Text="Hold that smile..." Style="{StaticResource ScreenSubtitle}" Margin="0,18,0,0" />
+            </StackPanel>
+
+            <StackPanel x:Name="ReviewingView" Visibility="Collapsed" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock Text="Great shot." Style="{StaticResource ScreenTitle}" />
+                <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Background="White" Padding="12" Margin="0,24,0,0">
+                    <Grid Width="360" Height="240">
+                        <Image x:Name="CapturedImage" Stretch="Uniform" />
+                        <TextBlock x:Name="PhotoFallback" Text="Your photo is ready to print" Style="{StaticResource ScreenSubtitle}"
+                                   VerticalAlignment="Center" Visibility="Collapsed" />
+                    </Grid>
+                </Border>
+            </StackPanel>
+
+            <StackPanel x:Name="PrintingView" Visibility="Collapsed" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock Text="Printing your photo..." Style="{StaticResource ScreenTitle}" />
+                <ProgressBar IsIndeterminate="True" Width="260" Height="6" Margin="0,32,0,0"
+                             Foreground="{StaticResource AccentBrush}" />
+            </StackPanel>
+
+            <StackPanel x:Name="CompleteView" Visibility="Collapsed" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock Text="Thank you!" Style="{StaticResource ScreenTitle}" />
+                <TextBlock Text="Enjoy your moment." Style="{StaticResource ScreenSubtitle}" Margin="0,18,0,0" />
+            </StackPanel>
+
+            <StackPanel x:Name="ErrorView" Visibility="Collapsed" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="620">
+                <TextBlock Text="Something went wrong" Style="{StaticResource ScreenTitle}" />
+                <TextBlock x:Name="ErrorMessage" Style="{StaticResource ScreenSubtitle}" TextWrapping="Wrap" Margin="0,18,0,0" />
+                <TextBlock Text="Returning to the welcome screen..." Style="{StaticResource ScreenSubtitle}" FontSize="16" Margin="0,12,0,0" />
+            </StackPanel>
+        </Grid>
+
+        <TextBlock Grid.Row="2" Text="A PHOTO TO KEEP" FontSize="12" Foreground="{StaticResource MutedBrush}"
+                   HorizontalAlignment="Center" Margin="0,0,0,28" />
+    </Grid>
+</Window>
