@@ -44,6 +44,14 @@ internal static class PlaceholderImage
             Directory.CreateDirectory(directory);
         }
 
+        File.WriteAllBytes(path, Render(frameNumber, timestamp));
+    }
+
+    /// <summary>Renders the same placeholder as <see cref="Write"/> but returns
+    /// the encoded BMP bytes directly, for callers that don't want a file on
+    /// disk (e.g. MockLiveViewService, which never has a "capture" to save).</summary>
+    public static byte[] Render(int frameNumber, DateTime timestamp)
+    {
         // Top-down BGR buffer; the row order is flipped when it's written out.
         var pixels = new byte[Width * Height * BytesPerPixel];
 
@@ -61,7 +69,7 @@ internal static class PlaceholderImage
         DrawTextCentered(pixels, timestamp.ToString("yyyy-MM-dd HH:mm:ss"), 540, 5, Ink);
         DrawTextCentered(pixels, "DEVELOPMENT PLACEHOLDER - NOT A REAL PHOTO", 640, 3, Ink);
 
-        WriteBmp(path, pixels);
+        return EncodeBmp(pixels);
     }
 
     private static void FillRect(byte[] pixels, int x, int y, int w, int h, (byte R, byte G, byte B) color)
@@ -125,7 +133,7 @@ internal static class PlaceholderImage
         }
     }
 
-    private static void WriteBmp(string path, byte[] pixels)
+    private static byte[] EncodeBmp(byte[] pixels)
     {
         int stride = Width * BytesPerPixel;
         int padding = (4 - (stride % 4)) % 4;
@@ -133,7 +141,7 @@ internal static class PlaceholderImage
         int imageSize = rowSize * Height;
         const int headerSize = 54;
 
-        using var stream = new FileStream(path, FileMode.Create, FileAccess.Write);
+        using var stream = new MemoryStream(headerSize + imageSize);
         using var writer = new BinaryWriter(stream);
 
         // BITMAPFILEHEADER
@@ -166,6 +174,9 @@ internal static class PlaceholderImage
                 writer.Write(pad);
             }
         }
+
+        writer.Flush();
+        return stream.ToArray();
     }
 
     private static readonly byte[] Blank = { 0x00, 0x00, 0x00, 0x00, 0x00 };

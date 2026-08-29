@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Photobooth.CameraBridge.Hos
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Photobooth.CameraBridge.Client", "Photobooth.CameraBridge.Client\Photobooth.CameraBridge.Client.csproj", "{2E40713A-3D5B-445B-B104-D553FA0CBEB6}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Photobooth.Data", "Photobooth.Data\Photobooth.Data.csproj", "{576ED935-F905-4E59-AB53-260678D6338A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -42,5 +44,9 @@ Global
 		{2E40713A-3D5B-445B-B104-D553FA0CBEB6}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2E40713A-3D5B-445B-B104-D553FA0CBEB6}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2E40713A-3D5B-445B-B104-D553FA0CBEB6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{576ED935-F905-4E59-AB53-260678D6338A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{576ED935-F905-4E59-AB53-260678D6338A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{576ED935-F905-4E59-AB53-260678D6338A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{576ED935-F905-4E59-AB53-260678D6338A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

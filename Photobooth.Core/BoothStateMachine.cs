@@ -15,6 +15,7 @@ public class BoothStateMachine
     private readonly ICameraService _camera;
     private readonly IPrinterService _printer;
     private readonly ICloudUploadService _cloudUpload;
+    private readonly ISessionRepository _sessions;
 
     public BoothState CurrentState { get; private set; } = BoothState.Idle;
     public string? LastCapturedImagePath { get; private set; }
@@ -27,11 +28,12 @@ public class BoothStateMachine
     /// <summary>Fires when the background upload for the current session's photo finishes -- may land during Reviewing, Printing, or Complete, whichever is showing when the network call happens to finish.</summary>
     public event Action<Uri>? PhotoUploaded;
 
-    public BoothStateMachine(ICameraService camera, IPrinterService printer, ICloudUploadService cloudUpload)
+    public BoothStateMachine(ICameraService camera, IPrinterService printer, ICloudUploadService cloudUpload, ISessionRepository sessions)
     {
         _camera = camera;
         _printer = printer;
         _cloudUpload = cloudUpload;
+        _sessions = sessions;
     }
 
     private void SetState(BoothState state)
@@ -48,8 +50,18 @@ public class BoothStateMachine
     /// </summary>
     public async Task RunSessionAsync(CancellationToken ct = default)
     {
+        // No vendo payment flow yet (that's Day 6), so every session today
+        // is event mode; recorded as a zero-amount 'free_event' Payment
+        // rather than skipping the Payment row, so the revenue-by-mode query
+        // the admin dashboard will eventually run doesn't have to special-case
+        // sessions with no Payment at all.
+        const string mode = "event";
+        int? sessionId = null;
+
         try
         {
+            sessionId = await _sessions.CreateAsync(mode, ct);
+
             SetState(BoothState.Countdown);
             for (int i = 3; i > 0; i--)
             {
@@ -73,14 +85,21 @@ public class BoothStateMachine
 
             SetState(BoothState.Printing);
             await _printer.PrintAsync(LastCapturedImagePath, ct);
+            await _sessions.RecordPrintAsync(sessionId.Value, LastCapturedImagePath, ct);
+            await _sessions.RecordPaymentAsync(sessionId.Value, 0m, "free_event", ct);
 
             SetState(BoothState.Complete);
+            await _sessions.CompleteAsync(sessionId.Value, ct);
             await Task.Delay(1500, ct); // "thank you" screen dwell time
         }
         catch (Exception ex)
         {
             ErrorOccurred?.Invoke(ex.Message);
             SetState(BoothState.Error);
+            if (sessionId.HasValue)
+            {
+                await _sessions.FailAsync(sessionId.Value, ct);
+            }
             await Task.Delay(3000, ct); // show the error briefly before resetting
         }
         finally

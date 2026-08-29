@@ -3,7 +3,8 @@ using Photobooth.Core;
 var camera = new MockCameraService();
 var printer = new MockPrinterService();
 var cloudUpload = new MockCloudUploadService();
-var machine = new BoothStateMachine(camera, printer, cloudUpload);
+var sessions = new MockSessionRepository();
+var machine = new BoothStateMachine(camera, printer, cloudUpload, sessions);
 
 machine.StateChanged += state => Console.WriteLine($"  [STATE]     {state}");
 machine.CountdownTick += n => Console.WriteLine($"  [COUNTDOWN] {n}");
@@ -30,3 +31,6 @@ for (int i = 1; i <= 3; i++)
 }
 
 Console.WriteLine("Demo complete. Final state: " + machine.CurrentState);
+Console.WriteLine($"Sessions recorded: {sessions.CreatedSessions.Count} " +
+    $"({sessions.CompletedSessionIds.Count} completed, {sessions.FailedSessionIds.Count} failed), " +
+    $"{sessions.RecordedPrints.Count} prints, {sessions.RecordedPayments.Count} payments.");

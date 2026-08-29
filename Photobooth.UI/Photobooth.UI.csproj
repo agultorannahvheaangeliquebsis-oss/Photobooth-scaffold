@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Photobooth.Core\Photobooth.Core.csproj" />
+    <ProjectReference Include="..\Photobooth.Data\Photobooth.Data.csproj" />
   </ItemGroup>
 
   <ItemGroup>

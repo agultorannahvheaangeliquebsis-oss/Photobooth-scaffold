@@ -47,11 +47,18 @@
                 </Border>
             </StackPanel>
 
-            <StackPanel x:Name="CountdownView" Visibility="Collapsed" VerticalAlignment="Center" HorizontalAlignment="Center">
-                <TextBlock Text="Get ready" Style="{StaticResource ScreenSubtitle}" />
-                <TextBlock x:Name="CountdownNumber" Text="3" FontSize="180" FontWeight="SemiBold"
-                           Foreground="{StaticResource AccentBrush}" TextAlignment="Center" Margin="0,8,0,0" />
-            </StackPanel>
+            <Grid x:Name="CountdownView" Visibility="Collapsed">
+                <!-- Live camera preview fills the screen behind the countdown;
+                     LiveViewImage.Source is only ever set while this state is
+                     showing (see MainWindow.xaml.cs), so it's just blank space
+                     the rest of the time. -->
+                <Image x:Name="LiveViewImage" Stretch="UniformToFill" />
+                <StackPanel Background="Transparent" VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <TextBlock Text="Get ready" Style="{StaticResource ScreenSubtitle}" />
+                    <TextBlock x:Name="CountdownNumber" Text="3" FontSize="180" FontWeight="SemiBold"
+                               Foreground="{StaticResource AccentBrush}" TextAlignment="Center" Margin="0,8,0,0" />
+                </StackPanel>
+            </Grid>
 
             <StackPanel x:Name="CapturingView" Visibility="Collapsed" VerticalAlignment="Center" HorizontalAlignment="Center">
                 <TextBlock Text="Say cheese!" Style="{StaticResource ScreenTitle}" />
