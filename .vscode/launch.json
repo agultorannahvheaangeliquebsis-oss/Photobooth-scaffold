@@ -1,0 +1,27 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Photobooth UI (WPF)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build-ui",
+            "program": "${workspaceFolder}/Photobooth.UI/bin/Debug/net8.0-windows/Photobooth.UI.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}/Photobooth.UI",
+            "console": "internalConsole",
+            "stopAtEntry": false
+        },
+        {
+            "name": "Console demo",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build-console",
+            "program": "${workspaceFolder}/Photobooth.ConsoleDemo/bin/Debug/net8.0/Photobooth.ConsoleDemo.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/Photobooth.ConsoleDemo",
+            "console": "integratedTerminal",
+            "stopAtEntry": false
+        }
+    ]
+}
