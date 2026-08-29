@@ -168,10 +168,16 @@ Status as of 2026-08-30.
       (same pipe protocol either way) but the webcam's raw-bytes path is a
       different code branch than a real PTP `Transfer()`, so this isn't
       free to assume.
-- [ ] Set up a Firebase project + service account, wire a real
-      `FirebaseCloudUploadService`.
+- [x] `CloudinaryCloudUploadService : ICloudUploadService` written in
+      `Photobooth.Core` (`CloudinaryDotNet` package), swapped in at the WPF
+      composition root in place of `MockCloudUploadService`. Firebase was
+      dropped from the plan — it now requires the paid Blaze plan just to
+      provision a Storage bucket, and no card is available.
+- [ ] Create a Cloudinary account (free, no card) and set `CLOUDINARY_URL`
+      so the swapped-in service actually has something to talk to —
+      end-to-end upload → URL → QR still needs this verified.
 - Both remaining items are gated on something only you can provide (the
-  D3500 being plugged in; Firebase credentials) — if either isn't ready,
+  D3500 being plugged in; a Cloudinary account) — if either isn't ready,
   it slips to the Day 7 buffer.
 
 **Day 5 — Real printer integration**

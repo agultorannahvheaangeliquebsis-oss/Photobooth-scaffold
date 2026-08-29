@@ -71,8 +71,8 @@ Location ──< Session >── Print
       CameraControl library or gPhoto2 instead of a vendor SDK)
 - [ ] Real printer integration via Windows print spooler
 - [ ] Admin dashboard (sales, inventory alerts)
-- [x] Cloud upload + QR download for guests (mock upload backend; real
-      Firebase Storage wiring pending a Firebase project + credentials)
+- [x] Cloud upload + QR download for guests (`CloudinaryCloudUploadService`
+      wired in; pending a real `CLOUDINARY_URL` to verify end to end)
 
 ## Running it
 
@@ -135,9 +135,16 @@ Guests can scan a QR code to get their photo on their own phone instead of
 camera and printer:
 
 - **`ICloudUploadService`** — `UploadAsync(path) -> Uri`. `MockCloudUploadService`
-  simulates upload latency and returns a fake URL; nothing is actually hosted
-  yet. Real backend: **Firebase Storage**, not wired up yet — needs a Firebase
-  project and service account credentials before that swap can happen.
+  simulates upload latency and returns a fake URL, for dev/tests.
+  Real backend: **Cloudinary** (`CloudinaryCloudUploadService`), wired into
+  the WPF composition root. Firebase Storage was the original plan but now
+  requires the paid Blaze plan just to provision a bucket, so this project
+  uses Cloudinary's free tier instead — same seam, no card needed. Reads
+  credentials from the `CLOUDINARY_URL` environment variable (copy it from
+  the Cloudinary dashboard's Settings → API Keys page); the app throws a
+  clear startup error if it's unset. **Not yet verified against a real
+  account** — needs a live `CLOUDINARY_URL` to confirm the upload → URL →
+  QR path end to end.
 - **`QrCodeGenerator`** (via the `QRCoder` NuGet package) — pure local PNG
   generation from the upload URL, no network call, so this half works
   regardless of which cloud backend ends up behind `ICloudUploadService`.
