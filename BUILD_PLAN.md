@@ -25,8 +25,18 @@ Status as of 2026-08-30.
   finishes. Verified live in the running app (screenshotted).
 - Found and fixed a pre-existing crash on the way: `Assets/Logo.png`
   wasn't embedded as a WPF resource.
-- **Not yet wired:** real Firebase Storage backend — needs a Firebase
-  project + service account credentials.
+- **Backend swapped from the original plan:** Firebase Storage now
+  requires the paid Blaze plan just to provision a bucket (changed since
+  this plan was written), and no card is available. Used Cloudinary
+  instead — same seam, free tier needs no card. Added
+  `CloudinaryCloudUploadService : ICloudUploadService` (`CloudinaryDotNet`
+  NuGet package) wired into `MainWindow`'s composition root in place of
+  the mock; reads credentials from `CLOUDINARY_URL` (same
+  environment-variable pattern as `PHOTOBOOTH_DB_CONNECTION` in
+  `SqlConnectionFactory`), throwing a clear error at startup if unset.
+  **Not yet verified: an actual Cloudinary account** — needs a real
+  `CLOUDINARY_URL` to test the upload → URL → QR path end to end; not
+  fixed now since it needs your account, not just code.
 
 **Extra, not in the original plan — live camera preview during Countdown**
 - New `ILiveViewService` (`MockLiveViewService` / `PtpLiveViewService`,
@@ -53,6 +63,86 @@ Status as of 2026-08-30.
   case the client and hardware race).
 - Verified live in the running app: real webcam feed rendering behind a
   visible countdown number, screenshotted mid-countdown.
+
+**Day 3 — Persistence layer**
+- New `Photobooth.Data` project (net8.0, `Microsoft.Data.SqlClient` against
+  LocalDB) added to the solution and referenced from `Photobooth.UI`.
+- Repository classes for the six tables the plan called out:
+  `LocationRepository`, `BookingRepository`, `PrinterRepository` (plain
+  CRUD, used by seeding today, will back Day 6's admin dashboard later),
+  plus `SqlSessionRepository` which owns the other three (`Session`,
+  `Print`, `Payment`) since those three only ever get written together as
+  part of one guest session's lifecycle.
+- `ISessionRepository` added to `Photobooth.Core` as the seam (same
+  interface-plus-mock pattern as camera/printer/cloud upload) —
+  `BoothStateMachine` now takes it as a fourth constructor argument and
+  creates a `Session` row at the start of `RunSessionAsync`, a `Print` row
+  right after a successful print, a `Payment` row (`'free_event'`, since
+  the vendo flow doesn't exist until Day 6), and marks the session
+  `completed` or `error` on the way out. `MockSessionRepository` (in
+  `Photobooth.Core`) is an in-memory stand-in that also exposes what it
+  recorded, for `Photobooth.ConsoleDemo` and future `Photobooth.Tests`
+  assertions.
+- `DatabaseInitializer.InitializeAsync()` (in `Photobooth.Data`) is
+  idempotent: creates the `Photobooth` database on LocalDB if missing,
+  applies `schema.sql` if the tables aren't there yet (the Data project
+  links straight to the root `schema.sql` and copies it to its own output
+  dir, so there's one source of truth), then seeds one `Location`, one
+  `Printer`, and two `Booking` rows if the `Location` table is empty —
+  otherwise reuses what's already there. Returns the seeded
+  `LocationId`/`PrinterId` so `SqlSessionRepository` has FK values to write
+  against.
+- `MainWindow`'s composition root now calls `DatabaseInitializer
+  .InitializeAsync()` synchronously at startup (blocking is fine here —
+  it runs once, before the window shows, and every session after it
+  depends on the seeded ids anyway) and wires `SqlSessionRepository` into
+  `BoothStateMachine` in place of a mock.
+- Verified via `Photobooth.ConsoleDemo`: 3 sessions run against
+  `MockSessionRepository`, session 2's forced capture failure correctly
+  produces no `Print`/`Payment` row (`Sessions recorded: 3 (2 completed, 1
+  failed), 2 prints, 2 payments`), matching the state machine's actual
+  behavior.
+- **Not yet verified: a real LocalDB instance** — not installed on this
+  dev machine (no `sqllocaldb` on PATH), same category of gap as the D3500
+  and Firebase credentials. Found one real thing worth knowing before this
+  ships, though: running the actual WPF exe against a nonexistent
+  `(localdb)\MSSQLLocalDB` instance doesn't fail fast — `SqlConnection
+  .OpenAsync()` just hangs (confirmed: still running, no output, 25+
+  seconds in) rather than throwing quickly. If the booth machine's LocalDB
+  service is ever down at boot, today's code would hang the app on a black
+  screen instead of showing an error. Worth a connection timeout + a
+  friendly message once there's a real instance to test against — not
+  fixed now since it'd be guessing at behavior I can't observe here.
+
+**Day 4 — Test project**
+- New `Photobooth.Tests` project (xunit, scaffolded via `dotnet new xunit`
+  so the package versions matched the installed SDK rather than guessed),
+  added to the solution and referencing `Photobooth.Core`. Zero coverage
+  existed before this.
+- `BoothStateMachineTests` — the two transition paths the plan called out:
+  the happy path (asserts the full `Countdown → ... → Idle` state
+  sequence, and that a `Session`/`Print`/`Payment` row each get recorded
+  exactly once against `MockSessionRepository`) and the forced-failure
+  path (`MockCameraService.FailNextCapture`, asserts the session gets
+  marked failed with *no* `Print`/`Payment` row, and that
+  `FailNextCapture` resets itself after firing).
+- `MockServicesTests` — `MockCameraService` (writes a real BMP with a
+  `'B' 'M'` header, frame numbers increment across calls, throws once
+  then resets), `MockPrinterService` (completes without throwing),
+  `MockCloudUploadService` (returned URL contains the file name).
+- `MockSessionRepositoryTests` — session ids increment, `RecordPrintAsync`/
+  `RecordPaymentAsync`/`CompleteAsync`/`FailAsync` each append to their own
+  list independently.
+- `QrCodeGeneratorTests` — output starts with the real PNG magic bytes.
+- Real repository methods aren't covered here — `SqlSessionRepository`/
+  `DatabaseInitializer` need a live LocalDB instance, same gap as Day 3.
+  `MockSessionRepository` is what's actually exercised, which is what the
+  plan meant by "repository methods" in a mocks-first project like this
+  one.
+- Verified by actually running the suite, not just building it:
+  `dotnet test` → **11 passed, 0 failed** (16s — the two full-session
+  tests run the state machine's real countdown/print/error delays rather
+  than a faked clock, so they're slow but exercise the real timing path).
 
 ## Remaining
 
@@ -83,19 +173,6 @@ Status as of 2026-08-30.
 - Both remaining items are gated on something only you can provide (the
   D3500 being plugged in; Firebase credentials) — if either isn't ready,
   it slips to the Day 7 buffer.
-
-**Day 3 — Persistence layer**
-- New `Photobooth.Data` project, LocalDB (schema.sql is already T-SQL).
-- Repository methods for the six tables; `BoothStateMachine` inserts/
-  updates a `Session` row per run, a `Print` row on successful print, a
-  `Payment` row for vendo mode.
-- Seed a `Location` and a couple `Booking` rows so the FK chain isn't
-  empty.
-
-**Day 4 — Test project**
-- `Photobooth.Tests` (xunit): state machine transitions (including the
-  forced-failure path), repository methods, mock camera/printer/cloud
-  paths. Zero coverage exists today.
 
 **Day 5 — Real printer integration**
 - `IPrinterService` against the Windows print spooler

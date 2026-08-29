@@ -37,6 +37,17 @@ full system, not just the UI layer.
 - **`ICloudUploadService`** — same seam as the camera/printer: uploads the
   captured photo somewhere a guest's phone can reach it and returns a URL,
   so `QrCodeGenerator` can turn that URL into a QR code shown on screen.
+- **`Photobooth.Data`** — LocalDB-backed persistence: `SqlSessionRepository`
+  (implements `ISessionRepository`, the same interface-plus-mock seam as
+  everything else) writes `Session`/`Print`/`Payment` rows as a session
+  runs, plus `LocationRepository`/`BookingRepository`/`PrinterRepository`
+  for the other three tables and `DatabaseInitializer` to create the DB,
+  apply `schema.sql`, and seed a `Location`/`Printer`/two `Booking` rows on
+  first run.
+- **`Photobooth.Tests`** — xunit coverage for `Photobooth.Core`: state
+  machine transitions (happy path and the forced-failure path) and the
+  mock camera/printer/cloud-upload/session-repository implementations.
+  `dotnet test` — 11 passed.
 
 ```
 Location ──< Session >── Print
@@ -50,7 +61,11 @@ Location ──< Session >── Print
 
 - [x] Core state machine + mocks, tested via console demo
 - [x] Database schema
+- [x] Persistence layer wired in (LocalDB via `Photobooth.Data`; not yet
+      verified against a real LocalDB instance, see below)
 - [x] WPF UI bound to the state machine
+- [x] Test coverage (`Photobooth.Tests`, xunit) — state machine
+      transitions, mock camera/printer/cloud/session paths
 - [ ] Real camera integration (Nikon D3500 via PTP — no official Nikon SDK
       support for this body, so this goes through digiCamControl's
       CameraControl library or gPhoto2 instead of a vendor SDK)
@@ -148,3 +163,38 @@ itself but found along the way:
   on disk but wasn't embedded as a WPF pack resource. Also needed a clean
   rebuild (`bin`/`obj` deleted) — the incremental build didn't pick up the
   csproj change on its own.
+
+## Persistence layer
+
+`BoothStateMachine` now writes every session to LocalDB instead of just
+holding state in memory, via the same interface-plus-mock seam as the
+camera/printer/cloud upload:
+
+- **`ISessionRepository`** (in `Photobooth.Core`) — `CreateAsync`,
+  `CompleteAsync`, `FailAsync`, `RecordPrintAsync`, `RecordPaymentAsync`.
+  `MockSessionRepository` is an in-memory stand-in used by
+  `Photobooth.ConsoleDemo`; `SqlSessionRepository` (in `Photobooth.Data`)
+  is the real LocalDB-backed implementation used by the WPF app.
+- **`Photobooth.Data`** — new project, `Microsoft.Data.SqlClient` against
+  `(localdb)\MSSQLLocalDB`. `LocationRepository`/`BookingRepository`/
+  `PrinterRepository` round out the six tables the schema needs a
+  repository for; `DatabaseInitializer.InitializeAsync()` creates the
+  database if missing, applies the root `schema.sql` if the tables aren't
+  there yet, and seeds one `Location`, one `Printer`, and two `Booking`
+  rows on first run so the FK chain isn't empty.
+- **`BoothStateMachine`** creates a `Session` row at the start of every
+  run, a `Print` row right after a successful print, a `Payment` row
+  (`'free_event'`, since the vendo payment flow doesn't exist until Day 6),
+  and marks the session `completed` or `error` on the way out — a session
+  that fails mid-capture correctly gets no `Print`/`Payment` row.
+
+Verified via `Photobooth.ConsoleDemo` against `MockSessionRepository`:
+3 simulated sessions produce `2 completed, 1 failed, 2 prints, 2 payments`,
+matching the forced-failure session correctly skipping both. **Not yet
+verified: a real LocalDB instance** — not installed on this dev machine.
+Worth knowing before this ships: running the WPF app against a
+`(localdb)\MSSQLLocalDB` instance that doesn't exist doesn't fail fast —
+`SqlConnection.OpenAsync()` just hangs rather than throwing — so the booth
+would show a black screen instead of an error if LocalDB is ever down at
+boot. Worth a connection timeout once there's a real instance to test
+against.

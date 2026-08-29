@@ -25,7 +25,7 @@ public partial class MainWindow : Window
         var seedIds = DatabaseInitializer.InitializeAsync().GetAwaiter().GetResult();
         var sessionRepository = new SqlSessionRepository(seedIds.LocationId, seedIds.PrinterId);
 
-        _stateMachine = new BoothStateMachine(new PtpCameraService(), new MockPrinterService(), new MockCloudUploadService(), sessionRepository);
+        _stateMachine = new BoothStateMachine(new PtpCameraService(), new MockPrinterService(), new CloudinaryCloudUploadService(), sessionRepository);
         _stateMachine.StateChanged += state => Dispatcher.Invoke(() => ShowState(state));
         _stateMachine.CountdownTick += number => Dispatcher.Invoke(() => CountdownNumber.Text = number.ToString());
         _stateMachine.ErrorOccurred += message => Dispatcher.Invoke(() => ErrorMessage.Text = message);
