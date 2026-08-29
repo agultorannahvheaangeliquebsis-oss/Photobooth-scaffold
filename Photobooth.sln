@@ -1,4 +1,4 @@
-
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
@@ -8,6 +8,10 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Photobooth.ConsoleDemo", "Photobooth.ConsoleDemo\Photobooth.ConsoleDemo.csproj", "{FBAFFD5B-8CD8-4F7D-A03D-20A07B191CAB}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Photobooth.UI", "Photobooth.UI\Photobooth.UI.csproj", "{8A1C7D42-4F8D-4F22-9D1C-6B4C9F3E2A77}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Photobooth.CameraBridge.Host", "Photobooth.CameraBridge.Host\Photobooth.CameraBridge.Host.csproj", "{A91A77E8-7271-44E0-AC2D-188F753E142A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Photobooth.CameraBridge.Client", "Photobooth.CameraBridge.Client\Photobooth.CameraBridge.Client.csproj", "{2E40713A-3D5B-445B-B104-D553FA0CBEB6}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -30,5 +34,13 @@ Global
 		{8A1C7D42-4F8D-4F22-9D1C-6B4C9F3E2A77}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{8A1C7D42-4F8D-4F22-9D1C-6B4C9F3E2A77}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{8A1C7D42-4F8D-4F22-9D1C-6B4C9F3E2A77}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A91A77E8-7271-44E0-AC2D-188F753E142A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A91A77E8-7271-44E0-AC2D-188F753E142A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A91A77E8-7271-44E0-AC2D-188F753E142A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A91A77E8-7271-44E0-AC2D-188F753E142A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2E40713A-3D5B-445B-B104-D553FA0CBEB6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2E40713A-3D5B-445B-B104-D553FA0CBEB6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2E40713A-3D5B-445B-B104-D553FA0CBEB6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2E40713A-3D5B-445B-B104-D553FA0CBEB6}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

@@ -7,24 +7,31 @@ namespace Photobooth.Core;
 ///
 /// Camera and printer are injected as interfaces (not created here), so the
 /// same state machine runs identically whether it's driving MockCameraService
-/// during development or a real EDSDK-backed service at an actual event.
+/// during development or a real PTP-backed service driving the Nikon D3500
+/// at an actual event.
 /// </summary>
 public class BoothStateMachine
 {
     private readonly ICameraService _camera;
     private readonly IPrinterService _printer;
+    private readonly ICloudUploadService _cloudUpload;
 
     public BoothState CurrentState { get; private set; } = BoothState.Idle;
     public string? LastCapturedImagePath { get; private set; }
+    public Uri? LastPhotoUrl { get; private set; }
 
     public event Action<BoothState>? StateChanged;
     public event Action<int>? CountdownTick;
     public event Action<string>? ErrorOccurred;
 
-    public BoothStateMachine(ICameraService camera, IPrinterService printer)
+    /// <summary>Fires when the background upload for the current session's photo finishes -- may land during Reviewing, Printing, or Complete, whichever is showing when the network call happens to finish.</summary>
+    public event Action<Uri>? PhotoUploaded;
+
+    public BoothStateMachine(ICameraService camera, IPrinterService printer, ICloudUploadService cloudUpload)
     {
         _camera = camera;
         _printer = printer;
+        _cloudUpload = cloudUpload;
     }
 
     private void SetState(BoothState state)
@@ -51,7 +58,15 @@ public class BoothStateMachine
             }
 
             SetState(BoothState.Capturing);
+            LastPhotoUrl = null;
             LastCapturedImagePath = await _camera.CaptureAsync(ct);
+
+            // Fire-and-forget: upload runs alongside Reviewing/Printing rather
+            // than blocking the guest flow on network latency. A failed or
+            // slow upload just means no QR code shows this session -- it
+            // never holds up the print, which is the part that actually
+            // matters to the guest standing at the booth.
+            _ = UploadInBackgroundAsync(LastCapturedImagePath, ct);
 
             SetState(BoothState.Reviewing);
             await Task.Delay(2000, ct); // guest sees the shot before it prints
@@ -71,6 +86,21 @@ public class BoothStateMachine
         finally
         {
             SetState(BoothState.Idle);
+        }
+    }
+
+    private async Task UploadInBackgroundAsync(string imagePath, CancellationToken ct)
+    {
+        try
+        {
+            LastPhotoUrl = await _cloudUpload.UploadAsync(imagePath, ct);
+            PhotoUploaded?.Invoke(LastPhotoUrl);
+        }
+        catch (Exception)
+        {
+            // Best-effort: swallow so an upload failure can't surface as an
+            // unobserved task exception -- it's not on the guest-facing
+            // error path, just a missing QR code for this session.
         }
     }
 }

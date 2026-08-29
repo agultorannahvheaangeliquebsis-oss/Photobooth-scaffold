@@ -1,8 +1,9 @@
-# Photobooth Business Management System
+# Focus & Snap
 
-A system built to run an actual photobooth rental business — capture, print,
-and revenue tracking across two operating modes: **event** (attended, flat
-fee) and **vendo** (unattended, pay-per-print).
+Booth management software built to run Focus & Snap Studio's photobooth
+rental business — capture, print, and revenue tracking across two operating
+modes: **event** (attended, flat fee) and **vendo** (unattended,
+pay-per-print).
 
 ## Why this exists
 
@@ -25,6 +26,17 @@ full system, not just the UI layer.
   including a forced failure, before any UI or real hardware exists.
 - **`schema.sql`** — relational schema covering locations, bookings,
   sessions, prints, payments, and printer inventory. See the ERD below.
+- **`Photobooth.CameraBridge.Host`** — net48/x86 process that drives the
+  Nikon D3500 via digiCamControl's `CameraControl.Devices` library and
+  exposes capture over a named pipe. See "Camera: Nikon D3500" below for why
+  this is a separate process instead of a direct reference from
+  `Photobooth.Core`.
+- **`Photobooth.CameraBridge.Client`** — spike harness that exercises the
+  bridge's pipe protocol (`PING`/`STATUS`/`CAPTURE`) from net8.0. Not the
+  real `ICameraService` implementation — that comes next.
+- **`ICloudUploadService`** — same seam as the camera/printer: uploads the
+  captured photo somewhere a guest's phone can reach it and returns a URL,
+  so `QrCodeGenerator` can turn that URL into a QR code shown on screen.
 
 ```
 Location ──< Session >── Print
@@ -38,10 +50,14 @@ Location ──< Session >── Print
 
 - [x] Core state machine + mocks, tested via console demo
 - [x] Database schema
-- [ ] WPF UI bound to the state machine
-- [ ] Real camera integration (Canon EDSDK — pending Developer Program approval)
+- [x] WPF UI bound to the state machine
+- [ ] Real camera integration (Nikon D3500 via PTP — no official Nikon SDK
+      support for this body, so this goes through digiCamControl's
+      CameraControl library or gPhoto2 instead of a vendor SDK)
 - [ ] Real printer integration via Windows print spooler
 - [ ] Admin dashboard (sales, inventory alerts)
+- [x] Cloud upload + QR download for guests (mock upload backend; real
+      Firebase Storage wiring pending a Firebase project + credentials)
 
 ## Running it
 
@@ -61,6 +77,74 @@ forced to fail at capture to demonstrate error recovery.
 `BoothStateMachine` never talks to hardware directly. `ICameraService` and
 `IPrinterService` are the seam: `MockCameraService`/`MockPrinterService`
 let the whole app — UI, state transitions, error handling — get built and
-demoed before Canon Developer Program approval (needed for EDSDK) even
-comes through. Swapping in the real camera later is a one-line change at
-the composition root, not a rewrite.
+demoed before the real camera and printer integrations exist. Swapping in
+the real camera later is a one-line change at the composition root, not a
+rewrite.
+
+## Camera: Nikon D3500
+
+The booth camera is a Nikon D3500 — an entry-level body that Nikon's own
+SDK doesn't support for tethered capture (their SDK targets higher-end
+bodies). The real `ICameraService` implementation drives it via
+digiCamControl's `CameraControl.Devices` library, confirmed to support the
+D3500 by other users of that project.
+
+**Why a bridge process, not a direct reference:** `CameraControl.Devices`
+targets .NET Framework 4.6 (last published 2018) and its bundled PTP/COM
+interop only loads under `x86` — referencing it directly from the net8.0
+projects in this solution isn't viable. `Photobooth.CameraBridge.Host` is a
+separate net48/x86 console process that owns the `CameraDeviceManager` and
+exposes capture over a named pipe (`PhotoboothCameraBridge`); a future
+`ICameraService` implementation in `Photobooth.Core` will be a thin pipe
+client. `Photobooth.CameraBridge.Client` is the throwaway spike harness
+that proved the pipe round-trip works (`PING`/`STATUS`/`CAPTURE`).
+
+**Confirmed working (no D3500 attached yet, tested against a laptop
+webcam as a stand-in PTP-ish device):** the bridge process starts, the
+camera manager initializes, a named-pipe client on net8.0 can drive it,
+and a full capture → event → file-transfer round trip completes. **Not
+yet verified:** actual behavior against the real D3500 — the webcam
+stand-in exercises a different code path (`PhotoCapturedEventArgs.Handle`
+came back as raw bytes rather than a transferable device object), so this
+still needs a real run once the camera is connected.
+
+This required two changes: `NuGet.config` now allows `nuget.org` (previously
+locked to no package sources — this is the project's first external
+dependency), and `Manager.DetectWebcams` is forced off so the bridge never
+mistakes a laptop webcam for the booth camera.
+
+## Cloud upload & QR download
+
+Guests can scan a QR code to get their photo on their own phone instead of
+(or alongside) the printed copy. Same interface-plus-mock pattern as the
+camera and printer:
+
+- **`ICloudUploadService`** — `UploadAsync(path) -> Uri`. `MockCloudUploadService`
+  simulates upload latency and returns a fake URL; nothing is actually hosted
+  yet. Real backend: **Firebase Storage**, not wired up yet — needs a Firebase
+  project and service account credentials before that swap can happen.
+- **`QrCodeGenerator`** (via the `QRCoder` NuGet package) — pure local PNG
+  generation from the upload URL, no network call, so this half works
+  regardless of which cloud backend ends up behind `ICloudUploadService`.
+- **`BoothStateMachine`** kicks off the upload right after a successful
+  capture and runs it in the background alongside Reviewing/Printing —
+  it never blocks the print, which is the part that actually matters to a
+  guest standing at the booth. `LastPhotoUrl` and the `PhotoUploaded` event
+  expose the result once it lands; a failed or slow upload just means no QR
+  shows that session, not a stuck booth.
+- **UI**: a QR panel appears bottom-right during the Printing and Complete
+  screens (the two with enough natural dwell time for a guest to actually
+  scan something) once the upload finishes.
+
+Verified in the running WPF app (screenshotted during Printing and Complete,
+QR panel rendering correctly) and in the console demo, where the mock upload
+fires and completes mid-Reviewing well before Printing starts.
+
+**Incidental fixes made while wiring this up**, unrelated to the feature
+itself but found along the way:
+- `Photobooth.UI.csproj` was missing a `<Resource Include="Assets\Logo.png" />`
+  item, so `Window.Icon="Assets/Logo.png"` crashed the app on startup with
+  `IOException: Cannot locate resource 'assets/logo.png'` — the file existed
+  on disk but wasn't embedded as a WPF pack resource. Also needed a clean
+  rebuild (`bin`/`obj` deleted) — the incremental build didn't pick up the
+  csproj change on its own.

@@ -1,9 +1,10 @@
 namespace Photobooth.Core;
 
 /// <summary>
-/// Fake camera for development before EDSDK access is approved, and for unit
-/// tests afterward (you don't want real hardware in a CI pipeline). Set
-/// FailNextCapture to true to exercise the state machine's error path.
+/// Fake camera for development before the Nikon D3500 PTP integration is
+/// wired up, and for unit tests afterward (you don't want real hardware in
+/// a CI pipeline). Set FailNextCapture to true to exercise the state
+/// machine's error path.
 /// </summary>
 public class MockCameraService : ICameraService
 {

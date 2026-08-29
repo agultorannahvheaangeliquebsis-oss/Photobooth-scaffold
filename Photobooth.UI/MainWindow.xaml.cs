@@ -14,10 +14,11 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        _stateMachine = new BoothStateMachine(new MockCameraService(), new MockPrinterService());
+        _stateMachine = new BoothStateMachine(new MockCameraService(), new MockPrinterService(), new MockCloudUploadService());
         _stateMachine.StateChanged += state => Dispatcher.Invoke(() => ShowState(state));
         _stateMachine.CountdownTick += number => Dispatcher.Invoke(() => CountdownNumber.Text = number.ToString());
         _stateMachine.ErrorOccurred += message => Dispatcher.Invoke(() => ErrorMessage.Text = message);
+        _stateMachine.PhotoUploaded += url => Dispatcher.Invoke(() => LoadQrCode(url));
 
         ShowState(_stateMachine.CurrentState);
     }
@@ -57,6 +58,28 @@ public partial class MainWindow : Window
         {
             LoadCapturedImage(_stateMachine.LastCapturedImagePath);
         }
+
+        bool qrEligibleScreen = state == BoothState.Printing || state == BoothState.Complete;
+        QrPanel.Visibility = qrEligibleScreen && _stateMachine.LastPhotoUrl != null
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
+    private void LoadQrCode(Uri photoUrl)
+    {
+        byte[] png = QrCodeGenerator.GeneratePng(photoUrl.ToString());
+        using var stream = new System.IO.MemoryStream(png);
+        var image = new BitmapImage();
+        image.BeginInit();
+        image.CacheOption = BitmapCacheOption.OnLoad;
+        image.StreamSource = stream;
+        image.EndInit();
+        image.Freeze();
+
+        QrCodeImage.Source = image;
+
+        bool qrEligibleScreen = _stateMachine.CurrentState == BoothState.Printing || _stateMachine.CurrentState == BoothState.Complete;
+        QrPanel.Visibility = qrEligibleScreen ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void LoadCapturedImage(string? imagePath)

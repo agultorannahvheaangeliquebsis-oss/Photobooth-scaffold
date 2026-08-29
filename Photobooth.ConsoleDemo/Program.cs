@@ -2,13 +2,15 @@ using Photobooth.Core;
 
 var camera = new MockCameraService();
 var printer = new MockPrinterService();
-var machine = new BoothStateMachine(camera, printer);
+var cloudUpload = new MockCloudUploadService();
+var machine = new BoothStateMachine(camera, printer, cloudUpload);
 
 machine.StateChanged += state => Console.WriteLine($"  [STATE]     {state}");
 machine.CountdownTick += n => Console.WriteLine($"  [COUNTDOWN] {n}");
 machine.ErrorOccurred += msg => Console.WriteLine($"  [ERROR]     {msg}");
+machine.PhotoUploaded += url => Console.WriteLine($"  [UPLOADED]  {url}");
 
-Console.WriteLine("=== Photobooth state machine simulation ===");
+Console.WriteLine("=== Focus & Snap state machine simulation ===");
 Console.WriteLine("Running 3 sessions against the mock camera and printer.\n");
 
 for (int i = 1; i <= 3; i++)
