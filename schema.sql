@@ -9,6 +9,10 @@ CREATE TABLE Location (
     Address         NVARCHAR(255)   NULL,
     CountdownSeconds   INT          NOT NULL DEFAULT 3,   -- admin-editable, see AdminWindow's Settings section
     GlamFilterEnabled  BIT          NOT NULL DEFAULT 0,   -- admin-editable, see AdminWindow's Settings section
+    PrintLayout        NVARCHAR(20) NOT NULL DEFAULT 'Single' CHECK (PrintLayout IN ('Single', 'Strip')),
+    PrintWidthInches   DECIMAL(5,2) NOT NULL DEFAULT 4,    -- e.g. 4 for a 4x6, 2 for a 2x6 strip
+    PrintHeightInches  DECIMAL(5,2) NOT NULL DEFAULT 6,
+    PrintStripCopies   INT          NOT NULL DEFAULT 1,    -- how many times the photo repeats down a Strip layout
     CreatedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
 );
 

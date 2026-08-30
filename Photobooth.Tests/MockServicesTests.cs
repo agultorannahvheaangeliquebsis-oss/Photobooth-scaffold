@@ -55,7 +55,64 @@ public class MockPrinterServiceTests
     {
         var printer = new MockPrinterService();
 
-        await printer.PrintAsync("./captures/does-not-need-to-exist.bmp");
+        await printer.PrintAsync("./captures/does-not-need-to-exist.bmp", PrintTemplate.Default);
+    }
+
+    [Fact]
+    public async Task PrintAsync_RecordsEachTemplateItWasCalledWith()
+    {
+        var printer = new MockPrinterService();
+        var stripTemplate = new PrintTemplate("Strip", WidthInches: 2, HeightInches: 6, StripCopies: 2);
+
+        await printer.PrintAsync("./captures/a.bmp", PrintTemplate.Default);
+        await printer.PrintAsync("./captures/b.bmp", stripTemplate);
+
+        Assert.Equal(new[] { PrintTemplate.Default, stripTemplate }, printer.PrintedTemplates);
+    }
+}
+
+public class PrintTemplateTests
+{
+    [Theory]
+    [InlineData("Single", 4, 6, 1, true)]
+    [InlineData("Strip", 2, 6, 2, true)]
+    [InlineData("Panorama", 4, 6, 1, false)] // unrecognized layout
+    [InlineData("Single", 0, 6, 1, false)]   // width must be positive
+    [InlineData("Single", 4, 0, 1, false)]   // height must be positive
+    [InlineData("Strip", 2, 6, 0, false)]    // strip copies must be at least 1
+    public void IsValid_ReflectsLayoutAndDimensionRules(string layout, double width, double height, int copies, bool expected)
+    {
+        var template = new PrintTemplate(layout, width, height, copies);
+
+        Assert.Equal(expected, template.IsValid);
+    }
+
+    [Fact]
+    public void ComputeCellBounds_SingleLayout_ReturnsOneRectangleMatchingPageBounds()
+    {
+        var template = PrintTemplate.Default;
+        var pageBounds = new System.Drawing.Rectangle(10, 20, 400, 600);
+
+        var cells = template.ComputeCellBounds(pageBounds);
+
+        Assert.Equal(new[] { pageBounds }, cells);
+    }
+
+    [Fact]
+    public void ComputeCellBounds_StripLayout_ReturnsEqualHeightCellsStackedTopToBottom()
+    {
+        var template = new PrintTemplate("Strip", WidthInches: 2, HeightInches: 6, StripCopies: 3);
+        var pageBounds = new System.Drawing.Rectangle(0, 0, 200, 600);
+
+        var cells = template.ComputeCellBounds(pageBounds);
+
+        Assert.Equal(3, cells.Count);
+        Assert.All(cells, cell => Assert.Equal(200, cell.Width));
+        Assert.All(cells, cell => Assert.Equal(200, cell.Height));
+        // Stacked top to bottom, covering the full page height with no gaps.
+        Assert.Equal(0, cells[0].Top);
+        Assert.Equal(200, cells[1].Top);
+        Assert.Equal(400, cells[2].Top);
     }
 }
 

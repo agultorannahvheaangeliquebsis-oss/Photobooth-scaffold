@@ -7,8 +7,14 @@ namespace Photobooth.Core;
 /// </summary>
 public class MockPrinterService : IPrinterService
 {
-    public async Task PrintAsync(string imagePath, CancellationToken ct = default)
+    /// <summary>Every template this mock was asked to print with, in call order --
+    /// lets tests/demo confirm BoothStateMachine actually passed the admin's
+    /// current PrintTemplate through, not just that PrintAsync got called.</summary>
+    public List<PrintTemplate> PrintedTemplates { get; } = new();
+
+    public async Task PrintAsync(string imagePath, PrintTemplate template, CancellationToken ct = default)
     {
+        PrintedTemplates.Add(template);
         await Task.Delay(2500, ct);
     }
 }

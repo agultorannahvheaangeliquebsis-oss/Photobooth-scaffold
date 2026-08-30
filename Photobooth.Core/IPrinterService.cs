@@ -7,5 +7,5 @@ namespace Photobooth.Core;
 /// </summary>
 public interface IPrinterService
 {
-    Task PrintAsync(string imagePath, CancellationToken ct = default);
+    Task PrintAsync(string imagePath, PrintTemplate template, CancellationToken ct = default);
 }

@@ -976,6 +976,74 @@ Status as of 2026-08-30.
   gap as every other WPF screen in this project (`ConsentView`,
   `PaymentView`, the rest of `AdminWindow`).
 
+**Extra, not in the original plan -- print template editor**
+- Camera and physical printer are both unavailable for the time being, so
+  picked up "Print template editor" from the roadmap next -- fully
+  code/test-verifiable without either, and `SpoolerPrinterService`'s own
+  doc comment already flagged this exact gap ("booth print layout (strip
+  vs. 4x6, borders, branding) is future work").
+- New `PrintTemplate` record in `Photobooth.Core`: `Layout` ("Single" or
+  "Strip"), `WidthInches`/`HeightInches`, `StripCopies`. Its
+  `ComputeCellBounds(Rectangle pageBounds)` is pure geometry (one
+  full-bounds rectangle for Single, `StripCopies` equal-height rectangles
+  stacked top to bottom for Strip) -- deliberately kept out of
+  `SpoolerPrinterService` so it's unit-testable without a real printer or
+  the `[SupportedOSPlatform("windows")]` marking the actual GDI+ drawing
+  code needs. `IsValid` centralizes the same validation `AdminWindow` and
+  a future caller would otherwise duplicate.
+- Folded into the existing `BoothSettings`/`IBoothSettingsProvider` seam
+  (a third property, alongside `CountdownSeconds`/`GlamFilterEnabled`)
+  rather than a new `BoothServices` seam -- a print template is booth-wide
+  and admin-editable, exactly the shape that interface already covers, so
+  `BoothStateMachine`'s constructor didn't need to change at all.
+- `Location.PrintLayout`/`PrintWidthInches`/`PrintHeightInches`/
+  `PrintStripCopies` -- four new `schema.sql` columns (defaults `'Single'`,
+  4, 6, 1). `DatabaseInitializer` got another top-up migration
+  (`EnsurePrintTemplateColumnsAsync`, same pattern as the booth-settings
+  columns' before it) so an already-seeded database picks them up via
+  `ALTER TABLE` without a manual reset.
+- `IPrinterService.PrintAsync` now takes a `PrintTemplate` alongside the
+  image path -- a real interface signature change, not just an additive
+  one, since every implementation genuinely needs to know the layout to
+  print correctly. `SpoolerPrinterService` sets `PrintDocument`'s custom
+  `PaperSize` from the template's dimensions (hundredths of an inch, per
+  that API) and draws into each cell `ComputeCellBounds` returns.
+  `MockPrinterService` gained `PrintedTemplates`, recording every call --
+  the first mock able to prove *which* template it was actually driven
+  with, not just that printing happened.
+- `AdminWindow`'s Settings section gained a "Print template" block:
+  Single/Strip radio buttons, width/height text boxes, a strip-copies text
+  box, validated via `PrintTemplate.IsValid` before saving through the
+  extended `LocationRepository.UpdateSettingsAsync`. Not yet seen
+  rendered, same interactive-desktop gap as the rest of `AdminWindow`.
+- Verified via `Photobooth.Tests`: 10 new tests. `PrintTemplateTests`
+  covers `IsValid` (bad layout name, non-positive dimensions, fewer than 1
+  strip copy) and `ComputeCellBounds` directly for both layouts (a 3-copy
+  strip produces three equal-height, gap-free, top-to-bottom rectangles --
+  proof of the actual geometry, not just that *something* came back);
+  `MockPrinterServiceTests` confirms `PrintedTemplates` records calls in
+  order; a new `BoothStateMachineTests` case switches the booth to a
+  2x6/2-copy strip via `MockBoothSettingsProvider` and confirms
+  `MockPrinterService.PrintedTemplates` received that exact template
+  rather than `PrintTemplate.Default` -- the actual thing this feature
+  needed to prove, not just that the code compiles. `dotnet test` -- **75
+  passed, 0 failed**, run twice in a row clean.
+- Verified via `Photobooth.ConsoleDemo`: new session 11 switches to a 2x6
+  strip mid-run (same "simulate an admin saving a change" pattern session
+  8 already established) and prints `Printed with: PrintTemplate { Layout
+  = Strip, WidthInches = 2, HeightInches = 6, StripCopies = 2, IsValid =
+  True }` -- the printer genuinely received the new template, not the 4x6
+  default.
+- **Not yet verified:** the real SQL path -- this environment has no
+  LocalDB instance installed at all (`sqllocaldb` isn't even on PATH),
+  unlike the dev machine the earlier SQL-backed features (booth settings,
+  frame library) were verified against, so this is a different, harder
+  gap than those left behind: not just "not yet run," but "can't run here
+  regardless." Also not verified: a physical sheet actually coming out at
+  the configured size/layout -- needs the real printer, which is why this
+  feature was picked up instead of Day 7's hardware buffer in the first
+  place.
+
 ## Remaining
 
 **Day 7 — Buffer**
@@ -1001,8 +1069,13 @@ and unscheduled until there's a week to plan around it.
 - [ ] Video guestbook: recorded personalized messages/greetings from guests.
 
 **Customization & design**
-- [ ] Built-in print template editor: 4x6, 2x6 strip, custom dimensions,
-      logos, text, graphics.
+- [~] Built-in print template editor: 4x6, 2x6 strip, custom dimensions,
+      logos, text, graphics. Paper size and Single/Strip layout are done
+      -- see `PrintTemplate` in the Done section above. Logos/text/graphics
+      overlap with `IPhotoBrandingService`'s caption bar (already done, see
+      "digital branding overlay" above) and `IFrameOverlayService`'s frame
+      art (also done); a dedicated visual editor for arbitrary
+      logo/text/graphic placement is still unbuilt.
 - [ ] Screen & UI customization: start screen, buttons, backgrounds,
       themes per event brand.
 - [ ] Green screen / chroma key: real-time background replacement with

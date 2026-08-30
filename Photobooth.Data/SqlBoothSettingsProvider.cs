@@ -4,10 +4,10 @@ using Photobooth.Core;
 namespace Photobooth.Data;
 
 /// <summary>
-/// Real IBoothSettingsProvider: reads CountdownSeconds/GlamFilterEnabled
-/// straight from the Location row on every call (no caching) -- this is
-/// what makes an admin's settings change take effect for the very next
-/// guest session instead of needing an app restart.
+/// Real IBoothSettingsProvider: reads CountdownSeconds/GlamFilterEnabled/the
+/// print template straight from the Location row on every call (no caching)
+/// -- this is what makes an admin's settings change take effect for the very
+/// next guest session instead of needing an app restart.
 /// </summary>
 public class SqlBoothSettingsProvider : IBoothSettingsProvider
 {
@@ -22,7 +22,10 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
     {
         using var connection = await SqlConnectionFactory.OpenAsync(ct);
         using var command = new SqlCommand(
-            "SELECT CountdownSeconds, GlamFilterEnabled FROM Location WHERE LocationId = @LocationId;",
+            """
+            SELECT CountdownSeconds, GlamFilterEnabled, PrintLayout, PrintWidthInches, PrintHeightInches, PrintStripCopies
+            FROM Location WHERE LocationId = @LocationId;
+            """,
             connection);
         command.Parameters.AddWithValue("@LocationId", _locationId);
 
@@ -32,6 +35,11 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
             throw new InvalidOperationException($"Location {_locationId} not found -- can't read booth settings.");
         }
 
-        return new BoothSettings(reader.GetInt32(0), reader.GetBoolean(1));
+        var printTemplate = new PrintTemplate(
+            reader.GetString(2),
+            (double)reader.GetDecimal(3),
+            (double)reader.GetDecimal(4),
+            reader.GetInt32(5));
+        return new BoothSettings(reader.GetInt32(0), reader.GetBoolean(1), printTemplate);
     }
 }

@@ -180,7 +180,7 @@ public class BoothStateMachine
             _ = FinalizeUploadAsync(uploadTask, ct);
 
             SetState(BoothState.Printing);
-            await _services.Printer.PrintAsync(LastCapturedImagePath, ct);
+            await _services.Printer.PrintAsync(LastCapturedImagePath, settings.PrintTemplate, ct);
             await _services.Sessions.RecordPrintAsync(sessionId.Value, LastCapturedImagePath, ct);
 
             if (_mode != "vendo")

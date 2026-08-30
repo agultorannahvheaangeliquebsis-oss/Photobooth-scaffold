@@ -1,8 +1,9 @@
 namespace Photobooth.Core;
 
-/// <summary>Admin-editable per-booth settings. Countdown duration and whether Glam
-/// Booth mode is on -- see AdminWindow's Settings section.</summary>
-public record BoothSettings(int CountdownSeconds, bool GlamFilterEnabled);
+/// <summary>Admin-editable per-booth settings. Countdown duration, whether Glam
+/// Booth mode is on, and the print layout (paper size / single vs. strip) -- see
+/// AdminWindow's Settings section.</summary>
+public record BoothSettings(int CountdownSeconds, bool GlamFilterEnabled, PrintTemplate PrintTemplate);
 
 /// <summary>
 /// Abstracts reading the booth's current settings. Same interface-plus-mock

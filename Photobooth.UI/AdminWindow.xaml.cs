@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using Photobooth.Core;
 using Photobooth.Data;
 
 namespace Photobooth.UI;
@@ -45,10 +46,28 @@ public partial class AdminWindow : Window
             return;
         }
 
+        string layout = StripLayoutRadio.IsChecked == true ? "Strip" : "Single";
+        if (!double.TryParse(PrintWidthBox.Text, out double widthInches)
+            || !double.TryParse(PrintHeightBox.Text, out double heightInches)
+            || !int.TryParse(StripCopiesBox.Text, out int stripCopies))
+        {
+            SettingsStatusText.Text = "Print width/height and strip copies must be numbers.";
+            SettingsStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+            return;
+        }
+
+        var printTemplate = new PrintTemplate(layout, widthInches, heightInches, stripCopies);
+        if (!printTemplate.IsValid)
+        {
+            SettingsStatusText.Text = "Print width/height must be greater than 0 and strip copies at least 1.";
+            SettingsStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+            return;
+        }
+
         SaveSettingsButton.IsEnabled = false;
         try
         {
-            await _locations.UpdateSettingsAsync(_locationId, countdownSeconds, GlamFilterCheckBox.IsChecked == true);
+            await _locations.UpdateSettingsAsync(_locationId, countdownSeconds, GlamFilterCheckBox.IsChecked == true, printTemplate);
             SettingsStatusText.Text = "Saved -- takes effect for the next guest session.";
             SettingsStatusText.Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush");
         }
@@ -87,6 +106,14 @@ public partial class AdminWindow : Window
                 _locationId = locations[0].LocationId;
                 CountdownSecondsBox.Text = locations[0].CountdownSeconds.ToString();
                 GlamFilterCheckBox.IsChecked = locations[0].GlamFilterEnabled;
+
+                PrintTemplate printTemplate = locations[0].PrintTemplate;
+                SingleLayoutRadio.IsChecked = printTemplate.Layout != "Strip";
+                StripLayoutRadio.IsChecked = printTemplate.Layout == "Strip";
+                PrintWidthBox.Text = printTemplate.WidthInches.ToString();
+                PrintHeightBox.Text = printTemplate.HeightInches.ToString();
+                StripCopiesBox.Text = printTemplate.StripCopies.ToString();
+
                 await LoadFramesAsync();
             }
         }

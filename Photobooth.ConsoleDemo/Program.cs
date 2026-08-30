@@ -125,9 +125,21 @@ Console.WriteLine();
 // without needing a new instance or a restart.
 Console.WriteLine("--- Session 8 (event, Glam Booth mode + 5s countdown) ---");
 Console.WriteLine("  (simulating an admin turning on Glam Booth mode and lengthening the countdown)");
-settings.Settings = new BoothSettings(CountdownSeconds: 5, GlamFilterEnabled: true);
+settings.Settings = new BoothSettings(CountdownSeconds: 5, GlamFilterEnabled: true, PrintTemplate: PrintTemplate.Default);
 await eventMachine.RunSessionAsync();
 Console.WriteLine($"  Final photo path: {eventMachine.LastCapturedImagePath}");
+PrintNewEmails(email);
+Console.WriteLine();
+
+// Print template is the same kind of admin-editable setting (see
+// AdminWindow's Settings section) -- switching to a 2x6 strip here proves
+// IPrinterService actually receives the current template, not just a
+// hardcoded 4x6.
+Console.WriteLine("--- Session 11 (event, admin switches to a 2x6 strip template) ---");
+Console.WriteLine("  (simulating an admin switching the print layout from the default single 4x6)");
+settings.Settings = settings.Settings with { PrintTemplate = new PrintTemplate("Strip", WidthInches: 2, HeightInches: 6, StripCopies: 2) };
+await eventMachine.RunSessionAsync();
+Console.WriteLine($"  Printed with: {printer.PrintedTemplates[^1]}");
 PrintNewEmails(email);
 Console.WriteLine();
 

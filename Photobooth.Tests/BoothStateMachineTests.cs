@@ -92,7 +92,7 @@ public class BoothStateMachineTests
         var email = new MockEmailDeliveryService();
         var branding = new MockPhotoBrandingService();
         var filter = new MockPhotoFilterService();
-        var settings = new MockBoothSettingsProvider { Settings = new BoothSettings(CountdownSeconds: 3, GlamFilterEnabled: true) };
+        var settings = new MockBoothSettingsProvider { Settings = new BoothSettings(CountdownSeconds: 3, GlamFilterEnabled: true, PrintTemplate: PrintTemplate.Default) };
         var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService());
         var machine = new BoothStateMachine(services, mode: "event");
 
@@ -119,7 +119,7 @@ public class BoothStateMachineTests
         var email = new MockEmailDeliveryService();
         var branding = new MockPhotoBrandingService();
         var filter = new MockPhotoFilterService();
-        var settings = new MockBoothSettingsProvider { Settings = new BoothSettings(CountdownSeconds: 5, GlamFilterEnabled: false) };
+        var settings = new MockBoothSettingsProvider { Settings = new BoothSettings(CountdownSeconds: 5, GlamFilterEnabled: false, PrintTemplate: PrintTemplate.Default) };
         var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService());
         var machine = new BoothStateMachine(services, mode: "event");
 
@@ -132,6 +132,33 @@ public class BoothStateMachineTests
         // schema default of 3 -- confirms BoothStateMachine actually reads
         // that value rather than a hardcoded constant.
         Assert.Equal(new[] { 5, 4, 3, 2, 1 }, countdownTicks);
+    }
+
+    [Fact]
+    public async Task RunSessionAsync_CustomPrintTemplateInSettings_PassesItToThePrinter()
+    {
+        var camera = new MockCameraService();
+        var printer = new MockPrinterService();
+        var cloudUpload = new MockCloudUploadService();
+        var paymentService = new MockQrPaymentService();
+        var sessions = new MockSessionRepository();
+        var uploadQueue = new MockPendingUploadQueue();
+        var consent = new MockConsentService();
+        var email = new MockEmailDeliveryService();
+        var branding = new MockPhotoBrandingService();
+        var filter = new MockPhotoFilterService();
+        var stripTemplate = new PrintTemplate("Strip", WidthInches: 2, HeightInches: 6, StripCopies: 2);
+        var settings = new MockBoothSettingsProvider { Settings = new BoothSettings(CountdownSeconds: 3, GlamFilterEnabled: false, PrintTemplate: stripTemplate) };
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService());
+        var machine = new BoothStateMachine(services, mode: "event");
+
+        await machine.RunSessionAsync();
+
+        // An admin switched this booth to a 2x6 strip template instead of the
+        // default single 4x6 -- confirms BoothStateMachine reads the current
+        // settings' PrintTemplate and actually hands it to IPrinterService,
+        // not just a hardcoded default.
+        Assert.Equal(stripTemplate, Assert.Single(printer.PrintedTemplates));
     }
 
     [Fact]

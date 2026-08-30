@@ -71,6 +71,27 @@
                 </StackPanel>
                 <CheckBox x:Name="GlamFilterCheckBox" Content="Glam Booth mode (high-contrast B&amp;W filter)"
                           Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
+
+                <TextBlock Text="Print template" Style="{StaticResource Row}" FontWeight="SemiBold" Margin="0,12,0,4" />
+                <StackPanel Orientation="Horizontal" Margin="0,2">
+                    <RadioButton x:Name="SingleLayoutRadio" GroupName="PrintLayout" Content="Single"
+                                 Foreground="{StaticResource InkBrush}" IsChecked="True" Margin="0,0,16,0" />
+                    <RadioButton x:Name="StripLayoutRadio" GroupName="PrintLayout" Content="Strip"
+                                 Foreground="{StaticResource InkBrush}" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,4">
+                    <TextBlock Text="Paper width (in):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
+                    <TextBox x:Name="PrintWidthBox" Width="60" Margin="0,0,16,0" />
+                    <TextBlock Text="height (in):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="70" />
+                    <TextBox x:Name="PrintHeightBox" Width="60" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,4">
+                    <TextBlock Text="Strip copies:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
+                    <TextBox x:Name="StripCopiesBox" Width="60" />
+                </StackPanel>
+                <TextBlock Text="Strip copies only applies when Strip is selected -- e.g. 2 photos stacked on a 2x6." Style="{StaticResource Row}"
+                           Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,2,0,0" />
+
                 <TextBlock x:Name="SettingsStatusText" Style="{StaticResource Row}"
                            Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" />
                 <Button x:Name="SaveSettingsButton" Content="Save Settings" Padding="16,8"

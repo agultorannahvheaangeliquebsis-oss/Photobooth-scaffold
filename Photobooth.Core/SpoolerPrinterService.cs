@@ -26,7 +26,7 @@ public class SpoolerPrinterService : IPrinterService
         _printerName = Environment.GetEnvironmentVariable(EnvVarName);
     }
 
-    public Task PrintAsync(string imagePath, CancellationToken ct = default)
+    public Task PrintAsync(string imagePath, PrintTemplate template, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
 
@@ -49,20 +49,35 @@ public class SpoolerPrinterService : IPrinterService
                     $"Set {EnvVarName} to an installed printer's exact name, or install/attach the booth printer.");
             }
 
-            document.PrintPage += (_, e) => DrawScaledToMargins(image, e);
+            // PaperSize.Width/Height are in hundredths of an inch, per the
+            // PrintDocument API -- so a 2x6 strip template becomes a 200x600
+            // custom paper size, same units as System.Windows.Forms uses.
+            document.DefaultPageSettings.PaperSize = new PaperSize(
+                "PhotoboothTemplate", (int)(template.WidthInches * 100), (int)(template.HeightInches * 100));
+
+            document.PrintPage += (_, e) => Draw(image, e, template);
             document.Print();
         }, ct);
     }
 
-    /// <summary>Scales the captured photo to fit within the page margins, preserving aspect ratio and centering it -- the booth print layout (strip vs. 4x6, borders, branding) is future work, this just proves the spooler round trip.</summary>
-    private static void DrawScaledToMargins(Image image, PrintPageEventArgs e)
+    /// <summary>Draws the photo into each cell PrintTemplate.ComputeCellBounds hands back
+    /// -- one full-page cell for "Single", one per strip copy for "Strip" -- scaled to
+    /// fit and centered within its own cell.</summary>
+    private static void Draw(Image image, PrintPageEventArgs e, PrintTemplate template)
     {
-        Rectangle bounds = e.MarginBounds;
+        foreach (Rectangle cell in template.ComputeCellBounds(e.MarginBounds))
+        {
+            DrawScaledToFit(image, cell, e.Graphics!);
+        }
+    }
+
+    private static void DrawScaledToFit(Image image, Rectangle bounds, Graphics graphics)
+    {
         double scale = Math.Min((double)bounds.Width / image.Width, (double)bounds.Height / image.Height);
         int width = (int)(image.Width * scale);
         int height = (int)(image.Height * scale);
         int x = bounds.Left + (bounds.Width - width) / 2;
         int y = bounds.Top + (bounds.Height - height) / 2;
-        e.Graphics!.DrawImage(image, x, y, width, height);
+        graphics.DrawImage(image, x, y, width, height);
     }
 }

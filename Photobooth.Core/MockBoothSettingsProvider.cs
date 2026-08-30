@@ -8,7 +8,7 @@ namespace Photobooth.Core;
 /// </summary>
 public class MockBoothSettingsProvider : IBoothSettingsProvider
 {
-    public BoothSettings Settings { get; set; } = new(CountdownSeconds: 3, GlamFilterEnabled: false);
+    public BoothSettings Settings { get; set; } = new(CountdownSeconds: 3, GlamFilterEnabled: false, PrintTemplate: PrintTemplate.Default);
 
     public Task<BoothSettings> GetSettingsAsync(CancellationToken ct = default) => Task.FromResult(Settings);
 }

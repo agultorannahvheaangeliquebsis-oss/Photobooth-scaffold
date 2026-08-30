@@ -162,6 +162,9 @@ Location ──< Session >── Print
       `IFrameSelectionService`, `IFrameOverlayService`) — admin-managed
       frame overlays, plus a real (not mocked) guest-facing picker
       screen. See "Frame library & guest frame picker" below.
+- [x] Print template editor (`PrintTemplate`) — admin-configurable paper
+      size and Single/Strip layout, fed into `SpoolerPrinterService`. See
+      "Print template editor" below.
 
 ## Running it
 
@@ -684,6 +687,70 @@ used for earlier sessions, and the next session picks up both the 5-second
 countdown and the Glam filter without recreating anything. **Not yet
 verified:** the settings screen actually rendering or being clicked
 through — same interactive-desktop gap as the rest of `AdminWindow`.
+
+## Print template editor
+
+Admin-configurable print layout — paper size, and whether the photo prints
+once ("Single", e.g. a 4x6) or repeated down a narrow strip ("Strip", e.g.
+a 2x6 photo-booth strip). Picked up next since the camera and physical
+printer were both unavailable to verify against for the time being, and
+`SpoolerPrinterService`'s own doc comment already flagged this exact gap
+("booth print layout (strip vs. 4x6, borders, branding) is future work").
+
+- **`PrintTemplate`** (`Photobooth.Core`) — `record PrintTemplate(string
+  Layout, double WidthInches, double HeightInches, int StripCopies)`, plus
+  `IsValid` and `ComputeCellBounds(Rectangle pageBounds)`. The latter is
+  pure geometry (one full-bounds rectangle for "Single", `StripCopies`
+  equal-height rectangles stacked top to bottom for "Strip") — deliberately
+  kept out of `SpoolerPrinterService` so it's unit-testable without a real
+  printer or a `[SupportedOSPlatform("windows")]` marking, unlike the
+  GDI+-drawing code that actually uses it.
+- Folded into the existing `BoothSettings`/`IBoothSettingsProvider` seam
+  rather than a new one — a print template is booth-wide and
+  admin-editable, exactly like `CountdownSeconds`/`GlamFilterEnabled`
+  already are, so it's a third property there instead of a fifteenth
+  `BoothServices` seam.
+- **`Location.PrintLayout`/`PrintWidthInches`/`PrintHeightInches`/
+  `PrintStripCopies`** — four new columns in `schema.sql` (defaults
+  `'Single'`, 4, 6, 1 — a plain 4x6). `DatabaseInitializer` picks these up
+  automatically on a fresh database; an already-seeded one gets them via
+  another `ALTER TABLE` top-up, same pattern as the booth-settings columns
+  before it.
+- **`IPrinterService.PrintAsync`** now takes a `PrintTemplate` alongside
+  the image path. `SpoolerPrinterService` sets `PrintDocument`'s custom
+  `PaperSize` from the template's width/height (in hundredths of an inch,
+  per that API) and draws the photo — scaled to fit and centered — into
+  each cell `PrintTemplate.ComputeCellBounds` hands back.
+  `MockPrinterService` records every template it was asked to print with
+  (`PrintedTemplates`), so tests/the demo can confirm
+  `BoothStateMachine` actually passed the *current* admin setting through,
+  not a hardcoded default.
+- `AdminWindow`'s Settings section gained a "Print template" block: a
+  Single/Strip radio choice, width/height text boxes, and a strip-copies
+  text box, validated the same way as the countdown field before saving
+  (`PrintTemplate.IsValid`).
+
+Verified via `Photobooth.Tests` — 10 new tests: `PrintTemplateTests`
+covers `IsValid`'s rules (bad layout name, non-positive dimensions, fewer
+than 1 strip copy) and `ComputeCellBounds` for both layouts directly (a
+3-copy strip produces three equal-height, gap-free, top-to-bottom
+rectangles); `MockPrinterServiceTests` confirms `PrintedTemplates` records
+each call in order; a new `BoothStateMachineTests` case switches the
+booth to a 2x6/2-copy strip via `MockBoothSettingsProvider` and confirms
+`MockPrinterService.PrintedTemplates` received that exact template, not
+`PrintTemplate.Default` — the actual thing this feature needed to prove.
+`dotnet test` — **75 passed, 0 failed**, run twice in a row clean.
+Verified via `Photobooth.ConsoleDemo`: a new session 11 switches to a 2x6
+strip mid-run (same "simulate an admin saving a change" pattern as session
+8) and prints `Printed with: PrintTemplate { Layout = Strip, WidthInches =
+2, HeightInches = 6, StripCopies = 2, IsValid = True }` — the printer
+genuinely received the new template, not the 4x6 default. **Not yet
+verified:** the real SQL path (this environment has no LocalDB instance
+installed, unlike the dev machine the earlier SQL-backed features were
+verified against — same class of gap, different cause) or a physical
+sheet actually coming out at the configured size — that needs the real
+printer, which is why this was picked up instead of finishing the Day 7
+hardware buffer.
 
 ## Frame library & guest frame picker
 
