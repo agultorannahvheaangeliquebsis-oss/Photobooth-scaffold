@@ -220,8 +220,16 @@ still needs a real run once the camera is connected.
 
 This required two changes: `NuGet.config` now allows `nuget.org` (previously
 locked to no package sources — this is the project's first external
-dependency), and `Manager.DetectWebcams` is forced off so the bridge never
-mistakes a laptop webcam for the booth camera.
+dependency), and camera detection runs in two passes so the bridge never
+mistakes a laptop webcam for the booth camera when a D3500 is actually
+attached: it first scans with `Manager.DetectWebcams` off (DSLR/tethered
+only); only if that finds nothing does it turn `DetectWebcams` on and scan
+again, so a webcam is picked up as a fallback rather than a first choice.
+This means `Photobooth.UI` doesn't need a D3500 attached to start a session
+during dev — it auto-detects whatever camera the machine actually has.
+Pass `--require-dslr` to `Photobooth.CameraBridge.Host` (or set
+`PHOTOBOOTH_REQUIRE_DSLR=1` before launching `Photobooth.UI`, which forwards
+it) to disable the webcam fallback on real booth hardware.
 
 ## Cloud upload & QR download
 

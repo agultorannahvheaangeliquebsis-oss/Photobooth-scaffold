@@ -32,18 +32,11 @@ namespace Photobooth.CameraBridge.Host
 
         private static void Main(string[] args)
         {
-            // Otherwise the manager happily "connects" to a laptop's built-in
-            // webcam and CAPTURE silently targets that instead of the D3500 --
-            // confirmed during the Day 1 spike (see README) when no DSLR was
-            // attached and it picked up a UVC webcam as the selected device.
-            // --allow-webcam opts back into that behavior on purpose, for
-            // dev-machine testing when no D3500 is attached; never pass it
-            // when running against the real booth hardware.
-            bool allowWebcam = Array.Exists(args, a => a.Equals("--allow-webcam", StringComparison.OrdinalIgnoreCase));
-            Manager.DetectWebcams = allowWebcam;
-            Console.WriteLine(allowWebcam
-                ? "[bridge] --allow-webcam set: will treat a laptop webcam as the camera. DEV/TEST ONLY."
-                : "[bridge] webcam detection disabled: only a real PTP/tethered camera will be picked up.");
+            // --require-dslr opts out of the fallback below, for production
+            // booth hardware where a laptop webcam should never silently
+            // stand in for the D3500. Leave it unset everywhere else so the
+            // bridge picks up whatever camera the device actually has.
+            bool requireDslr = Array.Exists(args, a => a.Equals("--require-dslr", StringComparison.OrdinalIgnoreCase));
 
             Manager.CameraConnected += device =>
                 Console.WriteLine($"[camera] connected: {device.DeviceName}");
@@ -51,13 +44,55 @@ namespace Photobooth.CameraBridge.Host
                 Console.WriteLine("[camera] disconnected");
             Manager.PhotoCaptured += Manager_PhotoCaptured;
 
-            Console.WriteLine("[bridge] looking for a connected camera...");
-            bool found = Manager.ConnectToCamera();
+            // Detect in two passes rather than just setting DetectWebcams up
+            // front: a real PTP/tethered camera (the D3500) always takes
+            // priority when one is attached, since the pass below never even
+            // considers webcams. Only when nothing turns up on that pass do
+            // we widen the search to "whatever camera this device has" --
+            // confirmed during the Day 1 spike (see README) that with
+            // DetectWebcams on the manager will happily "connect" to a
+            // laptop's built-in webcam, so it should never be enabled while a
+            // real camera might still be found without it.
+            Console.WriteLine("[bridge] looking for a connected camera (DSLR/tethered)...");
+            Manager.DetectWebcams = false;
+            Manager.ConnectToCamera();
+            bool found = WaitForSelectedCamera(TimeSpan.FromSeconds(2));
+
+            if (!found && !requireDslr)
+            {
+                Console.WriteLine("[bridge] no DSLR found -- widening search to include this device's webcam...");
+                Manager.DetectWebcams = true;
+                Manager.ConnectToCamera();
+                found = WaitForSelectedCamera(TimeSpan.FromSeconds(2));
+            }
+
             Console.WriteLine(found
                 ? $"[bridge] camera ready: {Manager.SelectedCameraDevice?.DeviceName}"
-                : "[bridge] no camera detected -- pipe server will report ERR on CAPTURE until one connects");
+                : requireDslr
+                    ? "[bridge] no DSLR detected and --require-dslr was set -- pipe server will report ERR on CAPTURE until one connects"
+                    : "[bridge] no camera detected at all (checked DSLR and webcam) -- pipe server will report ERR on CAPTURE until one connects");
 
             RunPipeServerLoop();
+        }
+
+        // ConnectToCamera()'s own return value isn't reliable -- confirmed on
+        // a dev machine (webcam fallback path) that it can come back false on
+        // the same call whose CameraConnected event and SelectedCameraDevice
+        // show a successful connection moments later, presumably because the
+        // manager finishes selecting the device asynchronously after
+        // ConnectToCamera() returns. Poll SelectedCameraDevice instead --
+        // and require IsConnected too, not just non-null: also confirmed a
+        // device can be assigned to SelectedCameraDevice as a not-yet-ready
+        // placeholder before the handshake completes (STATUS/CAPTURE below
+        // both gate on IsConnected for the same reason).
+        private static bool WaitForSelectedCamera(TimeSpan timeout)
+        {
+            var deadline = DateTime.UtcNow + timeout;
+            while (Manager.SelectedCameraDevice is not { IsConnected: true } && DateTime.UtcNow < deadline)
+            {
+                Thread.Sleep(100);
+            }
+            return Manager.SelectedCameraDevice is { IsConnected: true };
         }
 
         private static void Manager_PhotoCaptured(object sender, PhotoCapturedEventArgs eventArgs)

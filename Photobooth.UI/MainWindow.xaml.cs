@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -22,10 +23,12 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _liveViewTimer;
     private bool _sessionRunning;
     private bool _liveViewFetchInProgress;
+    private Process? _cameraBridgeProcess;
 
     public MainWindow()
     {
         InitializeComponent();
+        AppDomain.CurrentDomain.ProcessExit += KillCameraBridgeIfOwned;
 
         // Blocking at startup is acceptable here -- this runs once, before
         // the window is shown, and every session after it depends on the
@@ -88,6 +91,8 @@ public partial class MainWindow : Window
             _guestbookPrompt.RecordDecisionRequested += () => Dispatcher.Invoke(ShowGuestbookAskPrompt);
             _guestbookPrompt.StopRequested += () => Dispatcher.Invoke(ShowGuestbookRecordingPrompt);
 
+            EnsureCameraBridgeRunning();
+
             var services = new BoothServices(
                 Camera: new PtpCameraService(),
                 Printer: new SpoolerPrinterService(),
@@ -146,6 +151,100 @@ public partial class MainWindow : Window
 
         ShowState(_stateMachine.CurrentState);
         _ = ApplyThemeAsync();
+
+    }
+
+    // ProcessExit rather than Window.Closing: the startup try/catch blocks
+    // above call Environment.Exit(1) directly on failure, which skips Closing
+    // entirely -- confirmed via a real run against this dev machine (no
+    // CLOUDINARY_URL set) that a Closing-only handler leaves the bridge
+    // process orphaned when that happens. ProcessExit fires on every exit
+    // path, including Environment.Exit.
+    private void KillCameraBridgeIfOwned(object? sender, EventArgs e)
+    {
+        // Only tear down the bridge process if we're the one who launched it
+        // -- if it was already running (started manually, or by a prior
+        // instance of this app), leave it for whatever's still using it.
+        if (_cameraBridgeProcess is { HasExited: false } process)
+        {
+            try { process.Kill(); } catch { /* already gone */ }
+        }
+    }
+
+    /// <summary>Launches Photobooth.CameraBridge.Host (the out-of-process pipe
+    /// server that drives the camera -- see PtpCameraService and the README's
+    /// "Camera: Nikon D3500" section) if it isn't already listening, so an
+    /// attendant/dev doesn't have to start it by hand before opening this app.
+    /// The bridge auto-detects whatever camera the device actually has (a
+    /// tethered D3500 if one's attached, otherwise a laptop webcam) -- set
+    /// PHOTOBOOTH_REQUIRE_DSLR=1 on real booth hardware to disable the webcam
+    /// fallback instead (see Program.cs in that project for why that matters).</summary>
+    private void EnsureCameraBridgeRunning()
+    {
+        if (PtpCameraService.IsBridgeHostRunning())
+        {
+            return;
+        }
+
+        string? exePath = ResolveCameraBridgeHostPath();
+        if (exePath is null)
+        {
+            // Not found -- PtpCameraService will surface a clear "is the bridge
+            // process running?" error on first capture instead of failing here.
+            return;
+        }
+
+        var startInfo = new ProcessStartInfo(exePath)
+        {
+            WorkingDirectory = System.IO.Path.GetDirectoryName(exePath)!,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        if (Environment.GetEnvironmentVariable("PHOTOBOOTH_REQUIRE_DSLR") is "1" or "true")
+        {
+            startInfo.ArgumentList.Add("--require-dslr");
+        }
+
+        try
+        {
+            _cameraBridgeProcess = Process.Start(startInfo);
+        }
+        catch
+        {
+            // Swallow -- same reasoning as the exePath-not-found case above.
+        }
+    }
+
+    private static string? ResolveCameraBridgeHostPath()
+    {
+        string? overridePath = Environment.GetEnvironmentVariable("PHOTOBOOTH_CAMERA_BRIDGE_EXE");
+        if (overridePath is { Length: > 0 } && System.IO.File.Exists(overridePath))
+        {
+            return overridePath;
+        }
+
+        // Dev layout: walk up from this app's own build output to the solution
+        // root, then into the bridge host project's build output for the same
+        // configuration. Deployed installs should set
+        // PHOTOBOOTH_CAMERA_BRIDGE_EXE instead of relying on this.
+        var dir = new System.IO.DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
+        while (dir is not null && !System.IO.File.Exists(System.IO.Path.Combine(dir.FullName, "Photobooth.sln")))
+        {
+            dir = dir.Parent;
+        }
+        if (dir is null)
+        {
+            return null;
+        }
+
+#if DEBUG
+        const string configuration = "Debug";
+#else
+        const string configuration = "Release";
+#endif
+        var candidate = System.IO.Path.Combine(
+            dir.FullName, "Photobooth.CameraBridge.Host", "bin", configuration, "net48", "Photobooth.CameraBridge.Host.exe");
+        return System.IO.File.Exists(candidate) ? candidate : null;
     }
 
     /// <summary>Reads the current BoothTheme and repaints the window's colors,

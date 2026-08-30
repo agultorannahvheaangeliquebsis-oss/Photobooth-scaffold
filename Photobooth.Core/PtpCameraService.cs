@@ -13,12 +13,29 @@ namespace Photobooth.Core;
 /// </summary>
 public class PtpCameraService : ICameraService
 {
-    private const string PipeName = "PhotoboothCameraBridge";
+    public const string PipeName = "PhotoboothCameraBridge";
     private readonly TimeSpan _connectTimeout;
 
     public PtpCameraService(TimeSpan? connectTimeout = null)
     {
         _connectTimeout = connectTimeout ?? TimeSpan.FromSeconds(3);
+    }
+
+    /// <summary>Quick, synchronous check for whether Photobooth.CameraBridge.Host
+    /// is already listening, so a caller can decide whether it still needs to be
+    /// launched instead of connecting twice.</summary>
+    public static bool IsBridgeHostRunning(int timeoutMs = 200)
+    {
+        try
+        {
+            using var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut);
+            pipe.Connect(timeoutMs);
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            return false;
+        }
     }
 
     public async Task<string> CaptureAsync(CancellationToken ct = default)
