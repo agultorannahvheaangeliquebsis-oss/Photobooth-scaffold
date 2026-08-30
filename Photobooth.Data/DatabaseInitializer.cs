@@ -62,6 +62,95 @@ public static class DatabaseInitializer
         await EnsureFrameTableAsync(connection, ct);
         await EnsurePrintTemplateColumnsAsync(connection, ct);
         await EnsureFeedbackTableAsync(connection, ct);
+        await EnsureBoothThemeColumnsAsync(connection, ct);
+        await EnsureGuestbookVideoTableAsync(connection, ct);
+        await EnsurePrintTemplateElementTableAsync(connection, ct);
+    }
+
+    /// <summary>Same reasoning as EnsureConsentTableAsync, for the PrintTemplateElement
+    /// table added after this check was originally written.</summary>
+    private static async Task EnsurePrintTemplateElementTableAsync(SqlConnection connection, CancellationToken ct)
+    {
+        using (var checkCommand = new SqlCommand("SELECT 1 FROM sys.tables WHERE name = 'PrintTemplateElement';", connection))
+        {
+            if (await checkCommand.ExecuteScalarAsync(ct) is not null)
+            {
+                return;
+            }
+        }
+
+        using var createCommand = new SqlCommand(
+            """
+            CREATE TABLE PrintTemplateElement (
+                ElementId       INT IDENTITY(1,1) PRIMARY KEY,
+                LocationId      INT             NOT NULL REFERENCES Location(LocationId),
+                Kind            NVARCHAR(20)    NOT NULL CHECK (Kind IN ('Logo', 'Text')),
+                XPercent        DECIMAL(6,4)    NOT NULL,
+                YPercent        DECIMAL(6,4)    NOT NULL,
+                WidthPercent    DECIMAL(6,4)    NOT NULL,
+                HeightPercent   DECIMAL(6,4)    NOT NULL,
+                Text            NVARCHAR(200)   NULL,
+                ImagePath       NVARCHAR(500)   NULL,
+                FontFamily      NVARCHAR(100)   NULL,
+                FontSizePercent DECIMAL(6,4)    NULL,
+                Bold            BIT             NOT NULL DEFAULT 0,
+                ColorHex        NVARCHAR(9)     NULL,
+                SortOrder       INT             NOT NULL DEFAULT 0,
+                CreatedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
+            );
+            CREATE INDEX IX_PrintTemplateElement_Location ON PrintTemplateElement(LocationId, SortOrder);
+            """,
+            connection);
+        await createCommand.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>Same reasoning as EnsureConsentTableAsync, for the GuestbookVideo table added
+    /// after this check was originally written.</summary>
+    private static async Task EnsureGuestbookVideoTableAsync(SqlConnection connection, CancellationToken ct)
+    {
+        using (var checkCommand = new SqlCommand("SELECT 1 FROM sys.tables WHERE name = 'GuestbookVideo';", connection))
+        {
+            if (await checkCommand.ExecuteScalarAsync(ct) is not null)
+            {
+                return;
+            }
+        }
+
+        using var createCommand = new SqlCommand(
+            """
+            CREATE TABLE GuestbookVideo (
+                GuestbookVideoId INT IDENTITY(1,1) PRIMARY KEY,
+                SessionId        INT             NOT NULL REFERENCES Session(SessionId),
+                FilePath         NVARCHAR(500)   NOT NULL,
+                DurationSeconds  INT             NOT NULL,
+                RecordedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
+            );
+            CREATE INDEX IX_GuestbookVideo_Session ON GuestbookVideo(SessionId);
+            """,
+            connection);
+        await createCommand.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>Same reasoning as EnsureBoothSettingsColumnsAsync, for the five
+    /// brand-identity columns added to Location after this check was originally
+    /// written.</summary>
+    private static async Task EnsureBoothThemeColumnsAsync(SqlConnection connection, CancellationToken ct)
+    {
+        using var command = new SqlCommand(
+            """
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'AccentColorHex')
+                ALTER TABLE Location ADD AccentColorHex NVARCHAR(9) NOT NULL DEFAULT '#365C58';
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'CanvasColorHex')
+                ALTER TABLE Location ADD CanvasColorHex NVARCHAR(9) NOT NULL DEFAULT '#F4F3F0';
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'InkColorHex')
+                ALTER TABLE Location ADD InkColorHex NVARCHAR(9) NOT NULL DEFAULT '#202124';
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'LogoImagePath')
+                ALTER TABLE Location ADD LogoImagePath NVARCHAR(500) NULL;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'EventName')
+                ALTER TABLE Location ADD EventName NVARCHAR(100) NOT NULL DEFAULT 'Focus & Snap';
+            """,
+            connection);
+        await command.ExecuteNonQueryAsync(ct);
     }
 
     /// <summary>Same reasoning as EnsureConsentTableAsync, for the Feedback table added

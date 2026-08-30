@@ -15,6 +15,8 @@ var frameLibrary = new MockFrameLibraryService();
 var frameSelection = new MockFrameSelectionService();
 var frameOverlay = new MockFrameOverlayService();
 var feedback = new MockFeedbackService();
+var guestbookPrompt = new MockGuestbookPromptService();
+var videoGuestbook = new MockVideoGuestbookService();
 int emailsPrinted = 0;
 void PrintNewEmails(MockEmailDeliveryService service)
 {
@@ -25,7 +27,7 @@ void PrintNewEmails(MockEmailDeliveryService service)
     }
 }
 
-var services = new BoothServices(camera, printer, cloudUpload, sessions, payment, uploadQueue, consent, email, branding, filter, settings, frameLibrary, frameSelection, frameOverlay, feedback);
+var services = new BoothServices(camera, printer, cloudUpload, sessions, payment, uploadQueue, consent, email, branding, filter, settings, frameLibrary, frameSelection, frameOverlay, feedback, guestbookPrompt, videoGuestbook);
 var eventMachine = new BoothStateMachine(services, mode: "event");
 
 eventMachine.StateChanged += state => Console.WriteLine($"  [STATE]     {state}");
@@ -188,13 +190,63 @@ Console.WriteLine($"  Feedback recorded this session: {sessions.RecordedFeedback
 PrintNewEmails(email);
 Console.WriteLine();
 
+// Video guestbook -- MockGuestbookPromptService defaults to "wants to
+// record", so this proves a guest message actually gets captured and
+// recorded against the session, distinct from and after Complete/before
+// Feedback.
+Console.WriteLine("--- Session 14 (event, guest records a guestbook message) ---");
+await eventMachine.RunSessionAsync();
+var lastVideo = sessions.RecordedGuestbookVideos[^1];
+Console.WriteLine($"  Guestbook video recorded: session {lastVideo.SessionId}, {lastVideo.FilePath}, {lastVideo.Duration.TotalMilliseconds:0}ms");
+PrintNewEmails(email);
+Console.WriteLine();
+
+Console.WriteLine("--- Session 15 (event, guest declines the guestbook prompt) ---");
+guestbookPrompt.SkipNext = true;
+int guestbookCountBefore = sessions.RecordedGuestbookVideos.Count;
+await eventMachine.RunSessionAsync();
+Console.WriteLine($"  Guestbook video recorded this session: {sessions.RecordedGuestbookVideos.Count > guestbookCountBefore} " +
+    "(false is correct -- a decline leaves no GuestbookVideo row)");
+PrintNewEmails(email);
+Console.WriteLine();
+
+// Theme (colors/logo/event name) is the same kind of admin-editable setting
+// as everything else in BoothSettings -- flipping it here proves
+// IPhotoBrandingService's caption actually uses the current event name, not
+// a hardcoded "Focus & Snap".
+Console.WriteLine("--- Session 16 (event, admin changes the event theme) ---");
+Console.WriteLine("  (simulating an admin renaming the event and changing brand colors)");
+settings.Settings = settings.Settings with { Theme = new BoothTheme("#B3261E", "#FFFFFF", "#111111", null, "Sunset Social") };
+await eventMachine.RunSessionAsync();
+Console.WriteLine($"  Branding applied with studio name: {branding.LastStudioName}");
+PrintNewEmails(email);
+Console.WriteLine();
+
+// Print template elements (logo/text overlays placed via the admin's
+// drag-and-drop editor) ride inside PrintTemplate.Elements, already threaded
+// through settings.PrintTemplate -> IPrinterService.PrintAsync with zero
+// BoothStateMachine changes -- this proves the elements actually reach the
+// printer, not just that the code compiles.
+Console.WriteLine("--- Session 17 (event, admin adds a logo and a caption to the print template) ---");
+Console.WriteLine("  (simulating an admin placing two elements via the print template editor)");
+var printElements = new List<PrintTemplateElement>
+{
+    new(PrintTemplateElementKind.Text, XPercent: 0.1, YPercent: 0.88, WidthPercent: 0.8, HeightPercent: 0.08, Text: "Sunset Social"),
+    new(PrintTemplateElementKind.Logo, XPercent: 0.75, YPercent: 0.03, WidthPercent: 0.2, HeightPercent: 0.08, ImagePath: "./assets/studio_logo.png"),
+};
+settings.Settings = settings.Settings with { PrintTemplate = settings.Settings.PrintTemplate with { Elements = printElements } };
+await eventMachine.RunSessionAsync();
+Console.WriteLine($"  Printed with {printer.PrintedTemplates[^1].Elements.Count} template element(s) (expected 2)");
+PrintNewEmails(email);
+Console.WriteLine();
+
 Console.WriteLine("Demo complete. Final state: " + vendoMachine.CurrentState);
 Console.WriteLine($"Sessions recorded: {sessions.CreatedSessions.Count} " +
     $"({sessions.CompletedSessionIds.Count} completed, {sessions.FailedSessionIds.Count} failed, " +
     $"{sessions.AbandonedSessionIds.Count} abandoned), " +
     $"{sessions.RecordedPrints.Count} prints, {sessions.RecordedPayments.Count} payments, " +
     $"{sessions.RecordedConsents.Count} consent records, {sessions.RecordedFeedback.Count} feedback records, " +
-    $"{email.SentEmails.Count} emails sent.");
+    $"{sessions.RecordedGuestbookVideos.Count} guestbook videos, {email.SentEmails.Count} emails sent.");
 foreach (var p in sessions.RecordedPayments)
 {
     Console.WriteLine($"  Payment: session {p.SessionId}, {p.Amount:C}, {p.Method}");

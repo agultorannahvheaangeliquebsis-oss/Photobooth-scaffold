@@ -32,4 +32,7 @@ public interface ISessionRepository
 
     /// <summary>Inserts a Feedback row for this session's rating/comment. Only called when at least one of the two is non-null -- see BoothStateMachine's Feedback state.</summary>
     Task RecordFeedbackAsync(int sessionId, int? rating, string? comment, CancellationToken ct = default);
+
+    /// <summary>Inserts a GuestbookVideo row for a recorded guest message. Only called when the guest chose to record one -- see BoothStateMachine's Guestbook state.</summary>
+    Task RecordGuestbookVideoAsync(int sessionId, string filePath, TimeSpan duration, CancellationToken ct = default);
 }

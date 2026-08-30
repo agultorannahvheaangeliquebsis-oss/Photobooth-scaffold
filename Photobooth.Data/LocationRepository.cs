@@ -3,7 +3,7 @@ using Photobooth.Core;
 
 namespace Photobooth.Data;
 
-public record LocationRecord(int LocationId, string Name, string Type, string? Address, int CountdownSeconds, bool GlamFilterEnabled, PrintTemplate PrintTemplate);
+public record LocationRecord(int LocationId, string Name, string Type, string? Address, int CountdownSeconds, bool GlamFilterEnabled, PrintTemplate PrintTemplate, BoothTheme Theme);
 
 public class LocationRepository
 {
@@ -26,7 +26,8 @@ public class LocationRepository
         using var command = new SqlCommand(
             """
             SELECT LocationId, Name, Type, Address, CountdownSeconds, GlamFilterEnabled,
-                   PrintLayout, PrintWidthInches, PrintHeightInches, PrintStripCopies
+                   PrintLayout, PrintWidthInches, PrintHeightInches, PrintStripCopies,
+                   AccentColorHex, CanvasColorHex, InkColorHex, LogoImagePath, EventName
             FROM Location ORDER BY LocationId;
             """,
             connection);
@@ -46,9 +47,38 @@ public class LocationRepository
                     reader.GetString(6),
                     (double)reader.GetDecimal(7),
                     (double)reader.GetDecimal(8),
-                    reader.GetInt32(9))));
+                    reader.GetInt32(9)),
+                new BoothTheme(
+                    reader.GetString(10),
+                    reader.GetString(11),
+                    reader.GetString(12),
+                    reader.IsDBNull(13) ? null : reader.GetString(13),
+                    reader.GetString(14))));
         }
         return results;
+    }
+
+    /// <summary>Updates the admin-editable brand identity for a location -- colors,
+    /// logo, and event name. Kept separate from UpdateSettingsAsync so saving a
+    /// theme change doesn't force the countdown/print-template fields to also
+    /// validate, and vice versa.</summary>
+    public async Task UpdateThemeAsync(int locationId, BoothTheme theme, CancellationToken ct = default)
+    {
+        using var connection = await SqlConnectionFactory.OpenAsync(ct);
+        using var command = new SqlCommand(
+            """
+            UPDATE Location SET AccentColorHex = @AccentColorHex, CanvasColorHex = @CanvasColorHex,
+                                 InkColorHex = @InkColorHex, LogoImagePath = @LogoImagePath, EventName = @EventName
+            WHERE LocationId = @LocationId;
+            """,
+            connection);
+        command.Parameters.AddWithValue("@AccentColorHex", theme.AccentColorHex);
+        command.Parameters.AddWithValue("@CanvasColorHex", theme.CanvasColorHex);
+        command.Parameters.AddWithValue("@InkColorHex", theme.InkColorHex);
+        command.Parameters.AddWithValue("@LogoImagePath", (object?)theme.LogoImagePath ?? DBNull.Value);
+        command.Parameters.AddWithValue("@EventName", theme.EventName);
+        command.Parameters.AddWithValue("@LocationId", locationId);
+        await command.ExecuteNonQueryAsync(ct);
     }
 
     /// <summary>Updates the admin-editable booth settings for a location -- countdown

@@ -1113,6 +1113,286 @@ Status as of 2026-08-30.
   `FeedbackView`/the dashboard's new section actually rendering, same
   interactive-desktop gap as every other WPF screen in this project.
 
+**Extra, not in the original plan -- screen & UI theming (colors, logo, event name)**
+- Picked up "Screen & UI customization" next -- start-screen/button/background
+  customization stays out of scope (colors + logo + event name only, per
+  explicit direction), but that's still real progress on a `[ ]` roadmap item.
+- New `BoothTheme` record (`Photobooth.Core`): `AccentColorHex`/`CanvasColorHex`/
+  `InkColorHex` (validated `#RRGGBB`), an optional `LogoImagePath`, and
+  `EventName`. Folded into `BoothSettings` as a new `Theme` property -- same
+  reasoning `PrintTemplate` itself already established (booth-wide,
+  admin-editable, read fresh every session, so no new `BoothServices` seam
+  needed).
+- **New technique, worth calling out:** `Theme` is an **`init`-only property
+  outside `BoothSettings`'s primary constructor**, not a 4th positional
+  parameter -- a record's positional parameters can't default to another
+  type's static field (`BoothTheme.Default` isn't a compile-time constant),
+  but an `init` property can. Every existing `new BoothSettings(...)` call
+  site (mocks, `SqlBoothSettingsProvider`, `AdminWindow`, every test,
+  `Photobooth.ConsoleDemo`) kept compiling completely unchanged, with `Theme`
+  silently defaulting -- zero call-site churn for a feature that touches
+  `BoothSettings`.
+- `IPhotoBrandingService.ApplyBrandingAsync` gained a `studioName` parameter
+  -- a genuine signature change, not just additive, since branding now needs
+  to know the current event name. Retired `GdiPhotoBrandingService`'s
+  hardcoded `private const string StudioName = "Focus & Snap"` -- the last of
+  three hardcoded "Focus & Snap" occurrences in the codebase to fall (the
+  other two were UI markup, see below).
+- `Location` gained 5 new columns (`AccentColorHex`/`CanvasColorHex`/
+  `InkColorHex`/`LogoImagePath`/`EventName`); `DatabaseInitializer` got
+  another top-up migration (`EnsureBoothThemeColumnsAsync`, same pattern as
+  every prior one). `LocationRepository` gained `UpdateThemeAsync`, kept
+  deliberately separate from `UpdateSettingsAsync` so saving a theme change
+  doesn't force the countdown/print-template fields to also validate, and
+  vice versa.
+- `AdminWindow` gained a "Theme" section: 3 hex color text boxes each with a
+  live-updating color swatch, an event name box, and a logo `Browse...`
+  button reusing the exact same "copy into a local `Assets/<Feature>/`
+  folder" pattern the Frame library section already established (here,
+  `Assets/Theme/`).
+- `MainWindow` applies the theme by mutating the *existing* `SolidColorBrush`
+  objects in `App.xaml`'s resource dictionary in place, not by replacing the
+  dictionary entries. **Real bug caught before it shipped:** every screen
+  binds these via `{StaticResource ...}`, which resolves to a direct
+  reference to the brush object at XAML load time -- replacing the
+  dictionary entry (`Application.Current.Resources["AccentBrush"] = new
+  SolidColorBrush(...)`) wouldn't repaint anything already on screen, since
+  existing elements would still be holding a reference to the *old* brush
+  object. Mutating the existing unfrozen brush's `.Color` in place does
+  repaint, since every `StaticResource` reference shares that same object.
+  Applied once at startup and again every time the machine returns to
+  `Idle` -- same "next guest, no restart" semantics every other setting
+  already has, with the explicit caveat that a theme change saved mid-session
+  won't repaint until the booth is back at `Idle`.
+- Verified via `Photobooth.Tests`: new `BoothThemeTests.cs` (9 cases --
+  `IsValid` for the default, bad hex on each of the 3 color fields, an empty
+  event name, and confirming a null logo is still valid). `dotnet test` --
+  **89 passed, 0 failed** (up from 80).
+- Verified via `Photobooth.ConsoleDemo`: new session flips
+  `settings.Settings = settings.Settings with { Theme = new BoothTheme(...) }`
+  (renaming the event to "Sunset Social" and changing all 3 colors) and
+  prints `branding.LastStudioName` (a new property added to
+  `MockPhotoBrandingService` for exactly this) -- confirmed it reads
+  `Sunset Social`, proving the new event name actually reached branding, not
+  just that the settings object changed.
+- **Not yet verified:** `AdminWindow`'s new Theme section or `MainWindow`'s
+  brush-mutation repaint actually rendering on a real screen -- same
+  interactive-desktop gap every other WPF screen in this project has. The SQL
+  path (the new `Location` columns, `UpdateThemeAsync`) is also unverified
+  against a real LocalDB -- this environment has none installed at all, same
+  gap the print template editor and feedback survey entries above already
+  flagged.
+
+**Extra, not in the original plan -- video guestbook**
+- Picked up "Video guestbook" next -- full build, mock-verified, same
+  treatment `IPaymentService`/`IConsentService` already got: a real seam plus
+  a real (if hardware-unverifiable-here) Windows implementation behind it,
+  not a skeleton.
+- **Scope decision:** a guestbook video is recorded, stored locally, and
+  listed in `AdminWindow` for the admin to review/download -- it does *not*
+  get a QR code, does *not* go through `ICloudUploadService`, and does *not*
+  participate in printing. A video message is addressed to the event hosts
+  (a digital equivalent of a paper guestbook), not a takeaway product for the
+  guest the way the photo is, and video hosting is real added scope
+  (Cloudinary free-tier limits, an entirely separate upload path) with no
+  clear guest-facing payoff. Same proportionate-scoping precedent Glam Booth
+  mode already set (just the B&W filter, skin smoothing left out).
+- Two new `Photobooth.Core` seams, deliberately split: `IVideoGuestbookService`
+  (`StartRecordingAsync`/`StopRecordingAsync`, the actual capture -- real impl
+  `FfmpegVideoGuestbookService`, mock `MockVideoGuestbookService`) and
+  `IGuestbookPromptService` (`AskToRecordAsync`/`WaitForStopAsync`, the UI
+  wait -- real impl `UiGuestbookPromptService`, same `TaskCompletionSource`
+  handoff `UiFrameSelectionService`/`UiFeedbackService` already established;
+  mock `MockGuestbookPromptService`). Split for the same reason
+  `IFrameSelectionService` and `IFrameOverlayService` already are separate
+  seams: "does the guest want to, and when are they done" is a pure UI
+  interaction with no hardware dependency, so it gets a real implementation
+  immediately, while the actual capture is the part still gated on hardware
+  this environment doesn't have.
+- **Deliberately not routed through `ICameraService`/the CameraBridge pipe
+  protocol** -- that protocol tethers the Nikon D3500, a photo/PTP-only
+  device with no audio path, and a guestbook message needs the guest's actual
+  voice. `FfmpegVideoGuestbookService` drives an independent webcam+mic
+  capture instead, via `ffmpeg -f dshow -i video=...:audio=...` as a child
+  `Process`. **This is the project's first external-process dependency**, a
+  different and harder category of gap than "hardware unplugged behind an
+  already-installed driver" (the D3500/printer's prior status) -- ffmpeg
+  itself has to be separately installed, configured via `PHOTOBOOTH_FFMPEG_PATH`
+  (falling back to `ffmpeg` on PATH) plus `PHOTOBOOTH_WEBCAM_DEVICE_NAME`/
+  `PHOTOBOOTH_MIC_DEVICE_NAME` (DirectShow device names are machine-specific,
+  same env-var-driven config pattern as `PHOTOBOOTH_PRINTER_NAME`/
+  `CLOUDINARY_URL`). Stopping writes `"q"` to ffmpeg's stdin (its documented
+  graceful-stop signal, needed so the mp4's `moov` atom finalizes -- an
+  outright `Kill()` risks a corrupt file) with a 10s timeout/`Kill()` fallback
+  if it doesn't exit cleanly.
+- New `BoothState.Guestbook`, shown right after `Complete`'s dwell and before
+  `Feedback`. Wrapped in its own `try`/`catch` in `RunSessionAsync`, same
+  reasoning the `Feedback` block right after it already documents: a guest
+  who walks away without tapping anything should never turn an
+  already-completed (already printed, already paid for) session into an
+  `Error` one. A 60-second safety-net `Task.Delay` races against
+  `WaitForStopAsync` so a stuck guest can't leave ffmpeg recording
+  indefinitely.
+- New `GuestbookVideo` table (`SessionId`, `FilePath`, `DurationSeconds`,
+  `RecordedAt`); `DatabaseInitializer` got another top-up migration
+  (`EnsureGuestbookVideoTableAsync`). `ISessionRepository.RecordGuestbookVideoAsync`
+  implemented by both `MockSessionRepository` and `SqlSessionRepository`, same
+  shape as `RecordFeedbackAsync`. `AdminDashboardRepository` gained
+  `GetRecentGuestbookVideosAsync`/`DeleteGuestbookVideoAsync` -- collecting
+  recordings and never reading them back would repeat the exact "data
+  collected, never used" gap already caught and fixed once for email opt-in.
+- `AdminWindow` gained a "Guestbook messages" section: session/duration/
+  timestamp per row, an "Open" button (launches the OS default video player
+  via `Process.Start` with `UseShellExecute = true`) and "Delete" (removes
+  the row; leaves the physical file, same "nothing deletes old print files
+  either" precedent). `MainWindow` gained a `GuestbookView` with two
+  mutually-exclusive sub-panels (Ask: Yes/No; Recording: Stop), same
+  nested-visibility idiom `PaymentQrBorder` already established inside
+  `PaymentView`.
+- `BoothServices` picked up its 16th/17th properties (`GuestbookPrompt`,
+  `VideoGuestbook`) -- one new property each, no constructor signature
+  change, the exact payoff the record-bundle refactor was built for several
+  entries ago.
+- Verified via `Photobooth.Tests`: 12 new tests. `VideoGuestbookServiceTests.cs`
+  covers `MockVideoGuestbookService` (start/stop round-trip, `FailNextStart`/
+  `FailNextStop` reset-after-firing, stopping with nothing in progress
+  throws), `MockGuestbookPromptService` (default accept, `SkipNext`
+  decline-then-reset), and `UiGuestbookPromptService`'s two independent
+  `TaskCompletionSource` waits (neither completes until the matching
+  `SubmitRecordDecision`/`SubmitStop` fires). `BoothStateMachineTests` adds
+  three cases: a recorded message (states show `Guestbook` between `Complete`
+  and `Feedback`, one `RecordedGuestbookVideos` entry with a positive
+  duration), a decline (state still shows, no row), and a forced
+  `FailNextStart` (session still reaches `Idle` normally, no `Error` state,
+  no row -- the try/catch actually works). `dotnet test` -- **101 passed, 0
+  failed** (up from 89).
+- Verified via `Photobooth.ConsoleDemo`: session 14 (guest records) shows
+  `[STATE] Guestbook` between `Complete` and `Feedback` and prints the
+  recorded file path/duration; session 15 (guest declines via
+  `guestbookPrompt.SkipNext`) shows the state but records nothing. Final
+  summary: 12 guestbook videos across 13 completed sessions (session 15's
+  decline is the one gap, exactly as expected).
+- **Not yet verified:** real webcam+mic capture -- no hardware available
+  here, and (unlike prior hardware gaps) no confirmation that ffmpeg itself
+  is even installed on a real deployment machine yet either. *Can* confirm
+  `FfmpegVideoGuestbookService`'s failure path is honest, though: pointing
+  `PHOTOBOOTH_FFMPEG_PATH` at a nonexistent file and calling
+  `StartRecordingAsync()` throws the clear "is ffmpeg installed... see the
+  README" message rather than an opaque crash. The manual ffmpeg-install
+  step (and the two device-name env vars) needs documenting in the README
+  alongside `CLOUDINARY_URL`/`PHOTOBOOTH_PRINTER_NAME` before a real
+  deployment. Also unverified: `GuestbookView`/`AdminWindow`'s new section
+  actually rendering, same interactive-desktop gap as everything else.
+
+**Extra, not in the original plan -- print template visual editor (logos/text drag-and-drop)**
+- Picked up the piece of "Built-in print template editor" flagged as still
+  unbuilt (`[~]` on the roadmap): a dedicated visual editor for arbitrary
+  logo/text placement, on top of the paper-size/layout work already done.
+  Built as a real drag-and-drop canvas, per explicit direction, not a
+  numeric-fields form.
+- New `PrintTemplateElement` record (`Photobooth.Core`): `Kind` (Logo or
+  Text), position/size as **fractions (0-1) of the cell's bounds**
+  (`XPercent`/`YPercent`/`WidthPercent`/`HeightPercent`), plus `Text`/
+  `ImagePath`/`FontFamily`/`FontSizePercent`/`Bold`/`ColorHex`. Percent-based,
+  not absolute pixels/inches, specifically so the same element list scales
+  correctly if an admin later changes `WidthInches`/`HeightInches` (e.g.
+  4x6 to a 2x6 strip). `PrintTemplate.Elements` added the same way
+  `BoothSettings.Theme` was two entries ago -- an **`init`-only property
+  outside the primary constructor**, so every existing 4-arg
+  `new PrintTemplate(...)` call site kept compiling unchanged.
+  `PrintTemplate.ComputeElementBounds` translates one element's cell-relative
+  percentages into pixel bounds -- pure geometry, same unit-testability as
+  the pre-existing `ComputeCellBounds`.
+- New `PrintCompositor` (`Photobooth.Core`, Windows-only): the single source
+  of truth both the real print (`SpoolerPrinterService.Draw`, now a one-line
+  delegation) and the editor's live preview (`RenderPreview`) draw from.
+  This is deliberate, not incidental -- it's what makes the editor's preview
+  **provably WYSIWYG** rather than a second renderer that happens to agree
+  with the real one today and silently drift from it tomorrow.
+- New `PrintTemplateElementRepository` (`Photobooth.Data`, plain repository
+  like `FrameRepository`, no interface/mock): `GetAllByLocationAsync` and
+  `ReplaceAllAsync` (delete-then-reinsert inside one transaction -- the
+  editor always saves its whole working list at once, so there's no need for
+  per-row update/delete tracking). `SqlBoothSettingsProvider` attaches the
+  element list to `PrintTemplate.Elements` after reading the `Location` row
+  (on a separate connection, read only once the first reader has finished --
+  an early version of this interleaved the two queries on the same open
+  reader and would have broken).
+- New `Location`-scoped `PrintTemplateElement` table; `DatabaseInitializer`
+  got another top-up migration (`EnsurePrintTemplateElementTableAsync`).
+- New `PrintTemplateEditorWindow` -- a dedicated modal (not folded into
+  `AdminWindow`'s flat settings list, since a `Canvas` drag surface doesn't
+  fit that flow), opened via a new "Edit print template..." button in
+  `AdminWindow`'s existing Print template block. Mechanics: a
+  `PreviewImage`/`ElementsCanvas` pair sized and positioned identically, so a
+  drag delta measured on the canvas maps 1:1 onto the rendered preview below
+  it with no extra scaling math; plain `MouseLeftButtonDown`/`MouseMove`/
+  `MouseLeftButtonUp` + `CaptureMouse()` on each element's `Border` for
+  dragging (no WPF `Thumb` control -- this codebase has zero
+  templated-control usage anywhere, so plain event handlers stay consistent
+  with every other interactive screen) and a small corner `Rectangle` handle
+  with its own drag trio for resizing; every drag-end/resize-end/property
+  edit re-renders the live preview via `PrintCompositor.RenderPreview`,
+  converted to a `BitmapSource` via `GetHbitmap()` +
+  `CreateBitmapSourceFromHBitmap` (with an explicit `DeleteObject` P/Invoke
+  cleanup to avoid leaking the GDI handle). A side panel shows Text/Logo
+  properties for whatever's selected (text content, font size slider, bold,
+  hex color; or a Browse button for a logo image, reusing the same
+  copy-into-local-`Assets/PrintElements/`-folder pattern the Frame library
+  and Theme sections already established). Falls back to a generated
+  placeholder photo if `./captures` is empty, so the editor works in this
+  camera-less dev environment too.
+- **Gotcha found and documented, not just fixed silently:** `PrintTemplate.Elements`
+  is `IReadOnlyList<T>`, and C# records only synthesize *reference* equality
+  for non-record collection-typed properties -- a whole-record
+  `Assert.Equal(expectedTemplate, actualTemplate)` does **not** structurally
+  compare `Elements` even though `Layout`/`WidthInches`/etc. compare fine.
+  Every new test touching `Elements` asserts on `.Elements.Count` and
+  individual element properties directly instead.
+- Also fixed along the way: `PrintCompositor`'s original aspect-ratio math
+  for `RenderPreview` had width/height backwards (a portrait 4x6 would have
+  come out wider than tall). Caught before ever running by re-deriving it
+  explicitly (`aspect = Width/Height`; the *longer* side becomes
+  `previewWidthPx` -- for a portrait template, aspect < 1, so *height* is the
+  longer side, not width) and factoring the corrected logic into a shared
+  `ComputePreviewDimensions` helper both `RenderPreview` and the editor
+  window's canvas sizing now call, so they can't drift apart from each
+  other either.
+- Verified via `Photobooth.Tests`: 18 new tests. `PrintTemplateElementTests`
+  (new file, 10 cases counting theory data) covers `IsValid` for both kinds
+  and out-of-range bounds; the pre-existing `PrintTemplateTests` class (in
+  `MockServicesTests.cs`) gained 3 cases -- `Elements` defaulting to empty
+  and two `ComputeElementBounds` cases (including one with an offset cell,
+  proving the cell's own position is added in, not just its size).
+  `PrintCompositorTests.cs` (new, Windows-only, 5 cases) draws a real Text
+  element and a real Logo element onto a fabricated `Bitmap` and samples
+  pixel regions to confirm each was actually drawn where expected while an
+  untouched corner still shows the base photo's color, plus
+  `ComputePreviewDimensions`/`RenderPreview` cases for both portrait and
+  landscape templates (this is what caught the aspect-ratio bug above,
+  before it ever reached the editor window). `dotnet test` -- **119 passed,
+  0 failed** (up from 101).
+- Verified via `Photobooth.ConsoleDemo`: new session builds a `PrintTemplate`
+  with a Text and a Logo element via
+  `settings.Settings.PrintTemplate with { Elements = [...] }` (the same
+  "simulate an admin saving a change" pattern every settings-driven feature
+  in this demo already uses) and prints
+  `printer.PrintedTemplates[^1].Elements.Count` -- confirmed as 2, proving
+  the elements actually reached `IPrinterService`, not just that the code
+  compiles.
+- Verified via a full `dotnet build Photobooth.sln`: clean, 0 warnings, 0
+  errors, all 7 projects including `Photobooth.UI` and
+  `Photobooth.CameraBridge.Host`.
+- **Not yet verified:** the real SQL path (no LocalDB in this environment,
+  same gap as every other SQL-backed feature above) and, the single largest
+  unverified risk of this whole three-feature body of work, the actual
+  drag/resize *feel* of `PrintTemplateEditorWindow` -- no interactive desktop
+  to click through it. Unlike the percent-math underneath it (fully
+  unit-tested, see above), mouse-event wiring itself isn't something a unit
+  test can exercise. A physically printed sheet showing the composited
+  elements in the right place also needs the real printer, same gap
+  `SpoolerPrinterService` already had before this feature existed.
+
 ## Remaining
 
 **Day 7 — Buffer**
@@ -1135,18 +1415,24 @@ and unscheduled until there's a week to plan around it.
 - [ ] 360-degree booth support: rotating multi-angle video loops with
       speed ramping and custom soundtracks.
 - [ ] Glam Booth mode: automated skin smoothing, high-contrast B&W filter.
-- [ ] Video guestbook: recorded personalized messages/greetings from guests.
+- [~] Video guestbook: recorded personalized messages/greetings from guests.
+      Full mock-verified build done -- see the Done section above
+      (`IVideoGuestbookService`/`FfmpegVideoGuestbookService`,
+      `BoothState.Guestbook`, `GuestbookVideo`). Real webcam/mic capture
+      against actual hardware is still unverified (no camera/mic hardware
+      or confirmed ffmpeg install in this environment).
 
 **Customization & design**
-- [~] Built-in print template editor: 4x6, 2x6 strip, custom dimensions,
-      logos, text, graphics. Paper size and Single/Strip layout are done
-      -- see `PrintTemplate` in the Done section above. Logos/text/graphics
-      overlap with `IPhotoBrandingService`'s caption bar (already done, see
-      "digital branding overlay" above) and `IFrameOverlayService`'s frame
-      art (also done); a dedicated visual editor for arbitrary
-      logo/text/graphic placement is still unbuilt.
-- [ ] Screen & UI customization: start screen, buttons, backgrounds,
-      themes per event brand.
+- [x] Built-in print template editor: 4x6, 2x6 strip, custom dimensions,
+      logos, text, graphics. Paper size and Single/Strip layout, plus a
+      dedicated drag-and-drop visual editor for arbitrary logo/text
+      placement, are both done -- see `PrintTemplate`/`PrintTemplateElement`/
+      `PrintCompositor`/`PrintTemplateEditorWindow` in the Done section above.
+- [~] Screen & UI customization: start screen, buttons, backgrounds,
+      themes per event brand. Colors, an event logo, and the event/brand
+      name are admin-editable now -- see `BoothTheme` in the Done section
+      above. Per-screen backgrounds and start-screen/button customization
+      beyond color are still unbuilt.
 - [ ] Green screen / chroma key: real-time background replacement with
       custom digital backdrops.
 - [ ] Virtual attendant / mirror booth: guided video/audio prompts

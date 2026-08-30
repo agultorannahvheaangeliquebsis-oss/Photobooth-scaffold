@@ -8,10 +8,17 @@ namespace Photobooth.Core;
 /// </summary>
 public class MockPhotoBrandingService : IPhotoBrandingService
 {
-    public async Task<string> ApplyBrandingAsync(string photoPath, CancellationToken ct = default)
+    /// <summary>The studioName passed to the most recent ApplyBrandingAsync call --
+    /// lets Photobooth.ConsoleDemo prove a theme change actually reached branding,
+    /// not just that the code ran.</summary>
+    public string? LastStudioName { get; private set; }
+
+    public async Task<string> ApplyBrandingAsync(string photoPath, string studioName, CancellationToken ct = default)
     {
         // Real compositing takes a moment; simulate it.
         await Task.Delay(50, ct);
+
+        LastStudioName = studioName;
 
         string directory = Path.GetDirectoryName(photoPath) is { Length: > 0 } dir ? dir : ".";
         string outputPath = Path.Combine(directory, $"{Path.GetFileNameWithoutExtension(photoPath)}_branded{Path.GetExtension(photoPath)}");

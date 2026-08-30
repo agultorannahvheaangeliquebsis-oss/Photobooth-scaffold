@@ -13,6 +13,11 @@ namespace Photobooth.UI;
 /// overlays guests can pick during FramePicker). Reached from MainWindow
 /// via F12 (see Window_KeyDown there), never from the guest-facing surface.
 /// </summary>
+/// <summary>Flattened view of a GuestbookVideoRecord for GuestbookVideosList's
+/// bindings (Tag values need the raw FilePath/GuestbookVideoId, not just a
+/// display string, unlike RevenueList/InventoryList's plain-string rows).</summary>
+public record GuestbookVideoRow(int GuestbookVideoId, string FilePath, string Label);
+
 public partial class AdminWindow : Window
 {
     private readonly AdminDashboardRepository _repository = new();
@@ -26,6 +31,9 @@ public partial class AdminWindow : Window
     private int _locationId;
 
     private string? _pendingFrameImagePath;
+    private string? _pendingThemeLogoPath;
+    private string? _existingThemeLogoPath;
+    private PrintTemplate _currentPrintTemplate = PrintTemplate.Default;
 
     public AdminWindow()
     {
@@ -82,6 +90,107 @@ public partial class AdminWindow : Window
         }
     }
 
+    private void ThemeColorBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (sender is not TextBox box)
+        {
+            return;
+        }
+
+        Border? swatch = box.Name switch
+        {
+            nameof(AccentColorBox) => AccentColorSwatch,
+            nameof(CanvasColorBox) => CanvasColorSwatch,
+            nameof(InkColorBox) => InkColorSwatch,
+            _ => null,
+        };
+        if (swatch is null)
+        {
+            return;
+        }
+
+        try
+        {
+            swatch.Background = (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString(box.Text)!;
+        }
+        catch (Exception)
+        {
+            // Invalid/partial hex while typing -- leave the swatch showing
+            // whatever it last successfully parsed rather than crashing.
+        }
+    }
+
+    private void BrowseThemeLogoButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Filter = "Image files (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg",
+            Title = "Choose a logo image",
+        };
+        if (dialog.ShowDialog() == true)
+        {
+            _pendingThemeLogoPath = dialog.FileName;
+            SelectedThemeLogoText.Text = System.IO.Path.GetFileName(dialog.FileName);
+        }
+    }
+
+    private async void SaveThemeButton_Click(object sender, RoutedEventArgs e)
+    {
+        // A newly-picked logo gets copied into a local Assets/Theme folder,
+        // same "own local copy, not a reference to wherever the admin picked
+        // it from" reasoning AddFrameButton_Click already established --
+        // otherwise nothing not-yet-saved gets a path, so keep whatever
+        // logo is already on file.
+        string? logoPath = _existingThemeLogoPath;
+        if (_pendingThemeLogoPath is not null)
+        {
+            string themeDirectory = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "Theme");
+            System.IO.Directory.CreateDirectory(themeDirectory);
+            string storedFileName = $"{Guid.NewGuid():N}{System.IO.Path.GetExtension(_pendingThemeLogoPath)}";
+            logoPath = System.IO.Path.Combine(themeDirectory, storedFileName);
+            System.IO.File.Copy(_pendingThemeLogoPath, logoPath, overwrite: true);
+        }
+
+        var theme = new BoothTheme(AccentColorBox.Text, CanvasColorBox.Text, InkColorBox.Text, logoPath, EventNameBox.Text.Trim());
+        if (!theme.IsValid)
+        {
+            ThemeStatusText.Text = "Colors must be #RRGGBB hex, and the event name can't be blank.";
+            ThemeStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+            return;
+        }
+
+        SaveThemeButton.IsEnabled = false;
+        try
+        {
+            await _locations.UpdateThemeAsync(_locationId, theme);
+            _existingThemeLogoPath = logoPath;
+            _pendingThemeLogoPath = null;
+            ThemeStatusText.Text = "Saved -- takes effect for the next guest session.";
+            ThemeStatusText.Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush");
+        }
+        catch (Exception ex)
+        {
+            ThemeStatusText.Text = $"Couldn't save: {ex.Message}";
+            ThemeStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+        }
+        finally
+        {
+            SaveThemeButton.IsEnabled = true;
+        }
+    }
+
+    private async void EditPrintTemplateButton_Click(object sender, RoutedEventArgs e)
+    {
+        var editor = new PrintTemplateEditorWindow(_currentPrintTemplate, _locationId) { Owner = this };
+        if (editor.ShowDialog() == true)
+        {
+            // The editor already persisted the elements itself on Save --
+            // reload from source of truth same as the Frame section already
+            // does after add/delete, rather than trust the in-memory copy.
+            await LoadAsync();
+        }
+    }
+
     private async Task LoadAsync()
     {
         RefreshButton.IsEnabled = false;
@@ -117,14 +226,26 @@ public partial class AdminWindow : Window
                 CountdownSecondsBox.Text = locations[0].CountdownSeconds.ToString();
                 GlamFilterCheckBox.IsChecked = locations[0].GlamFilterEnabled;
 
-                PrintTemplate printTemplate = locations[0].PrintTemplate;
-                SingleLayoutRadio.IsChecked = printTemplate.Layout != "Strip";
-                StripLayoutRadio.IsChecked = printTemplate.Layout == "Strip";
-                PrintWidthBox.Text = printTemplate.WidthInches.ToString();
-                PrintHeightBox.Text = printTemplate.HeightInches.ToString();
-                StripCopiesBox.Text = printTemplate.StripCopies.ToString();
+                _currentPrintTemplate = locations[0].PrintTemplate;
+                SingleLayoutRadio.IsChecked = _currentPrintTemplate.Layout != "Strip";
+                StripLayoutRadio.IsChecked = _currentPrintTemplate.Layout == "Strip";
+                PrintWidthBox.Text = _currentPrintTemplate.WidthInches.ToString();
+                PrintHeightBox.Text = _currentPrintTemplate.HeightInches.ToString();
+                StripCopiesBox.Text = _currentPrintTemplate.StripCopies.ToString();
+
+                BoothTheme theme = locations[0].Theme;
+                AccentColorBox.Text = theme.AccentColorHex;
+                CanvasColorBox.Text = theme.CanvasColorHex;
+                InkColorBox.Text = theme.InkColorHex;
+                EventNameBox.Text = theme.EventName;
+                _existingThemeLogoPath = theme.LogoImagePath;
+                _pendingThemeLogoPath = null;
+                SelectedThemeLogoText.Text = theme.LogoImagePath is null
+                    ? "No logo selected."
+                    : System.IO.Path.GetFileName(theme.LogoImagePath);
 
                 await LoadFramesAsync();
+                await LoadGuestbookVideosAsync();
             }
         }
         catch (Exception ex)
@@ -134,6 +255,41 @@ public partial class AdminWindow : Window
         finally
         {
             RefreshButton.IsEnabled = true;
+        }
+    }
+
+    private async Task LoadGuestbookVideosAsync()
+    {
+        var videos = await _repository.GetRecentGuestbookVideosAsync();
+        GuestbookVideosList.ItemsSource = videos
+            .Select(v => new GuestbookVideoRow(
+                v.GuestbookVideoId, v.FilePath,
+                $"Session {v.SessionId} -- {v.DurationSeconds}s -- {v.RecordedAt:g}"))
+            .ToList();
+        GuestbookVideosEmptyText.Visibility = videos.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void OpenGuestbookVideoButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string filePath })
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(filePath) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Couldn't open the recording: {ex.Message}", "Focus & Snap -- admin", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+    }
+
+    private async void DeleteGuestbookVideoButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: int guestbookVideoId })
+        {
+            await _repository.DeleteGuestbookVideoAsync(guestbookVideoId);
+            await LoadGuestbookVideosAsync();
         }
     }
 

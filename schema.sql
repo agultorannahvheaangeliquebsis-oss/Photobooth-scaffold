@@ -13,6 +13,11 @@ CREATE TABLE Location (
     PrintWidthInches   DECIMAL(5,2) NOT NULL DEFAULT 4,    -- e.g. 4 for a 4x6, 2 for a 2x6 strip
     PrintHeightInches  DECIMAL(5,2) NOT NULL DEFAULT 6,
     PrintStripCopies   INT          NOT NULL DEFAULT 1,    -- how many times the photo repeats down a Strip layout
+    AccentColorHex     NVARCHAR(9)  NOT NULL DEFAULT '#365C58',  -- admin-editable, see AdminWindow's Theme section
+    CanvasColorHex     NVARCHAR(9)  NOT NULL DEFAULT '#F4F3F0',
+    InkColorHex        NVARCHAR(9)  NOT NULL DEFAULT '#202124',
+    LogoImagePath      NVARCHAR(500) NULL,
+    EventName          NVARCHAR(100) NOT NULL DEFAULT 'Focus & Snap',
     CreatedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
 );
 
@@ -118,6 +123,42 @@ CREATE TABLE Feedback (
     RecordedAt      DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
 );
 
+-- Guest video messages recorded during the Guestbook state (see
+-- BoothStateMachine, IVideoGuestbookService). Purely admin-reviewed --
+-- unlike the photo, a guestbook message isn't uploaded, QR'd, or printed,
+-- so there's no LastPhotoUrl-style column here, just where the file lives.
+CREATE TABLE GuestbookVideo (
+    GuestbookVideoId INT IDENTITY(1,1) PRIMARY KEY,
+    SessionId        INT             NOT NULL REFERENCES Session(SessionId),
+    FilePath         NVARCHAR(500)   NOT NULL,
+    DurationSeconds  INT             NOT NULL,
+    RecordedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
+-- Admin-placed logo/text overlays drawn on top of the photo at print time
+-- (see PrintTemplate.Elements, PrintCompositor, PrintTemplateEditorWindow).
+-- Booth-wide and admin-managed like Frame, not guest-facing per-session
+-- choices like FramePicker's frame art. Percent columns are cell-relative
+-- fractions (0-1), not absolute pixels/inches, so the same rows still make
+-- sense if the paper size later changes.
+CREATE TABLE PrintTemplateElement (
+    ElementId       INT IDENTITY(1,1) PRIMARY KEY,
+    LocationId      INT             NOT NULL REFERENCES Location(LocationId),
+    Kind            NVARCHAR(20)    NOT NULL CHECK (Kind IN ('Logo', 'Text')),
+    XPercent        DECIMAL(6,4)    NOT NULL,
+    YPercent        DECIMAL(6,4)    NOT NULL,
+    WidthPercent    DECIMAL(6,4)    NOT NULL,
+    HeightPercent   DECIMAL(6,4)    NOT NULL,
+    Text            NVARCHAR(200)   NULL,
+    ImagePath       NVARCHAR(500)   NULL,
+    FontFamily      NVARCHAR(100)   NULL,
+    FontSizePercent DECIMAL(6,4)    NULL,
+    Bold            BIT             NOT NULL DEFAULT 0,
+    ColorHex        NVARCHAR(9)     NULL,
+    SortOrder       INT             NOT NULL DEFAULT 0,
+    CreatedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
 -- Helpful indexes for the dashboard queries you'll write later
 CREATE INDEX IX_Session_Location_Mode ON Session(LocationId, Mode);
 CREATE INDEX IX_Print_Session ON [Print](SessionId);
@@ -126,3 +167,5 @@ CREATE INDEX IX_Consent_Session ON Consent(SessionId);
 CREATE INDEX IX_InventoryLog_Printer_LoggedAt ON InventoryLog(PrinterId, LoggedAt DESC);
 CREATE INDEX IX_Frame_Location_Active ON Frame(LocationId, IsActive, SortOrder);
 CREATE INDEX IX_Feedback_Session ON Feedback(SessionId);
+CREATE INDEX IX_GuestbookVideo_Session ON GuestbookVideo(SessionId);
+CREATE INDEX IX_PrintTemplateElement_Location ON PrintTemplateElement(LocationId, SortOrder);

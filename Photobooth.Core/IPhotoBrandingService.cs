@@ -10,5 +10,5 @@ namespace Photobooth.Core;
 public interface IPhotoBrandingService
 {
     /// <summary>Composites branding onto the photo and returns the path to the branded file (the original is left untouched).</summary>
-    Task<string> ApplyBrandingAsync(string photoPath, CancellationToken ct = default);
+    Task<string> ApplyBrandingAsync(string photoPath, string studioName, CancellationToken ct = default);
 }

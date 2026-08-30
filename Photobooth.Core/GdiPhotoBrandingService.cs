@@ -13,9 +13,7 @@ namespace Photobooth.Core;
 [SupportedOSPlatform("windows")]
 public class GdiPhotoBrandingService : IPhotoBrandingService
 {
-    private const string StudioName = "Focus & Snap";
-
-    public Task<string> ApplyBrandingAsync(string photoPath, CancellationToken ct = default)
+    public Task<string> ApplyBrandingAsync(string photoPath, string studioName, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
 
@@ -33,7 +31,7 @@ public class GdiPhotoBrandingService : IPhotoBrandingService
                 g.FillRectangle(Brushes.Black, 0, original.Height, original.Width, bannerHeight);
 
                 using var font = new Font("Segoe UI", bannerHeight * 0.4f, FontStyle.Bold);
-                string caption = $"{StudioName}  |  {DateTime.Now:MMM d, yyyy}";
+                string caption = $"{studioName}  |  {DateTime.Now:MMM d, yyyy}";
                 SizeF textSize = g.MeasureString(caption, font);
                 float textX = (original.Width - textSize.Width) / 2f;
                 float textY = original.Height + ((bannerHeight - textSize.Height) / 2f);

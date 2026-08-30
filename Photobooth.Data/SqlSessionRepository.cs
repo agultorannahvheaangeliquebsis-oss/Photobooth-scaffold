@@ -106,4 +106,16 @@ public class SqlSessionRepository : ISessionRepository
         command.Parameters.AddWithValue("@Comment", (object?)comment ?? DBNull.Value);
         await command.ExecuteNonQueryAsync(ct);
     }
+
+    public async Task RecordGuestbookVideoAsync(int sessionId, string filePath, TimeSpan duration, CancellationToken ct = default)
+    {
+        using var connection = await SqlConnectionFactory.OpenAsync(ct);
+        using var command = new SqlCommand(
+            "INSERT INTO GuestbookVideo (SessionId, FilePath, DurationSeconds) VALUES (@SessionId, @FilePath, @DurationSeconds);",
+            connection);
+        command.Parameters.AddWithValue("@SessionId", sessionId);
+        command.Parameters.AddWithValue("@FilePath", filePath);
+        command.Parameters.AddWithValue("@DurationSeconds", (int)duration.TotalSeconds);
+        await command.ExecuteNonQueryAsync(ct);
+    }
 }

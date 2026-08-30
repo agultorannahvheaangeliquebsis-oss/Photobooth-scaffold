@@ -114,6 +114,36 @@ public class PrintTemplateTests
         Assert.Equal(200, cells[1].Top);
         Assert.Equal(400, cells[2].Top);
     }
+
+    [Fact]
+    public void Elements_DefaultsToEmpty()
+    {
+        Assert.Empty(PrintTemplate.Default.Elements);
+    }
+
+    [Fact]
+    public void ComputeElementBounds_TranslatesPercentagesToPixelsWithinTheCell()
+    {
+        var template = PrintTemplate.Default;
+        var cell = new System.Drawing.Rectangle(0, 0, 100, 200);
+        var element = new PrintTemplateElement(PrintTemplateElementKind.Text, 0.1, 0.1, 0.5, 0.2, Text: "Hello");
+
+        System.Drawing.Rectangle bounds = template.ComputeElementBounds(cell, element);
+
+        Assert.Equal(new System.Drawing.Rectangle(10, 20, 50, 40), bounds);
+    }
+
+    [Fact]
+    public void ComputeElementBounds_OffsetCell_AddsTheCellsOwnOffset()
+    {
+        var template = PrintTemplate.Default;
+        var cell = new System.Drawing.Rectangle(50, 100, 200, 400);
+        var element = new PrintTemplateElement(PrintTemplateElementKind.Logo, 0.25, 0.5, 0.5, 0.25, ImagePath: "./logo.png");
+
+        System.Drawing.Rectangle bounds = template.ComputeElementBounds(cell, element);
+
+        Assert.Equal(new System.Drawing.Rectangle(50 + 50, 100 + 200, 100, 100), bounds);
+    }
 }
 
 public class MockCloudUploadServiceTests
@@ -150,7 +180,7 @@ public class MockPhotoBrandingServiceTests
         string originalPath = await camera.CaptureAsync();
         var branding = new MockPhotoBrandingService();
 
-        string brandedPath = await branding.ApplyBrandingAsync(originalPath);
+        string brandedPath = await branding.ApplyBrandingAsync(originalPath, "Focus & Snap");
 
         Assert.NotEqual(originalPath, brandedPath);
         Assert.Contains("_branded", brandedPath);

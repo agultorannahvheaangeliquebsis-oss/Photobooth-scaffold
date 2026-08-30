@@ -60,24 +60,11 @@ public class SpoolerPrinterService : IPrinterService
         }, ct);
     }
 
-    /// <summary>Draws the photo into each cell PrintTemplate.ComputeCellBounds hands back
-    /// -- one full-page cell for "Single", one per strip copy for "Strip" -- scaled to
-    /// fit and centered within its own cell.</summary>
-    private static void Draw(Image image, PrintPageEventArgs e, PrintTemplate template)
-    {
-        foreach (Rectangle cell in template.ComputeCellBounds(e.MarginBounds))
-        {
-            DrawScaledToFit(image, cell, e.Graphics!);
-        }
-    }
-
-    private static void DrawScaledToFit(Image image, Rectangle bounds, Graphics graphics)
-    {
-        double scale = Math.Min((double)bounds.Width / image.Width, (double)bounds.Height / image.Height);
-        int width = (int)(image.Width * scale);
-        int height = (int)(image.Height * scale);
-        int x = bounds.Left + (bounds.Width - width) / 2;
-        int y = bounds.Top + (bounds.Height - height) / 2;
-        graphics.DrawImage(image, x, y, width, height);
-    }
+    /// <summary>Draws the photo (plus any admin-placed logo/text elements) into each
+    /// cell PrintTemplate.ComputeCellBounds hands back -- one full-page cell for
+    /// "Single", one per strip copy for "Strip". Delegates to PrintCompositor, the
+    /// same code PrintTemplateEditorWindow's live preview calls, so what the admin
+    /// sees in the editor is provably what actually prints.</summary>
+    private static void Draw(Image image, PrintPageEventArgs e, PrintTemplate template) =>
+        PrintCompositor.DrawTemplate(image, template, e.MarginBounds, e.Graphics!);
 }

@@ -6,6 +6,7 @@ public record RevenueByMode(string Mode, decimal Revenue);
 public record InventoryAlert(int PrinterId, string Model, string ItemType, int QuantityRemaining);
 public record FeedbackSummary(double? AverageRating, int RatingCount);
 public record RecentFeedbackComment(int SessionId, string Comment, DateTime RecordedAt);
+public record GuestbookVideoRecord(int GuestbookVideoId, int SessionId, string FilePath, int DurationSeconds, DateTime RecordedAt);
 
 /// <summary>
 /// Read-only queries backing the admin dashboard: sessions today, revenue
@@ -118,5 +119,41 @@ public class AdminDashboardRepository
             results.Add(new RecentFeedbackComment(reader.GetInt32(0), reader.GetString(1), reader.GetDateTime(2)));
         }
         return results;
+    }
+
+    /// <summary>Most recent guestbook recordings, newest first -- see the Guestbook
+    /// section of AdminWindow, GuestbookVideoRepository's schema note on why these
+    /// aren't uploaded/QR'd/printed like the photo is.</summary>
+    public async Task<List<GuestbookVideoRecord>> GetRecentGuestbookVideosAsync(int limit = 20, CancellationToken ct = default)
+    {
+        using var connection = await SqlConnectionFactory.OpenAsync(ct);
+        using var command = new SqlCommand(
+            """
+            SELECT TOP (@Limit) GuestbookVideoId, SessionId, FilePath, DurationSeconds, RecordedAt
+            FROM GuestbookVideo
+            ORDER BY RecordedAt DESC;
+            """,
+            connection);
+        command.Parameters.AddWithValue("@Limit", limit);
+        using var reader = await command.ExecuteReaderAsync(ct);
+
+        var results = new List<GuestbookVideoRecord>();
+        while (await reader.ReadAsync(ct))
+        {
+            results.Add(new GuestbookVideoRecord(
+                reader.GetInt32(0), reader.GetInt32(1), reader.GetString(2), reader.GetInt32(3), reader.GetDateTime(4)));
+        }
+        return results;
+    }
+
+    /// <summary>Deletes one guestbook recording's row. Leaves the physical file on
+    /// disk (same "nothing deletes old print files either" precedent) -- this just
+    /// removes it from the admin's list.</summary>
+    public async Task DeleteGuestbookVideoAsync(int guestbookVideoId, CancellationToken ct = default)
+    {
+        using var connection = await SqlConnectionFactory.OpenAsync(ct);
+        using var command = new SqlCommand("DELETE FROM GuestbookVideo WHERE GuestbookVideoId = @Id;", connection);
+        command.Parameters.AddWithValue("@Id", guestbookVideoId);
+        await command.ExecuteNonQueryAsync(ct);
     }
 }

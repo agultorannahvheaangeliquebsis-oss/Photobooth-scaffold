@@ -16,6 +16,8 @@ public partial class MainWindow : Window
     private ILiveViewService _liveView = null!;
     private UiFrameSelectionService _frameSelection = null!;
     private UiFeedbackService _feedback = null!;
+    private UiGuestbookPromptService _guestbookPrompt = null!;
+    private IBoothSettingsProvider _settingsProvider = null!;
     private int _selectedFeedbackRating;
     private readonly DispatcherTimer _liveViewTimer;
     private bool _sessionRunning;
@@ -78,6 +80,14 @@ public partial class MainWindow : Window
             _feedback = new UiFeedbackService();
             _feedback.FeedbackRequested += () => Dispatcher.Invoke(ShowFeedbackPrompt);
 
+            // Real, not mocked, same reasoning as _frameSelection/_feedback
+            // above for the ask/stop taps -- IVideoGuestbookService (the
+            // actual ffmpeg-backed capture) is the part still unverified
+            // against real hardware, not this UI handoff.
+            _guestbookPrompt = new UiGuestbookPromptService();
+            _guestbookPrompt.RecordDecisionRequested += () => Dispatcher.Invoke(ShowGuestbookAskPrompt);
+            _guestbookPrompt.StopRequested += () => Dispatcher.Invoke(ShowGuestbookRecordingPrompt);
+
             var services = new BoothServices(
                 Camera: new PtpCameraService(),
                 Printer: new SpoolerPrinterService(),
@@ -93,7 +103,10 @@ public partial class MainWindow : Window
                 FrameLibrary: new SqlFrameLibraryService(seedIds.LocationId),
                 FrameSelection: _frameSelection,
                 FrameOverlay: new GdiFrameOverlayService(),
-                Feedback: _feedback);
+                Feedback: _feedback,
+                GuestbookPrompt: _guestbookPrompt,
+                VideoGuestbook: new FfmpegVideoGuestbookService());
+            _settingsProvider = services.Settings;
             _stateMachine = new BoothStateMachine(services, mode: seedIds.LocationType);
         }
         catch (Exception ex)
@@ -105,6 +118,16 @@ public partial class MainWindow : Window
             return;
         }
         _stateMachine.StateChanged += state => Dispatcher.Invoke(() => ShowState(state));
+        _stateMachine.StateChanged += state =>
+        {
+            // Re-read/re-apply only at Idle -- same "next guest, no restart"
+            // semantics every other setting already has. A theme change
+            // saved mid-session won't repaint until the booth returns here.
+            if (state == BoothState.Idle)
+            {
+                _ = ApplyThemeAsync();
+            }
+        };
         _stateMachine.CountdownTick += number => Dispatcher.Invoke(() => CountdownNumber.Text = number.ToString());
         _stateMachine.ErrorOccurred += message => Dispatcher.Invoke(() => ErrorMessage.Text = message);
         _stateMachine.PhotoUploaded += url => Dispatcher.Invoke(() => LoadQrCode(url));
@@ -122,6 +145,59 @@ public partial class MainWindow : Window
         _liveViewTimer.Tick += async (_, _) => await PollLiveViewFrameAsync();
 
         ShowState(_stateMachine.CurrentState);
+        _ = ApplyThemeAsync();
+    }
+
+    /// <summary>Reads the current BoothTheme and repaints the window's colors,
+    /// title, brand name, and logo. Called once at startup and again every time
+    /// the machine returns to Idle, so an admin's saved theme change reaches the
+    /// very next guest without an app restart.</summary>
+    private async Task ApplyThemeAsync()
+    {
+        BoothSettings settings;
+        try
+        {
+            settings = await _settingsProvider.GetSettingsAsync();
+        }
+        catch (Exception)
+        {
+            // Best-effort: a failed settings read shouldn't crash the idle
+            // screen -- it just keeps whatever theme was last applied.
+            return;
+        }
+
+        BoothTheme theme = settings.Theme;
+
+        // Every screen binds these via {StaticResource ...}, which resolves
+        // to a direct reference to the brush object at XAML load time --
+        // replacing the dictionary entry wouldn't repaint anything already
+        // on screen. Mutating the existing (unfrozen) SolidColorBrush's
+        // Color in place does, since every StaticResource reference shares
+        // that same object.
+        SetBrushColor("AccentBrush", theme.AccentColorHex);
+        SetBrushColor("CanvasBrush", theme.CanvasColorHex);
+        SetBrushColor("InkBrush", theme.InkColorHex);
+
+        Title = theme.EventName;
+        BrandNameText.Text = theme.EventName.ToUpperInvariant();
+
+        if (theme.LogoImagePath is string logoPath && System.IO.File.Exists(logoPath))
+        {
+            BrandLogoImage.Source = new BitmapImage(new Uri(System.IO.Path.GetFullPath(logoPath)));
+            BrandLogoImage.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            BrandLogoImage.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private static void SetBrushColor(string resourceKey, string colorHex)
+    {
+        if (Application.Current.Resources[resourceKey] is SolidColorBrush brush)
+        {
+            brush.Color = (Color)ColorConverter.ConvertFromString(colorHex);
+        }
     }
 
     private void Surface_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -167,6 +243,7 @@ public partial class MainWindow : Window
         PaymentView.Visibility = state == BoothState.Payment ? Visibility.Visible : Visibility.Collapsed;
         PrintingView.Visibility = state == BoothState.Printing ? Visibility.Visible : Visibility.Collapsed;
         CompleteView.Visibility = state == BoothState.Complete ? Visibility.Visible : Visibility.Collapsed;
+        GuestbookView.Visibility = state == BoothState.Guestbook ? Visibility.Visible : Visibility.Collapsed;
         FeedbackView.Visibility = state == BoothState.Feedback ? Visibility.Visible : Visibility.Collapsed;
         ErrorView.Visibility = state == BoothState.Error ? Visibility.Visible : Visibility.Collapsed;
 
@@ -199,10 +276,44 @@ public partial class MainWindow : Window
             LoadCapturedImage(_stateMachine.LastCapturedImagePath);
         }
 
-        bool qrEligibleScreen = state == BoothState.Printing || state == BoothState.Complete || state == BoothState.Feedback;
+        bool qrEligibleScreen = state == BoothState.Printing || state == BoothState.Complete
+            || state == BoothState.Guestbook || state == BoothState.Feedback;
         QrPanel.Visibility = qrEligibleScreen && _stateMachine.LastPhotoUrl != null
             ? Visibility.Visible
             : Visibility.Collapsed;
+    }
+
+    /// <summary>Resets GuestbookView to its "ask" sub-panel, called when
+    /// UiGuestbookPromptService raises RecordDecisionRequested (i.e. right as
+    /// BoothStateMachine enters Guestbook and starts waiting for a tap).</summary>
+    private void ShowGuestbookAskPrompt()
+    {
+        GuestbookAskView.Visibility = Visibility.Visible;
+        GuestbookRecordingView.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>Switches GuestbookView to its "recording" sub-panel, called when
+    /// UiGuestbookPromptService raises StopRequested (i.e. right as the guest said
+    /// yes and BoothStateMachine starts waiting for a Stop tap).</summary>
+    private void ShowGuestbookRecordingPrompt()
+    {
+        GuestbookAskView.Visibility = Visibility.Collapsed;
+        GuestbookRecordingView.Visibility = Visibility.Visible;
+    }
+
+    private void RecordGuestbookMessageButton_Click(object sender, RoutedEventArgs e)
+    {
+        _guestbookPrompt.SubmitRecordDecision(true);
+    }
+
+    private void SkipGuestbookMessageButton_Click(object sender, RoutedEventArgs e)
+    {
+        _guestbookPrompt.SubmitRecordDecision(false);
+    }
+
+    private void StopGuestbookRecordingButton_Click(object sender, RoutedEventArgs e)
+    {
+        _guestbookPrompt.SubmitStop();
     }
 
     /// <summary>Populates FramePickerView with one button per active frame plus a

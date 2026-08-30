@@ -19,7 +19,7 @@ public class GdiPhotoBrandingServiceTests
         string originalPath = await camera.CaptureAsync();
         var branding = new GdiPhotoBrandingService();
 
-        string brandedPath = await branding.ApplyBrandingAsync(originalPath);
+        string brandedPath = await branding.ApplyBrandingAsync(originalPath, "Focus & Snap");
 
         Assert.NotEqual(originalPath, brandedPath);
         Assert.True(File.Exists(brandedPath));
@@ -42,7 +42,7 @@ public class GdiPhotoBrandingServiceTests
         string originalPath = await camera.CaptureAsync();
         var branding = new GdiPhotoBrandingService();
 
-        string brandedPath = await branding.ApplyBrandingAsync(originalPath);
+        string brandedPath = await branding.ApplyBrandingAsync(originalPath, "Focus & Snap");
 
         int originalHeight, originalWidth;
         using (var originalImage = Image.FromFile(originalPath))

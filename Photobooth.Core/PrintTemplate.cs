@@ -14,6 +14,13 @@ public record PrintTemplate(string Layout, double WidthInches, double HeightInch
 {
     public static readonly PrintTemplate Default = new("Single", WidthInches: 4, HeightInches: 6, StripCopies: 1);
 
+    /// <summary>Admin-placed logo/text overlays, drawn on top of the photo in every
+    /// cell (see PrintCompositor.DrawTemplate). An init-only property outside the
+    /// primary constructor, not a 5th positional parameter -- same reasoning
+    /// BoothSettings.Theme uses -- so every existing `new PrintTemplate(...)` call
+    /// site keeps compiling unchanged with an empty element list.</summary>
+    public IReadOnlyList<PrintTemplateElement> Elements { get; init; } = Array.Empty<PrintTemplateElement>();
+
     public bool IsValid =>
         (Layout == "Single" || Layout == "Strip")
         && WidthInches > 0 && HeightInches > 0
@@ -43,4 +50,14 @@ public record PrintTemplate(string Layout, double WidthInches, double HeightInch
         }
         return cells;
     }
+
+    /// <summary>Translates one element's cell-relative percentages into actual pixel
+    /// bounds within a given cell -- pure geometry, same unit-testability as
+    /// ComputeCellBounds, so the percent math can be verified without a real
+    /// printer or GDI+.</summary>
+    public Rectangle ComputeElementBounds(Rectangle cellBounds, PrintTemplateElement element) => new(
+        cellBounds.Left + (int)(element.XPercent * cellBounds.Width),
+        cellBounds.Top + (int)(element.YPercent * cellBounds.Height),
+        (int)(element.WidthPercent * cellBounds.Width),
+        (int)(element.HeightPercent * cellBounds.Height));
 }

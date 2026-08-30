@@ -23,23 +23,47 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
         using var connection = await SqlConnectionFactory.OpenAsync(ct);
         using var command = new SqlCommand(
             """
-            SELECT CountdownSeconds, GlamFilterEnabled, PrintLayout, PrintWidthInches, PrintHeightInches, PrintStripCopies
+            SELECT CountdownSeconds, GlamFilterEnabled, PrintLayout, PrintWidthInches, PrintHeightInches, PrintStripCopies,
+                   AccentColorHex, CanvasColorHex, InkColorHex, LogoImagePath, EventName
             FROM Location WHERE LocationId = @LocationId;
             """,
             connection);
         command.Parameters.AddWithValue("@LocationId", _locationId);
 
-        using var reader = await command.ExecuteReaderAsync(ct);
-        if (!await reader.ReadAsync(ct))
+        int countdownSeconds;
+        bool glamFilterEnabled;
+        var printTemplate = default(PrintTemplate)!;
+        var theme = default(BoothTheme)!;
+        using (var reader = await command.ExecuteReaderAsync(ct))
         {
-            throw new InvalidOperationException($"Location {_locationId} not found -- can't read booth settings.");
+            if (!await reader.ReadAsync(ct))
+            {
+                throw new InvalidOperationException($"Location {_locationId} not found -- can't read booth settings.");
+            }
+
+            countdownSeconds = reader.GetInt32(0);
+            glamFilterEnabled = reader.GetBoolean(1);
+            printTemplate = new PrintTemplate(
+                reader.GetString(2),
+                (double)reader.GetDecimal(3),
+                (double)reader.GetDecimal(4),
+                reader.GetInt32(5));
+            theme = new BoothTheme(
+                reader.GetString(6),
+                reader.GetString(7),
+                reader.GetString(8),
+                reader.IsDBNull(9) ? null : reader.GetString(9),
+                reader.GetString(10));
         }
 
-        var printTemplate = new PrintTemplate(
-            reader.GetString(2),
-            (double)reader.GetDecimal(3),
-            (double)reader.GetDecimal(4),
-            reader.GetInt32(5));
-        return new BoothSettings(reader.GetInt32(0), reader.GetBoolean(1), printTemplate);
+        // A separate connection (not this method's `connection` above), so
+        // this can only run once the reader above has finished either way --
+        // fetched after, not interleaved with, the Location row read.
+        printTemplate = printTemplate with
+        {
+            Elements = await new PrintTemplateElementRepository().GetAllByLocationAsync(_locationId, ct),
+        };
+
+        return new BoothSettings(countdownSeconds, glamFilterEnabled, printTemplate) { Theme = theme };
     }
 }

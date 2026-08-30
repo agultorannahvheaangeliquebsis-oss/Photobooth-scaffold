@@ -18,7 +18,7 @@ public class BoothStateMachineTests
         var branding = new MockPhotoBrandingService();
         var filter = new MockPhotoFilterService();
         var settings = new MockBoothSettingsProvider();
-        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService());
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService());
         var machine = new BoothStateMachine(services, mode: "event");
 
         var states = new List<BoothState>();
@@ -30,7 +30,7 @@ public class BoothStateMachineTests
             new[]
             {
                 BoothState.Consent, BoothState.Countdown, BoothState.Capturing, BoothState.Reviewing,
-                BoothState.Printing, BoothState.Complete, BoothState.Feedback, BoothState.Idle,
+                BoothState.Printing, BoothState.Complete, BoothState.Guestbook, BoothState.Feedback, BoothState.Idle,
             },
             states);
         Assert.Equal(BoothState.Idle, machine.CurrentState);
@@ -101,7 +101,7 @@ public class BoothStateMachineTests
         var filter = new MockPhotoFilterService();
         var settings = new MockBoothSettingsProvider();
         var feedbackService = new MockFeedbackService { SkipNext = true };
-        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), feedbackService);
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), feedbackService, new MockGuestbookPromptService(), new MockVideoGuestbookService());
         var machine = new BoothStateMachine(services, mode: "event");
 
         var states = new List<BoothState>();
@@ -130,7 +130,7 @@ public class BoothStateMachineTests
         var branding = new MockPhotoBrandingService();
         var filter = new MockPhotoFilterService();
         var settings = new MockBoothSettingsProvider { Settings = new BoothSettings(CountdownSeconds: 3, GlamFilterEnabled: true, PrintTemplate: PrintTemplate.Default) };
-        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService());
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService());
         var machine = new BoothStateMachine(services, mode: "event");
 
         await machine.RunSessionAsync();
@@ -157,7 +157,7 @@ public class BoothStateMachineTests
         var branding = new MockPhotoBrandingService();
         var filter = new MockPhotoFilterService();
         var settings = new MockBoothSettingsProvider { Settings = new BoothSettings(CountdownSeconds: 5, GlamFilterEnabled: false, PrintTemplate: PrintTemplate.Default) };
-        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService());
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService());
         var machine = new BoothStateMachine(services, mode: "event");
 
         var countdownTicks = new List<int>();
@@ -186,7 +186,7 @@ public class BoothStateMachineTests
         var filter = new MockPhotoFilterService();
         var stripTemplate = new PrintTemplate("Strip", WidthInches: 2, HeightInches: 6, StripCopies: 2);
         var settings = new MockBoothSettingsProvider { Settings = new BoothSettings(CountdownSeconds: 3, GlamFilterEnabled: false, PrintTemplate: stripTemplate) };
-        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService());
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService());
         var machine = new BoothStateMachine(services, mode: "event");
 
         await machine.RunSessionAsync();
@@ -212,7 +212,7 @@ public class BoothStateMachineTests
         var branding = new MockPhotoBrandingService();
         var filter = new MockPhotoFilterService();
         var settings = new MockBoothSettingsProvider();
-        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService());
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService());
         var machine = new BoothStateMachine(services, mode: "event");
 
         await machine.RunSessionAsync();
@@ -235,7 +235,7 @@ public class BoothStateMachineTests
         var branding = new MockPhotoBrandingService();
         var filter = new MockPhotoFilterService();
         var settings = new MockBoothSettingsProvider();
-        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService());
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService());
         var machine = new BoothStateMachine(services, mode: "event");
 
         var states = new List<BoothState>();
@@ -280,7 +280,7 @@ public class BoothStateMachineTests
         var branding = new MockPhotoBrandingService();
         var filter = new MockPhotoFilterService();
         var settings = new MockBoothSettingsProvider();
-        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService());
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService());
         var machine = new BoothStateMachine(services, mode: "event");
 
         string? error = null;
@@ -318,7 +318,7 @@ public class BoothStateMachineTests
         var branding = new MockPhotoBrandingService();
         var filter = new MockPhotoFilterService();
         var settings = new MockBoothSettingsProvider();
-        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService());
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService());
         var machine = new BoothStateMachine(services, mode: "vendo");
 
         var states = new List<BoothState>();
@@ -330,7 +330,7 @@ public class BoothStateMachineTests
             new[]
             {
                 BoothState.Consent, BoothState.Countdown, BoothState.Capturing, BoothState.Reviewing,
-                BoothState.Payment, BoothState.Printing, BoothState.Complete, BoothState.Feedback, BoothState.Idle,
+                BoothState.Payment, BoothState.Printing, BoothState.Complete, BoothState.Guestbook, BoothState.Feedback, BoothState.Idle,
             },
             states);
         Assert.NotNull(machine.PaymentQrPng);
@@ -358,7 +358,7 @@ public class BoothStateMachineTests
         var branding = new MockPhotoBrandingService();
         var filter = new MockPhotoFilterService();
         var settings = new MockBoothSettingsProvider();
-        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService());
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService());
         var machine = new BoothStateMachine(services, mode: "vendo");
 
         await machine.RunSessionAsync();
@@ -388,7 +388,7 @@ public class BoothStateMachineTests
         var branding = new MockPhotoBrandingService();
         var filter = new MockPhotoFilterService();
         var settings = new MockBoothSettingsProvider();
-        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService());
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService());
         var machine = new BoothStateMachine(services, mode: "vendo");
 
         string? error = null;
@@ -428,7 +428,7 @@ public class BoothStateMachineTests
         var branding = new MockPhotoBrandingService();
         var filter = new MockPhotoFilterService();
         var settings = new MockBoothSettingsProvider();
-        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService());
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService());
         var machine = new BoothStateMachine(services, mode: "event");
 
         await machine.RunSessionAsync();
@@ -462,7 +462,7 @@ public class BoothStateMachineTests
         var branding = new MockPhotoBrandingService();
         var filter = new MockPhotoFilterService();
         var settings = new MockBoothSettingsProvider();
-        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService());
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService());
         var machine = new BoothStateMachine(services, mode: "vendo");
 
         await machine.RunSessionAsync();
@@ -487,7 +487,7 @@ public class BoothStateMachineTests
             new MockConsentService(), email, new MockPhotoBrandingService(),
             new MockPhotoFilterService(), new MockBoothSettingsProvider(),
             new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(),
-            new MockFeedbackService());
+            new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService());
         var machine = new BoothStateMachine(services);
 
         await machine.RetryQueuedUploadsAsync();
@@ -520,7 +520,7 @@ public class BoothStateMachineTests
             new MockConsentService(), email, new MockPhotoBrandingService(),
             new MockPhotoFilterService(), new MockBoothSettingsProvider(),
             new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(),
-            new MockFeedbackService());
+            new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService());
         var machine = new BoothStateMachine(services);
 
         Task first = machine.RetryQueuedUploadsAsync();
@@ -551,7 +551,7 @@ public class BoothStateMachineTests
             new MockConsentService(), email, new MockPhotoBrandingService(),
             new MockPhotoFilterService(), new MockBoothSettingsProvider(),
             new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(),
-            new MockFeedbackService());
+            new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService());
         var firstMachine = new BoothStateMachine(services, mode: "event");
         var secondMachine = new BoothStateMachine(services, mode: "vendo");
 
@@ -574,7 +574,7 @@ public class BoothStateMachineTests
             new MockConsentService(), email, new MockPhotoBrandingService(),
             new MockPhotoFilterService(), new MockBoothSettingsProvider(),
             new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(),
-            new MockFeedbackService());
+            new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService());
         var machine = new BoothStateMachine(services);
 
         await machine.RetryQueuedUploadsAsync();
@@ -595,7 +595,7 @@ public class BoothStateMachineTests
             new MockConsentService(), new MockEmailDeliveryService(), new MockPhotoBrandingService(),
             new MockPhotoFilterService(), new MockBoothSettingsProvider(),
             new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(),
-            new MockFeedbackService());
+            new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService());
         var machine = new BoothStateMachine(services);
 
         await machine.RetryQueuedUploadsAsync();
@@ -621,7 +621,7 @@ public class BoothStateMachineTests
         var frameLibrary = new MockFrameLibraryService { Frames = new List<FrameOption> { new(1, "Gold Border", "./frames/gold.png") } };
         var frameSelection = new MockFrameSelectionService();
         var frameOverlay = new MockFrameOverlayService();
-        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, frameLibrary, frameSelection, frameOverlay, new MockFeedbackService());
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, frameLibrary, frameSelection, frameOverlay, new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService());
         var machine = new BoothStateMachine(services, mode: "event");
 
         var states = new List<BoothState>();
@@ -665,7 +665,7 @@ public class BoothStateMachineTests
         var frameLibrary = new MockFrameLibraryService { Frames = new List<FrameOption> { new(1, "Gold Border", "./frames/gold.png") } };
         var frameSelection = new MockFrameSelectionService { SkipNext = true };
         var frameOverlay = new MockFrameOverlayService();
-        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, frameLibrary, frameSelection, frameOverlay, new MockFeedbackService());
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, frameLibrary, frameSelection, frameOverlay, new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService());
         var machine = new BoothStateMachine(services, mode: "event");
 
         var states = new List<BoothState>();
@@ -699,7 +699,7 @@ public class BoothStateMachineTests
         var frameLibrary = new MockFrameLibraryService();
         var frameSelection = new MockFrameSelectionService();
         var frameOverlay = new MockFrameOverlayService();
-        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, frameLibrary, frameSelection, frameOverlay, new MockFeedbackService());
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, frameLibrary, frameSelection, frameOverlay, new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService());
         var machine = new BoothStateMachine(services, mode: "event");
 
         var states = new List<BoothState>();
@@ -709,5 +709,105 @@ public class BoothStateMachineTests
 
         Assert.DoesNotContain(BoothState.FramePicker, states);
         Assert.Null(machine.LastSelectedFrame);
+    }
+
+    [Fact]
+    public async Task RunSessionAsync_GuestRecordsAGuestbookMessage_RecordsAVideoRow()
+    {
+        var camera = new MockCameraService();
+        var printer = new MockPrinterService();
+        var cloudUpload = new MockCloudUploadService();
+        var paymentService = new MockQrPaymentService();
+        var sessions = new MockSessionRepository();
+        var uploadQueue = new MockPendingUploadQueue();
+        var consent = new MockConsentService();
+        var email = new MockEmailDeliveryService();
+        var branding = new MockPhotoBrandingService();
+        var filter = new MockPhotoFilterService();
+        var settings = new MockBoothSettingsProvider();
+        var guestbookPrompt = new MockGuestbookPromptService();
+        var videoGuestbook = new MockVideoGuestbookService();
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), guestbookPrompt, videoGuestbook);
+        var machine = new BoothStateMachine(services, mode: "event");
+
+        var states = new List<BoothState>();
+        machine.StateChanged += state => states.Add(state);
+
+        await machine.RunSessionAsync();
+
+        Assert.Contains(BoothState.Guestbook, states);
+        // Guestbook comes after Complete (the print/upload/payment are all
+        // already settled) and before Feedback.
+        Assert.True(states.IndexOf(BoothState.Complete) < states.IndexOf(BoothState.Guestbook));
+        Assert.True(states.IndexOf(BoothState.Guestbook) < states.IndexOf(BoothState.Feedback));
+
+        var video = Assert.Single(sessions.RecordedGuestbookVideos);
+        Assert.Equal(Assert.Single(sessions.CreatedSessions).SessionId, video.SessionId);
+        Assert.True(video.Duration >= TimeSpan.Zero);
+    }
+
+    [Fact]
+    public async Task RunSessionAsync_GuestDeclinesTheGuestbookPrompt_RecordsNoVideoRow()
+    {
+        var camera = new MockCameraService();
+        var printer = new MockPrinterService();
+        var cloudUpload = new MockCloudUploadService();
+        var paymentService = new MockQrPaymentService();
+        var sessions = new MockSessionRepository();
+        var uploadQueue = new MockPendingUploadQueue();
+        var consent = new MockConsentService();
+        var email = new MockEmailDeliveryService();
+        var branding = new MockPhotoBrandingService();
+        var filter = new MockPhotoFilterService();
+        var settings = new MockBoothSettingsProvider();
+        var guestbookPrompt = new MockGuestbookPromptService { SkipNext = true };
+        var videoGuestbook = new MockVideoGuestbookService();
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), guestbookPrompt, videoGuestbook);
+        var machine = new BoothStateMachine(services, mode: "event");
+
+        var states = new List<BoothState>();
+        machine.StateChanged += state => states.Add(state);
+
+        await machine.RunSessionAsync();
+
+        // The Guestbook state still shows -- the guest just declined, same
+        // "state runs either way, recording is conditional" shape Feedback's
+        // skip path already established.
+        Assert.Contains(BoothState.Guestbook, states);
+        Assert.Empty(sessions.RecordedGuestbookVideos);
+    }
+
+    [Fact]
+    public async Task RunSessionAsync_GuestbookRecordingFails_SessionStillCompletesNormally()
+    {
+        var camera = new MockCameraService();
+        var printer = new MockPrinterService();
+        var cloudUpload = new MockCloudUploadService();
+        var paymentService = new MockQrPaymentService();
+        var sessions = new MockSessionRepository();
+        var uploadQueue = new MockPendingUploadQueue();
+        var consent = new MockConsentService();
+        var email = new MockEmailDeliveryService();
+        var branding = new MockPhotoBrandingService();
+        var filter = new MockPhotoFilterService();
+        var settings = new MockBoothSettingsProvider();
+        var guestbookPrompt = new MockGuestbookPromptService();
+        var videoGuestbook = new MockVideoGuestbookService { FailNextStart = true };
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), guestbookPrompt, videoGuestbook);
+        var machine = new BoothStateMachine(services, mode: "event");
+
+        var states = new List<BoothState>();
+        machine.StateChanged += state => states.Add(state);
+
+        await machine.RunSessionAsync();
+
+        // A guestbook capture failure is wrapped in its own try/catch, same
+        // as Feedback -- the session (already printed and paid for) should
+        // never turn into an Error just because the optional guestbook
+        // message failed to record.
+        Assert.DoesNotContain(BoothState.Error, states);
+        Assert.Equal(BoothState.Idle, machine.CurrentState);
+        Assert.Empty(sessions.RecordedGuestbookVideos);
+        Assert.Contains(BoothState.Feedback, states);
     }
 }

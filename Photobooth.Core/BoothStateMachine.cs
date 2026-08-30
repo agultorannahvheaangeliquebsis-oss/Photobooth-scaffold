@@ -127,7 +127,7 @@ public class BoothStateMachine
             // Reviewing screen, the print, and the upload should all show
             // the guest exactly the same (branded) photo, not three
             // different versions depending on which step ran first.
-            LastCapturedImagePath = await _services.Branding.ApplyBrandingAsync(LastCapturedImagePath, ct);
+            LastCapturedImagePath = await _services.Branding.ApplyBrandingAsync(LastCapturedImagePath, settings.Theme.EventName, ct);
 
             SetState(BoothState.Reviewing);
             await Task.Delay(2000, ct); // guest sees the shot before it prints
@@ -191,6 +191,36 @@ public class BoothStateMachine
             SetState(BoothState.Complete);
             await _services.Sessions.CompleteAsync(sessionId.Value, ct);
             await Task.Delay(1500, ct); // "thank you" screen dwell time
+
+            // Best-effort, wrapped in its own try/catch, same reasoning as
+            // the Feedback block right below: a guest who walks away without
+            // tapping anything should never turn an already-completed
+            // session into an Error one.
+            try
+            {
+                SetState(BoothState.Guestbook);
+                if (await _services.GuestbookPrompt.AskToRecordAsync(ct))
+                {
+                    await _services.VideoGuestbook.StartRecordingAsync(ct);
+                    try
+                    {
+                        // Guest taps Stop, or a 60s safety-net timeout elapses --
+                        // ffmpeg should never be left recording indefinitely
+                        // because a guest walked away without tapping anything.
+                        await Task.WhenAny(
+                            _services.GuestbookPrompt.WaitForStopAsync(ct),
+                            Task.Delay(TimeSpan.FromSeconds(60), ct));
+                    }
+                    finally
+                    {
+                        GuestbookRecording recording = await _services.VideoGuestbook.StopRecordingAsync(ct);
+                        await _services.Sessions.RecordGuestbookVideoAsync(sessionId.Value, recording.FilePath, recording.Duration, ct);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
 
             // Best-effort, wrapped in its own try/catch: a guest who walks
             // away without tapping anything, or any other failure collecting

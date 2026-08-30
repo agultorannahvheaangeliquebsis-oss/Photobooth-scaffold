@@ -26,4 +26,6 @@ public record BoothServices(
     IFrameLibraryService FrameLibrary,
     IFrameSelectionService FrameSelection,
     IFrameOverlayService FrameOverlay,
-    IFeedbackService Feedback);
+    IFeedbackService Feedback,
+    IGuestbookPromptService GuestbookPrompt,
+    IVideoGuestbookService VideoGuestbook);
