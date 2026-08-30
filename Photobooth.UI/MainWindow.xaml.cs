@@ -212,6 +212,23 @@ public partial class MainWindow : Window
         catch
         {
             // Swallow -- same reasoning as the exePath-not-found case above.
+            return;
+        }
+
+        // The bridge doesn't start listening on its pipe until after it
+        // finishes scanning for a camera (DSLR pass, then a webcam fallback
+        // pass -- see Program.cs), which can take a few seconds. Without this
+        // wait, the window shows and is tappable before that finishes, so an
+        // attendant/guest who taps Start immediately hits "is the bridge
+        // process running?" even though the bridge comes up moments later --
+        // confirmed by reproducing that exact race against a real run. Block
+        // here, before the window is shown, same reasoning as the
+        // DatabaseInitializer wait above -- an extra few seconds once at
+        // startup beats a confusing false error on the guest's first tap.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
+        while (!PtpCameraService.IsBridgeHostRunning() && DateTime.UtcNow < deadline)
+        {
+            Thread.Sleep(250);
         }
     }
 
