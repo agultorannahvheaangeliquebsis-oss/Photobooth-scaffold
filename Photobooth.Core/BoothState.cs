@@ -15,5 +15,6 @@ public enum BoothState
     Payment,
     Printing,
     Complete,
+    Feedback,
     Error
 }

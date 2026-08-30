@@ -165,6 +165,9 @@ Location ──< Session >── Print
 - [x] Print template editor (`PrintTemplate`) — admin-configurable paper
       size and Single/Strip layout, fed into `SpoolerPrinterService`. See
       "Print template editor" below.
+- [x] General feedback surveys (`IFeedbackService`) — a post-session star
+      rating and optional comment, plus an admin dashboard summary. See
+      "General feedback surveys" below.
 
 ## Running it
 
@@ -740,7 +743,7 @@ booth to a 2x6/2-copy strip via `MockBoothSettingsProvider` and confirms
 `MockPrinterService.PrintedTemplates` received that exact template, not
 `PrintTemplate.Default` — the actual thing this feature needed to prove.
 `dotnet test` — **75 passed, 0 failed**, run twice in a row clean.
-Verified via `Photobooth.ConsoleDemo`: a new session 11 switches to a 2x6
+Verified via `Photobooth.ConsoleDemo`: a new session 9 switches to a 2x6
 strip mid-run (same "simulate an admin saving a change" pattern as session
 8) and prints `Printed with: PrintTemplate { Layout = Strip, WidthInches =
 2, HeightInches = 6, StripCopies = 2, IsValid = True }` — the printer
@@ -751,6 +754,69 @@ verified against — same class of gap, different cause) or a physical
 sheet actually coming out at the configured size — that needs the real
 printer, which is why this was picked up instead of finishing the Day 7
 hardware buffer.
+
+## General feedback surveys
+
+A post-session rating/comment prompt — the other unbuilt half of "Surveys
+& data collection" (the liability disclaimer and email opt-in half was
+already done, see "Liability disclaimer & email opt-in" below). Picked up
+next since the camera and printer were both still unavailable, and it's
+fully code/test-verifiable without either.
+
+- **`FeedbackResult`** (`Photobooth.Core`) — `record FeedbackResult(int?
+  Rating, string? Comment)`, plus `IsEmpty` (true when the guest gave
+  neither). `BoothState.Feedback` is a new state shown right after
+  `Complete`'s "thank you" dwell, before the machine returns to `Idle`.
+- **`IFeedbackService`** — same interface-plus-mock seam as everything
+  else. Unlike `IConsentService`/`IPaymentService` (both still mock-only,
+  since a real disclaimer/gateway needs external integration), a star
+  rating and a comment box is just button taps and text input with no
+  hardware or network dependency — same reasoning that made
+  `IFrameSelectionService` a real, WPF-backed implementation instead of
+  just a mock, so `UiFeedbackService` is too (same `TaskCompletionSource`
+  handoff pattern as `UiFrameSelectionService`).
+- Collecting feedback is wrapped in its own `try`/`catch` in
+  `BoothStateMachine`, separate from the rest of the session: a guest who
+  walks away without tapping anything, or any other failure here, should
+  never turn an already-completed session (photo captured, paid for if
+  vendo, printed) into an `Error` one.
+- **`Feedback`** table in `schema.sql` (`Rating` 1-5 nullable, `Comment`
+  nullable). A row is only ever inserted when at least one of the two is
+  non-null — a guest who skips entirely leaves no row at all, not a row
+  full of nulls. `DatabaseInitializer` picks this up automatically on a
+  fresh database; an already-seeded one gets it via another
+  `CREATE TABLE` top-up, same pattern as `Consent`/`Frame` before it.
+- `AdminDashboardRepository` gained `GetFeedbackSummaryAsync` (average
+  rating + how many guests actually left one) and `GetRecentCommentsAsync`
+  — collecting feedback and never reading it back would repeat the exact
+  "data collected and then never used" gap already caught and fixed once
+  for email opt-in, so `AdminWindow`'s dashboard section shows both
+  alongside sessions/revenue/inventory.
+- `MainWindow`'s new `FeedbackView`: five star buttons (☆/★, tap to set
+  the rating), an optional comment box, and Submit/Skip — the QR panel
+  now also shows during `Feedback` (it previously stopped after
+  `Complete`), so a guest still has the code to scan while rating their
+  experience.
+
+Verified via `Photobooth.Tests` — 5 new tests: `MockFeedbackServiceTests`/
+`UiFeedbackServiceTests` cover both implementations directly (default
+5-star/no-comment, skip-then-reset, the real `TaskCompletionSource`
+handoff not completing until `SubmitFeedback` is called); a
+`BoothStateMachineTests` case confirms the happy path's recorded feedback
+matches what `MockFeedbackService` returned (rating 5, no comment), and a
+new skip case confirms the `Feedback` state still shows but no `Feedback`
+row gets written when the guest gives nothing. `dotnet test` — **80
+passed, 0 failed**, run twice in a row clean. Verified via
+`Photobooth.ConsoleDemo`: session 12 (a guest leaves a 4-star rating and a
+comment) prints `Feedback recorded: 4 stars -- "Loved the frames, printer
+was a little slow."`; session 13 (guest skips) prints `Feedback recorded
+this session: False` — confirming the empty-skip case leaves no row, not
+just that the code ran. Final summary: 9 feedback records across 10
+completed sessions (session 13's skip is the one gap). **Not yet
+verified:** the real SQL path (no LocalDB in this environment, same gap
+as the print template editor above) or `FeedbackView`/the dashboard's new
+section actually rendering — same interactive-desktop gap as the rest of
+this project's WPF screens.
 
 ## Frame library & guest frame picker
 

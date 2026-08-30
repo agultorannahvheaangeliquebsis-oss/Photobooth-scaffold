@@ -94,6 +94,16 @@ public partial class AdminWindow : Window
             RevenueList.ItemsSource = revenue.Select(r => $"{r.Mode}: {r.Revenue:C}").ToList();
             RevenueEmptyText.Visibility = revenue.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
+            FeedbackSummary feedbackSummary = await _repository.GetFeedbackSummaryAsync();
+            FeedbackAverageText.Text = feedbackSummary.RatingCount == 0
+                ? "No ratings yet."
+                : $"{feedbackSummary.AverageRating:0.0} / 5 ({feedbackSummary.RatingCount} rating{(feedbackSummary.RatingCount == 1 ? "" : "s")})";
+
+            var recentComments = await _repository.GetRecentCommentsAsync();
+            FeedbackCommentsList.ItemsSource = recentComments
+                .Select(c => $"“{c.Comment}” — session {c.SessionId}")
+                .ToList();
+
             var alerts = await _repository.GetLowInventoryAlertsAsync();
             InventoryList.ItemsSource = alerts
                 .Select(a => $"{a.Model} -- {a.ItemType}: {a.QuantityRemaining} remaining")

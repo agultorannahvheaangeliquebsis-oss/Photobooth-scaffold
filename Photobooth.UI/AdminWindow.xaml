@@ -49,6 +49,17 @@
                 <TextBlock x:Name="RevenueEmptyText" Text="No paid sessions yet." Style="{StaticResource Row}"
                            Foreground="{StaticResource MutedBrush}" Visibility="Collapsed" />
 
+                <TextBlock Text="Guest feedback" Style="{StaticResource SectionHeader}" />
+                <TextBlock x:Name="FeedbackAverageText" Text="Loading..." Style="{StaticResource Row}" />
+                <ItemsControl x:Name="FeedbackCommentsList" Margin="0,6,0,0">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Style="{StaticResource Row}" TextWrapping="Wrap"
+                                       Text="{Binding}" Margin="0,2" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
                 <TextBlock Text="Low inventory alerts" Style="{StaticResource SectionHeader}" />
                 <ItemsControl x:Name="InventoryList">
                     <ItemsControl.ItemTemplate>

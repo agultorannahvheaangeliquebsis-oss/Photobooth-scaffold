@@ -61,6 +61,34 @@ public static class DatabaseInitializer
         await EnsureBoothSettingsColumnsAsync(connection, ct);
         await EnsureFrameTableAsync(connection, ct);
         await EnsurePrintTemplateColumnsAsync(connection, ct);
+        await EnsureFeedbackTableAsync(connection, ct);
+    }
+
+    /// <summary>Same reasoning as EnsureConsentTableAsync, for the Feedback table added
+    /// after this check was originally written.</summary>
+    private static async Task EnsureFeedbackTableAsync(SqlConnection connection, CancellationToken ct)
+    {
+        using (var checkCommand = new SqlCommand("SELECT 1 FROM sys.tables WHERE name = 'Feedback';", connection))
+        {
+            if (await checkCommand.ExecuteScalarAsync(ct) is not null)
+            {
+                return;
+            }
+        }
+
+        using var createCommand = new SqlCommand(
+            """
+            CREATE TABLE Feedback (
+                FeedbackId      INT IDENTITY(1,1) PRIMARY KEY,
+                SessionId       INT             NOT NULL REFERENCES Session(SessionId),
+                Rating          INT             NULL CHECK (Rating BETWEEN 1 AND 5),
+                Comment         NVARCHAR(1000)  NULL,
+                RecordedAt      DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
+            );
+            CREATE INDEX IX_Feedback_Session ON Feedback(SessionId);
+            """,
+            connection);
+        await createCommand.ExecuteNonQueryAsync(ct);
     }
 
     /// <summary>Same reasoning as EnsureBoothSettingsColumnsAsync, for the four

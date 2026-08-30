@@ -4,6 +4,8 @@ namespace Photobooth.Data;
 
 public record RevenueByMode(string Mode, decimal Revenue);
 public record InventoryAlert(int PrinterId, string Model, string ItemType, int QuantityRemaining);
+public record FeedbackSummary(double? AverageRating, int RatingCount);
+public record RecentFeedbackComment(int SessionId, string Comment, DateTime RecordedAt);
 
 /// <summary>
 /// Read-only queries backing the admin dashboard: sessions today, revenue
@@ -73,6 +75,47 @@ public class AdminDashboardRepository
                 reader.GetString(1),
                 reader.GetString(2),
                 reader.GetInt32(3)));
+        }
+        return results;
+    }
+
+    /// <summary>Average rating and how many guests actually left one -- Rating is
+    /// nullable in Feedback (a guest can leave a comment with no rating, or vice
+    /// versa), so AVG/COUNT here only ever see the rows that have one.</summary>
+    public async Task<FeedbackSummary> GetFeedbackSummaryAsync(CancellationToken ct = default)
+    {
+        using var connection = await SqlConnectionFactory.OpenAsync(ct);
+        using var command = new SqlCommand(
+            "SELECT AVG(CAST(Rating AS FLOAT)), COUNT(Rating) FROM Feedback WHERE Rating IS NOT NULL;",
+            connection);
+        using var reader = await command.ExecuteReaderAsync(ct);
+        await reader.ReadAsync(ct);
+
+        return new FeedbackSummary(
+            reader.IsDBNull(0) ? null : reader.GetDouble(0),
+            reader.GetInt32(1));
+    }
+
+    /// <summary>Most recent guest comments, newest first -- gives an admin something to
+    /// actually read, not just an average number.</summary>
+    public async Task<List<RecentFeedbackComment>> GetRecentCommentsAsync(int limit = 5, CancellationToken ct = default)
+    {
+        using var connection = await SqlConnectionFactory.OpenAsync(ct);
+        using var command = new SqlCommand(
+            """
+            SELECT TOP (@Limit) SessionId, Comment, RecordedAt
+            FROM Feedback
+            WHERE Comment IS NOT NULL
+            ORDER BY RecordedAt DESC;
+            """,
+            connection);
+        command.Parameters.AddWithValue("@Limit", limit);
+        using var reader = await command.ExecuteReaderAsync(ct);
+
+        var results = new List<RecentFeedbackComment>();
+        while (await reader.ReadAsync(ct))
+        {
+            results.Add(new RecentFeedbackComment(reader.GetInt32(0), reader.GetString(1), reader.GetDateTime(2)));
         }
         return results;
     }

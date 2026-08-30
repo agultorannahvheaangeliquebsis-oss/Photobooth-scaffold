@@ -29,4 +29,7 @@ public interface ISessionRepository
 
     /// <summary>Inserts a Consent row recording the disclaimer/email-opt-in outcome for this session, whether accepted or declined.</summary>
     Task RecordConsentAsync(int sessionId, bool disclaimerAccepted, bool emailOptIn, string? email, CancellationToken ct = default);
+
+    /// <summary>Inserts a Feedback row for this session's rating/comment. Only called when at least one of the two is non-null -- see BoothStateMachine's Feedback state.</summary>
+    Task RecordFeedbackAsync(int sessionId, int? rating, string? comment, CancellationToken ct = default);
 }

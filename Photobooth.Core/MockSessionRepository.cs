@@ -16,6 +16,7 @@ public class MockSessionRepository : ISessionRepository
     public List<(int SessionId, string FilePath)> RecordedPrints { get; } = new();
     public List<(int SessionId, decimal Amount, string Method)> RecordedPayments { get; } = new();
     public List<(int SessionId, bool DisclaimerAccepted, bool EmailOptIn, string? Email)> RecordedConsents { get; } = new();
+    public List<(int SessionId, int? Rating, string? Comment)> RecordedFeedback { get; } = new();
 
     public Task<int> CreateAsync(string mode, CancellationToken ct = default)
     {
@@ -57,6 +58,12 @@ public class MockSessionRepository : ISessionRepository
     public Task RecordConsentAsync(int sessionId, bool disclaimerAccepted, bool emailOptIn, string? email, CancellationToken ct = default)
     {
         RecordedConsents.Add((sessionId, disclaimerAccepted, emailOptIn, email));
+        return Task.CompletedTask;
+    }
+
+    public Task RecordFeedbackAsync(int sessionId, int? rating, string? comment, CancellationToken ct = default)
+    {
+        RecordedFeedback.Add((sessionId, rating, comment));
         return Task.CompletedTask;
     }
 }

@@ -302,6 +302,70 @@ public class UiFrameSelectionServiceTests
     }
 }
 
+public class MockFeedbackServiceTests
+{
+    [Fact]
+    public async Task CollectAsync_DefaultsToAFiveStarRatingWithNoComment()
+    {
+        var feedback = new MockFeedbackService();
+
+        FeedbackResult result = await feedback.CollectAsync();
+
+        Assert.Equal(5, result.Rating);
+        Assert.Null(result.Comment);
+        Assert.False(result.IsEmpty);
+    }
+
+    [Fact]
+    public async Task CollectAsync_WhenSkipNextSet_ReturnsEmptyResultOnceThenResets()
+    {
+        var feedback = new MockFeedbackService { SkipNext = true };
+
+        FeedbackResult skipped = await feedback.CollectAsync();
+        Assert.True(skipped.IsEmpty);
+        Assert.False(feedback.SkipNext);
+
+        FeedbackResult next = await feedback.CollectAsync();
+        Assert.False(next.IsEmpty);
+    }
+}
+
+public class UiFeedbackServiceTests
+{
+    [Fact]
+    public async Task CollectAsync_RaisesFeedbackRequestedAndCompletesOnceSubmitFeedbackIsCalled()
+    {
+        var feedback = new UiFeedbackService();
+        bool requested = false;
+        feedback.FeedbackRequested += () => requested = true;
+
+        Task<FeedbackResult> pending = feedback.CollectAsync();
+
+        // CollectAsync shouldn't complete on its own -- it's waiting on a
+        // guest tap, simulated here via SubmitFeedback.
+        Assert.False(pending.IsCompleted);
+        Assert.True(requested);
+
+        feedback.SubmitFeedback(new FeedbackResult(4, "Great booth!"));
+
+        FeedbackResult result = await pending;
+        Assert.Equal(4, result.Rating);
+        Assert.Equal("Great booth!", result.Comment);
+    }
+
+    [Fact]
+    public async Task CollectAsync_SubmitFeedbackWithEmptyResult_MeansGuestSkipped()
+    {
+        var feedback = new UiFeedbackService();
+
+        Task<FeedbackResult> pending = feedback.CollectAsync();
+        feedback.SubmitFeedback(new FeedbackResult(null, null));
+
+        FeedbackResult result = await pending;
+        Assert.True(result.IsEmpty);
+    }
+}
+
 public class MockConsentServiceTests
 {
     [Fact]

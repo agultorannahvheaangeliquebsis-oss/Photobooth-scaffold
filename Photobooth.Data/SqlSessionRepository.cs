@@ -94,4 +94,16 @@ public class SqlSessionRepository : ISessionRepository
         command.Parameters.AddWithValue("@Email", (object?)email ?? DBNull.Value);
         await command.ExecuteNonQueryAsync(ct);
     }
+
+    public async Task RecordFeedbackAsync(int sessionId, int? rating, string? comment, CancellationToken ct = default)
+    {
+        using var connection = await SqlConnectionFactory.OpenAsync(ct);
+        using var command = new SqlCommand(
+            "INSERT INTO Feedback (SessionId, Rating, Comment) VALUES (@SessionId, @Rating, @Comment);",
+            connection);
+        command.Parameters.AddWithValue("@SessionId", sessionId);
+        command.Parameters.AddWithValue("@Rating", (object?)rating ?? DBNull.Value);
+        command.Parameters.AddWithValue("@Comment", (object?)comment ?? DBNull.Value);
+        await command.ExecuteNonQueryAsync(ct);
+    }
 }

@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -14,6 +15,8 @@ public partial class MainWindow : Window
     private BoothStateMachine _stateMachine = null!;
     private ILiveViewService _liveView = null!;
     private UiFrameSelectionService _frameSelection = null!;
+    private UiFeedbackService _feedback = null!;
+    private int _selectedFeedbackRating;
     private readonly DispatcherTimer _liveViewTimer;
     private bool _sessionRunning;
     private bool _liveViewFetchInProgress;
@@ -69,6 +72,12 @@ public partial class MainWindow : Window
             _frameSelection = new UiFrameSelectionService();
             _frameSelection.SelectionRequested += options => Dispatcher.Invoke(() => ShowFrameOptions(options));
 
+            // Real, not mocked, same reasoning as _frameSelection above -- a
+            // star rating and a comment box is just button taps and text
+            // input, no external gateway to integrate.
+            _feedback = new UiFeedbackService();
+            _feedback.FeedbackRequested += () => Dispatcher.Invoke(ShowFeedbackPrompt);
+
             var services = new BoothServices(
                 Camera: new PtpCameraService(),
                 Printer: new SpoolerPrinterService(),
@@ -83,7 +92,8 @@ public partial class MainWindow : Window
                 Settings: new SqlBoothSettingsProvider(seedIds.LocationId),
                 FrameLibrary: new SqlFrameLibraryService(seedIds.LocationId),
                 FrameSelection: _frameSelection,
-                FrameOverlay: new GdiFrameOverlayService());
+                FrameOverlay: new GdiFrameOverlayService(),
+                Feedback: _feedback);
             _stateMachine = new BoothStateMachine(services, mode: seedIds.LocationType);
         }
         catch (Exception ex)
@@ -157,6 +167,7 @@ public partial class MainWindow : Window
         PaymentView.Visibility = state == BoothState.Payment ? Visibility.Visible : Visibility.Collapsed;
         PrintingView.Visibility = state == BoothState.Printing ? Visibility.Visible : Visibility.Collapsed;
         CompleteView.Visibility = state == BoothState.Complete ? Visibility.Visible : Visibility.Collapsed;
+        FeedbackView.Visibility = state == BoothState.Feedback ? Visibility.Visible : Visibility.Collapsed;
         ErrorView.Visibility = state == BoothState.Error ? Visibility.Visible : Visibility.Collapsed;
 
         if (state == BoothState.Payment)
@@ -188,7 +199,7 @@ public partial class MainWindow : Window
             LoadCapturedImage(_stateMachine.LastCapturedImagePath);
         }
 
-        bool qrEligibleScreen = state == BoothState.Printing || state == BoothState.Complete;
+        bool qrEligibleScreen = state == BoothState.Printing || state == BoothState.Complete || state == BoothState.Feedback;
         QrPanel.Visibility = qrEligibleScreen && _stateMachine.LastPhotoUrl != null
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -231,11 +242,53 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>Resets FeedbackView's star buttons and comment box, called when
+    /// UiFeedbackService raises FeedbackRequested (i.e. right as BoothStateMachine
+    /// enters Feedback and starts waiting for a tap).</summary>
+    private void ShowFeedbackPrompt()
+    {
+        _selectedFeedbackRating = 0;
+        FeedbackCommentBox.Text = string.Empty;
+        UpdateStarButtons();
+    }
+
+    private void StarButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string tag } && int.TryParse(tag, out int rating))
+        {
+            _selectedFeedbackRating = rating;
+            UpdateStarButtons();
+        }
+    }
+
+    private void UpdateStarButtons()
+    {
+        foreach (Button star in FeedbackStarsPanel.Children.OfType<Button>())
+        {
+            if (star.Tag is string tag && int.TryParse(tag, out int rating))
+            {
+                star.Content = rating <= _selectedFeedbackRating ? "★" : "☆"; // filled / outline star
+            }
+        }
+    }
+
+    private void SubmitFeedbackButton_Click(object sender, RoutedEventArgs e)
+    {
+        int? rating = _selectedFeedbackRating > 0 ? _selectedFeedbackRating : null;
+        string? comment = string.IsNullOrWhiteSpace(FeedbackCommentBox.Text) ? null : FeedbackCommentBox.Text.Trim();
+        _feedback.SubmitFeedback(new FeedbackResult(rating, comment));
+    }
+
+    private void SkipFeedbackButton_Click(object sender, RoutedEventArgs e)
+    {
+        _feedback.SubmitFeedback(new FeedbackResult(null, null));
+    }
+
     private void LoadQrCode(Uri photoUrl)
     {
         QrCodeImage.Source = LoadImage(QrCodeGenerator.GeneratePng(photoUrl.ToString()));
 
-        bool qrEligibleScreen = _stateMachine.CurrentState == BoothState.Printing || _stateMachine.CurrentState == BoothState.Complete;
+        bool qrEligibleScreen = _stateMachine.CurrentState == BoothState.Printing || _stateMachine.CurrentState == BoothState.Complete || _stateMachine.CurrentState == BoothState.Feedback;
         QrPanel.Visibility = qrEligibleScreen ? Visibility.Visible : Visibility.Collapsed;
     }
 

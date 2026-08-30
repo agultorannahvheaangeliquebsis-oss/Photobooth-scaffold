@@ -1028,7 +1028,7 @@ Status as of 2026-08-30.
   rather than `PrintTemplate.Default` -- the actual thing this feature
   needed to prove, not just that the code compiles. `dotnet test` -- **75
   passed, 0 failed**, run twice in a row clean.
-- Verified via `Photobooth.ConsoleDemo`: new session 11 switches to a 2x6
+- Verified via `Photobooth.ConsoleDemo`: new session 9 switches to a 2x6
   strip mid-run (same "simulate an admin saving a change" pattern session
   8 already established) and prints `Printed with: PrintTemplate { Layout
   = Strip, WidthInches = 2, HeightInches = 6, StripCopies = 2, IsValid =
@@ -1043,6 +1043,75 @@ Status as of 2026-08-30.
   the configured size/layout -- needs the real printer, which is why this
   feature was picked up instead of Day 7's hardware buffer in the first
   place.
+
+**Extra, not in the original plan -- general feedback surveys**
+- Camera and printer are still unavailable, so picked up the other unbuilt
+  half of "Surveys & data collection" next -- the liability disclaimer and
+  email opt-in half was already done (`IConsentService`); a post-session
+  rating/comment prompt was the piece still marked unbuilt on the roadmap.
+- New `FeedbackResult` record (`Photobooth.Core`): `Rating` (1-5, nullable)
+  and `Comment` (nullable), plus `IsEmpty` for "guest gave neither." New
+  `BoothState.Feedback`, shown right after `Complete`'s "thank you" dwell,
+  before the machine returns to `Idle`.
+- `IFeedbackService` -- same interface-plus-mock seam as everything else.
+  Unlike `IConsentService`/`IPaymentService` (still mock-only, since a real
+  disclaimer/gateway needs external integration), a star rating and a
+  comment box is just button taps and text input with no hardware or
+  network dependency -- same reasoning that made `IFrameSelectionService`
+  a real implementation rather than a mock, so `UiFeedbackService` is too
+  (same `TaskCompletionSource` handoff `UiFrameSelectionService` already
+  established).
+- Collecting feedback is wrapped in its own `try`/`catch` in
+  `RunSessionAsync`, deliberately separate from the rest of the session --
+  a guest who walks away without tapping anything (a real risk here,
+  more so than at Consent/Payment/FramePicker, since this is the very
+  last screen before the booth is free for the next guest) should never
+  turn an already-completed session into an `Error` one. Flagging, not
+  fixing: no timeout auto-skips a guest who never responds -- consistent
+  with every other interactive gate in this project (Consent, Payment,
+  FramePicker), none of which have one either, but worth calling out
+  since this is the state where a stuck guest costs the *next* guest the
+  most.
+- New `Feedback` table in `schema.sql` (`Rating` 1-5 nullable, `Comment`
+  nullable). A row is only ever inserted when at least one of the two is
+  non-null -- a guest who skips entirely leaves no row, not a row full of
+  nulls. `DatabaseInitializer` got another top-up migration
+  (`EnsureFeedbackTableAsync`, same pattern as `Consent`'s/`Frame`'s
+  before it).
+- `ISessionRepository.RecordFeedbackAsync` -- both `MockSessionRepository`
+  and `SqlSessionRepository` implement it, same shape as
+  `RecordConsentAsync`.
+- `AdminDashboardRepository` gained `GetFeedbackSummaryAsync` (average
+  rating + how many guests actually rated) and `GetRecentCommentsAsync` --
+  collecting feedback and never reading it back would repeat the exact
+  "data collected and then never used" gap already caught and fixed once
+  for email opt-in (see that entry above), so `AdminWindow`'s dashboard
+  section shows both alongside sessions/revenue/inventory.
+- `MainWindow` gained `FeedbackView`: five star buttons (☆ tap to fill up
+  to ★), an optional comment box, and Submit/Skip. The QR panel's eligible
+  screens now include `Feedback`, not just `Printing`/`Complete` -- it
+  previously disappeared the moment `Complete`'s dwell ended, before this
+  state existed, so a guest still has the code to scan while rating.
+- Verified via `Photobooth.Tests`: 5 new tests. `MockFeedbackServiceTests`/
+  `UiFeedbackServiceTests` cover both implementations directly (default
+  5-star/no-comment, skip-then-reset, the real `TaskCompletionSource`
+  handoff not completing until `SubmitFeedback` fires); the happy-path
+  `BoothStateMachineTests` case extended to assert the recorded feedback
+  matches `MockFeedbackService`'s default (5 stars, no comment); a new
+  skip case confirms the `Feedback` state still shows but no `Feedback`
+  row gets written when the guest gives nothing at all. `dotnet test` --
+  **80 passed, 0 failed**, run twice in a row clean.
+- Verified via `Photobooth.ConsoleDemo`: session 12 (4-star rating plus a
+  comment) prints `Feedback recorded: 4 stars -- "Loved the frames,
+  printer was a little slow."`; session 13 (guest skips) prints `Feedback
+  recorded this session: False` -- confirming the empty-skip path actually
+  leaves no row, not just that the code ran without throwing. Final
+  summary: 9 feedback records across 10 completed sessions (session 13's
+  skip is the one gap, exactly as expected).
+- **Not yet verified:** the real SQL path -- no LocalDB in this
+  environment, same gap as the print template editor above -- or
+  `FeedbackView`/the dashboard's new section actually rendering, same
+  interactive-desktop gap as every other WPF screen in this project.
 
 ## Remaining
 
@@ -1102,8 +1171,9 @@ and unscheduled until there's a week to plan around it.
 - [ ] Live view & camera control: shutter speed, aperture, ISO, live
       preview alignment from the software UI.
 - [x] Surveys & data collection: email opt-in and liability disclaimer
-      prompts — done, see `IConsentService`/`Consent` table in the Done
-      section above. General feedback collection is still unbuilt.
+      prompts, plus general feedback (star rating + comment) — done, see
+      `IConsentService`/`Consent` and `IFeedbackService`/`Feedback` in the
+      Done section above.
 - [~] Cashless payments: card reader / digital payment integration
       (extends the `IPaymentService` seam from Day 6). Partly done —
       `MockCardReaderPaymentService` proves the seam generalizes beyond

@@ -191,6 +191,24 @@ public class BoothStateMachine
             SetState(BoothState.Complete);
             await _services.Sessions.CompleteAsync(sessionId.Value, ct);
             await Task.Delay(1500, ct); // "thank you" screen dwell time
+
+            // Best-effort, wrapped in its own try/catch: a guest who walks
+            // away without tapping anything, or any other failure collecting
+            // feedback, should never turn an already-completed session into
+            // an Error one -- the photo's already been captured, paid for
+            // (if vendo), and printed by this point.
+            try
+            {
+                SetState(BoothState.Feedback);
+                FeedbackResult feedback = await _services.Feedback.CollectAsync(ct);
+                if (!feedback.IsEmpty)
+                {
+                    await _services.Sessions.RecordFeedbackAsync(sessionId.Value, feedback.Rating, feedback.Comment, ct);
+                }
+            }
+            catch (Exception)
+            {
+            }
         }
         catch (Exception ex)
         {

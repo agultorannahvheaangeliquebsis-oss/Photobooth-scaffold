@@ -25,4 +25,5 @@ public record BoothServices(
     IBoothSettingsProvider Settings,
     IFrameLibraryService FrameLibrary,
     IFrameSelectionService FrameSelection,
-    IFrameOverlayService FrameOverlay);
+    IFrameOverlayService FrameOverlay,
+    IFeedbackService Feedback);

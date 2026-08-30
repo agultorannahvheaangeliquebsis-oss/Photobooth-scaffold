@@ -14,6 +14,7 @@ var settings = new MockBoothSettingsProvider();
 var frameLibrary = new MockFrameLibraryService();
 var frameSelection = new MockFrameSelectionService();
 var frameOverlay = new MockFrameOverlayService();
+var feedback = new MockFeedbackService();
 int emailsPrinted = 0;
 void PrintNewEmails(MockEmailDeliveryService service)
 {
@@ -24,7 +25,7 @@ void PrintNewEmails(MockEmailDeliveryService service)
     }
 }
 
-var services = new BoothServices(camera, printer, cloudUpload, sessions, payment, uploadQueue, consent, email, branding, filter, settings, frameLibrary, frameSelection, frameOverlay);
+var services = new BoothServices(camera, printer, cloudUpload, sessions, payment, uploadQueue, consent, email, branding, filter, settings, frameLibrary, frameSelection, frameOverlay, feedback);
 var eventMachine = new BoothStateMachine(services, mode: "event");
 
 eventMachine.StateChanged += state => Console.WriteLine($"  [STATE]     {state}");
@@ -135,7 +136,7 @@ Console.WriteLine();
 // AdminWindow's Settings section) -- switching to a 2x6 strip here proves
 // IPrinterService actually receives the current template, not just a
 // hardcoded 4x6.
-Console.WriteLine("--- Session 11 (event, admin switches to a 2x6 strip template) ---");
+Console.WriteLine("--- Session 9 (event, admin switches to a 2x6 strip template) ---");
 Console.WriteLine("  (simulating an admin switching the print layout from the default single 4x6)");
 settings.Settings = settings.Settings with { PrintTemplate = new PrintTemplate("Strip", WidthInches: 2, HeightInches: 6, StripCopies: 2) };
 await eventMachine.RunSessionAsync();
@@ -146,7 +147,7 @@ Console.WriteLine();
 // Frame library is admin-managed and off by default (an empty Frame table,
 // same as this MockFrameLibraryService's default) -- simulating an admin
 // adding two frames here, same as flipping settings.Settings above.
-Console.WriteLine("--- Session 9 (event, frame library has two frames) ---");
+Console.WriteLine("--- Session 10 (event, frame library has two frames) ---");
 Console.WriteLine("  (simulating an admin adding frame overlays -- guest picks the first one)");
 frameLibrary.Frames = new List<FrameOption>
 {
@@ -159,11 +160,31 @@ Console.WriteLine($"  Final photo path: {eventMachine.LastCapturedImagePath}");
 PrintNewEmails(email);
 Console.WriteLine();
 
-Console.WriteLine("--- Session 10 (event, guest skips the frame) ---");
+Console.WriteLine("--- Session 11 (event, guest skips the frame) ---");
 frameSelection.SkipNext = true;
 await eventMachine.RunSessionAsync();
 Console.WriteLine($"  Frame picked: {eventMachine.LastSelectedFrame?.Name ?? "(none)"}");
 Console.WriteLine($"  Final photo path: {eventMachine.LastCapturedImagePath}");
+PrintNewEmails(email);
+Console.WriteLine();
+
+// General feedback survey -- MockFeedbackService defaults to a 5-star
+// rating with no comment, so simulate a guest leaving a comment too.
+Console.WriteLine("--- Session 12 (event, guest leaves a 4-star rating and a comment) ---");
+feedback.SimulateRating = 4;
+feedback.SimulateComment = "Loved the frames, printer was a little slow.";
+await eventMachine.RunSessionAsync();
+var lastFeedback = sessions.RecordedFeedback[^1];
+Console.WriteLine($"  Feedback recorded: {lastFeedback.Rating} stars -- \"{lastFeedback.Comment}\"");
+PrintNewEmails(email);
+Console.WriteLine();
+
+Console.WriteLine("--- Session 13 (event, guest skips feedback entirely) ---");
+feedback.SkipNext = true;
+int feedbackCountBefore = sessions.RecordedFeedback.Count;
+await eventMachine.RunSessionAsync();
+Console.WriteLine($"  Feedback recorded this session: {sessions.RecordedFeedback.Count > feedbackCountBefore} " +
+    "(false is correct -- an empty skip leaves no Feedback row)");
 PrintNewEmails(email);
 Console.WriteLine();
 
@@ -172,7 +193,8 @@ Console.WriteLine($"Sessions recorded: {sessions.CreatedSessions.Count} " +
     $"({sessions.CompletedSessionIds.Count} completed, {sessions.FailedSessionIds.Count} failed, " +
     $"{sessions.AbandonedSessionIds.Count} abandoned), " +
     $"{sessions.RecordedPrints.Count} prints, {sessions.RecordedPayments.Count} payments, " +
-    $"{sessions.RecordedConsents.Count} consent records, {email.SentEmails.Count} emails sent.");
+    $"{sessions.RecordedConsents.Count} consent records, {sessions.RecordedFeedback.Count} feedback records, " +
+    $"{email.SentEmails.Count} emails sent.");
 foreach (var p in sessions.RecordedPayments)
 {
     Console.WriteLine($"  Payment: session {p.SessionId}, {p.Amount:C}, {p.Method}");

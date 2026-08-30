@@ -103,6 +103,21 @@ CREATE TABLE Frame (
     CreatedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
 );
 
+-- General guest feedback (rating/comment), shown right after Complete (see
+-- BoothStateMachine's Feedback state, IFeedbackService). Both columns are
+-- nullable and a row is only ever inserted when at least one is non-null --
+-- a guest who skips entirely leaves no row, same "nothing worth recording"
+-- reasoning a declined Consent doesn't stop its own row (Consent always
+-- needs the DisclaimerAccepted outcome either way; Feedback has nothing
+-- mandatory to record at all).
+CREATE TABLE Feedback (
+    FeedbackId      INT IDENTITY(1,1) PRIMARY KEY,
+    SessionId       INT             NOT NULL REFERENCES Session(SessionId),
+    Rating          INT             NULL CHECK (Rating BETWEEN 1 AND 5),
+    Comment         NVARCHAR(1000)  NULL,
+    RecordedAt      DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
 -- Helpful indexes for the dashboard queries you'll write later
 CREATE INDEX IX_Session_Location_Mode ON Session(LocationId, Mode);
 CREATE INDEX IX_Print_Session ON [Print](SessionId);
@@ -110,3 +125,4 @@ CREATE INDEX IX_Payment_Session ON Payment(SessionId);
 CREATE INDEX IX_Consent_Session ON Consent(SessionId);
 CREATE INDEX IX_InventoryLog_Printer_LoggedAt ON InventoryLog(PrinterId, LoggedAt DESC);
 CREATE INDEX IX_Frame_Location_Active ON Frame(LocationId, IsActive, SortOrder);
+CREATE INDEX IX_Feedback_Session ON Feedback(SessionId);
