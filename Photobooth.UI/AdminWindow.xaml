@@ -1,0 +1,86 @@
+<Window x:Class="Photobooth.UI.AdminWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Admin Dashboard"
+        Background="{StaticResource CanvasBrush}"
+        WindowStartupLocation="CenterOwner"
+        Width="480"
+        Height="680">
+    <Window.Resources>
+        <Style x:Key="SectionHeader" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="Margin" Value="0,20,0,8" />
+        </Style>
+        <Style x:Key="Row" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="Margin" Value="0,2" />
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="ADMIN DASHBOARD" FontSize="13" FontWeight="SemiBold"
+                   Foreground="{StaticResource AccentBrush}" />
+
+        <ScrollViewer Grid.Row="1" Margin="0,8,0,0">
+            <StackPanel>
+                <TextBlock Text="Sessions today" Style="{StaticResource SectionHeader}" />
+                <TextBlock x:Name="SessionsTodayText" Text="Loading..." Style="{StaticResource Row}" />
+
+                <TextBlock Text="Revenue by mode" Style="{StaticResource SectionHeader}" />
+                <ItemsControl x:Name="RevenueList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Style="{StaticResource Row}"
+                                       Text="{Binding}" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock x:Name="RevenueEmptyText" Text="No paid sessions yet." Style="{StaticResource Row}"
+                           Foreground="{StaticResource MutedBrush}" Visibility="Collapsed" />
+
+                <TextBlock Text="Low inventory alerts" Style="{StaticResource SectionHeader}" />
+                <ItemsControl x:Name="InventoryList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Style="{StaticResource Row}" Foreground="#B3261E"
+                                       Text="{Binding}" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock x:Name="InventoryEmptyText" Text="Nothing running low." Style="{StaticResource Row}"
+                           Foreground="{StaticResource MutedBrush}" Visibility="Collapsed" />
+
+                <!-- Takes effect for the next guest session, not the app's
+                     next restart: BoothStateMachine reads these fresh at
+                     the start of every RunSessionAsync call. -->
+                <TextBlock Text="Booth settings" Style="{StaticResource SectionHeader}" />
+                <StackPanel Orientation="Horizontal" Margin="0,4">
+                    <TextBlock Text="Countdown (seconds):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
+                    <TextBox x:Name="CountdownSecondsBox" Width="60" />
+                </StackPanel>
+                <CheckBox x:Name="GlamFilterCheckBox" Content="Glam Booth mode (high-contrast B&amp;W filter)"
+                          Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
+                <TextBlock x:Name="SettingsStatusText" Style="{StaticResource Row}"
+                           Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" />
+                <Button x:Name="SaveSettingsButton" Content="Save Settings" Padding="16,8"
+                        HorizontalAlignment="Left" Margin="0,8,0,0" Click="SaveSettingsButton_Click" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button x:Name="RefreshButton" Content="Refresh" Padding="16,8" Margin="0,0,8,0" Click="RefreshButton_Click" />
+            <Button x:Name="CloseButton" Content="Close" Padding="16,8" Click="CloseButton_Click" />
+        </StackPanel>
+    </Grid>
+</Window>

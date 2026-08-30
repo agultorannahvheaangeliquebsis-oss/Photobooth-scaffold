@@ -12,8 +12,10 @@ public class MockSessionRepository : ISessionRepository
     public List<(int SessionId, string Mode)> CreatedSessions { get; } = new();
     public List<int> CompletedSessionIds { get; } = new();
     public List<int> FailedSessionIds { get; } = new();
+    public List<int> AbandonedSessionIds { get; } = new();
     public List<(int SessionId, string FilePath)> RecordedPrints { get; } = new();
     public List<(int SessionId, decimal Amount, string Method)> RecordedPayments { get; } = new();
+    public List<(int SessionId, bool DisclaimerAccepted, bool EmailOptIn, string? Email)> RecordedConsents { get; } = new();
 
     public Task<int> CreateAsync(string mode, CancellationToken ct = default)
     {
@@ -34,6 +36,12 @@ public class MockSessionRepository : ISessionRepository
         return Task.CompletedTask;
     }
 
+    public Task AbandonAsync(int sessionId, CancellationToken ct = default)
+    {
+        AbandonedSessionIds.Add(sessionId);
+        return Task.CompletedTask;
+    }
+
     public Task RecordPrintAsync(int sessionId, string filePath, CancellationToken ct = default)
     {
         RecordedPrints.Add((sessionId, filePath));
@@ -43,6 +51,12 @@ public class MockSessionRepository : ISessionRepository
     public Task RecordPaymentAsync(int sessionId, decimal amount, string method, CancellationToken ct = default)
     {
         RecordedPayments.Add((sessionId, amount, method));
+        return Task.CompletedTask;
+    }
+
+    public Task RecordConsentAsync(int sessionId, bool disclaimerAccepted, bool emailOptIn, string? email, CancellationToken ct = default)
+    {
+        RecordedConsents.Add((sessionId, disclaimerAccepted, emailOptIn, email));
         return Task.CompletedTask;
     }
 }

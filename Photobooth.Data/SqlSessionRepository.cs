@@ -4,10 +4,10 @@ using Photobooth.Core;
 namespace Photobooth.Data;
 
 /// <summary>
-/// Real ISessionRepository backed by LocalDB. Writes to Session, Print, and
-/// Payment -- the three tables a running session touches -- against a fixed
-/// LocationId/PrinterId, since one booth machine has one location and one
-/// printer attached. See DatabaseInitializer for how those get seeded.
+/// Real ISessionRepository backed by LocalDB. Writes to Session, Print,
+/// Payment, and Consent -- the tables a running session touches -- against
+/// a fixed LocationId/PrinterId, since one booth machine has one location
+/// and one printer attached. See DatabaseInitializer for how those get seeded.
 /// </summary>
 public class SqlSessionRepository : ISessionRepository
 {
@@ -38,6 +38,9 @@ public class SqlSessionRepository : ISessionRepository
     public async Task FailAsync(int sessionId, CancellationToken ct = default) =>
         await SetStatusAsync(sessionId, "error", ct);
 
+    public async Task AbandonAsync(int sessionId, CancellationToken ct = default) =>
+        await SetStatusAsync(sessionId, "abandoned", ct);
+
     private async Task SetStatusAsync(int sessionId, string status, CancellationToken ct)
     {
         using var connection = await SqlConnectionFactory.OpenAsync(ct);
@@ -53,7 +56,7 @@ public class SqlSessionRepository : ISessionRepository
     {
         using var connection = await SqlConnectionFactory.OpenAsync(ct);
         using var command = new SqlCommand(
-            "INSERT INTO Print (SessionId, PrinterId, FilePath) VALUES (@SessionId, @PrinterId, @FilePath);",
+            "INSERT INTO [Print] (SessionId, PrinterId, FilePath) VALUES (@SessionId, @PrinterId, @FilePath);",
             connection);
         command.Parameters.AddWithValue("@SessionId", sessionId);
         command.Parameters.AddWithValue("@PrinterId", _printerId);
@@ -73,6 +76,22 @@ public class SqlSessionRepository : ISessionRepository
         command.Parameters.AddWithValue("@SessionId", sessionId);
         command.Parameters.AddWithValue("@Amount", amount);
         command.Parameters.AddWithValue("@Method", method);
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task RecordConsentAsync(int sessionId, bool disclaimerAccepted, bool emailOptIn, string? email, CancellationToken ct = default)
+    {
+        using var connection = await SqlConnectionFactory.OpenAsync(ct);
+        using var command = new SqlCommand(
+            """
+            INSERT INTO Consent (SessionId, DisclaimerAccepted, EmailOptIn, Email)
+            VALUES (@SessionId, @DisclaimerAccepted, @EmailOptIn, @Email);
+            """,
+            connection);
+        command.Parameters.AddWithValue("@SessionId", sessionId);
+        command.Parameters.AddWithValue("@DisclaimerAccepted", disclaimerAccepted);
+        command.Parameters.AddWithValue("@EmailOptIn", emailOptIn);
+        command.Parameters.AddWithValue("@Email", (object?)email ?? DBNull.Value);
         await command.ExecuteNonQueryAsync(ct);
     }
 }

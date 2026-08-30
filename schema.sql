@@ -7,6 +7,8 @@ CREATE TABLE Location (
     Name            NVARCHAR(100)   NOT NULL,
     Type            NVARCHAR(20)    NOT NULL CHECK (Type IN ('event', 'vendo')),
     Address         NVARCHAR(255)   NULL,
+    CountdownSeconds   INT          NOT NULL DEFAULT 3,   -- admin-editable, see AdminWindow's Settings section
+    GlamFilterEnabled  BIT          NOT NULL DEFAULT 0,   -- admin-editable, see AdminWindow's Settings section
     CreatedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
 );
 
@@ -43,7 +45,10 @@ CREATE TABLE Session (
                         CHECK (Status IN ('in_progress', 'completed', 'abandoned', 'error'))
 );
 
-CREATE TABLE Print (
+-- Bracketed: PRINT is a reserved T-SQL keyword, and "ON Print(SessionId)"
+-- below parses as the PRINT statement rather than a table reference
+-- without the brackets.
+CREATE TABLE [Print] (
     PrintId         INT IDENTITY(1,1) PRIMARY KEY,
     SessionId       INT             NOT NULL REFERENCES Session(SessionId),
     PrinterId       INT             NOT NULL REFERENCES Printer(PrinterId),
@@ -63,6 +68,15 @@ CREATE TABLE Payment (
     PaidAt          DATETIME2       NULL
 );
 
+CREATE TABLE Consent (
+    ConsentId           INT IDENTITY(1,1) PRIMARY KEY,
+    SessionId           INT             NOT NULL REFERENCES Session(SessionId),
+    DisclaimerAccepted  BIT             NOT NULL,
+    EmailOptIn          BIT             NOT NULL DEFAULT 0,
+    Email               NVARCHAR(255)   NULL,
+    RecordedAt          DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
 CREATE TABLE InventoryLog (
     InventoryId     INT IDENTITY(1,1) PRIMARY KEY,
     PrinterId       INT             NOT NULL REFERENCES Printer(PrinterId),
@@ -73,6 +87,7 @@ CREATE TABLE InventoryLog (
 
 -- Helpful indexes for the dashboard queries you'll write later
 CREATE INDEX IX_Session_Location_Mode ON Session(LocationId, Mode);
-CREATE INDEX IX_Print_Session ON Print(SessionId);
+CREATE INDEX IX_Print_Session ON [Print](SessionId);
 CREATE INDEX IX_Payment_Session ON Payment(SessionId);
+CREATE INDEX IX_Consent_Session ON Consent(SessionId);
 CREATE INDEX IX_InventoryLog_Printer_LoggedAt ON InventoryLog(PrinterId, LoggedAt DESC);

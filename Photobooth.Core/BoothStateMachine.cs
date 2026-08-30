@@ -12,14 +12,24 @@ namespace Photobooth.Core;
 /// </summary>
 public class BoothStateMachine
 {
-    private readonly ICameraService _camera;
-    private readonly IPrinterService _printer;
-    private readonly ICloudUploadService _cloudUpload;
-    private readonly ISessionRepository _sessions;
+    /// <summary>Flat per-print price charged in vendo mode. Event mode is a flat fee paid outside the app (the booking), so sessions there stay free_event.</summary>
+    private const decimal VendoPricePerPrint = 150m;
+
+    private readonly BoothServices _services;
+    private readonly string _mode;
 
     public BoothState CurrentState { get; private set; } = BoothState.Idle;
     public string? LastCapturedImagePath { get; private set; }
     public Uri? LastPhotoUrl { get; private set; }
+
+    /// <summary>QR code the guest scans to pay, set right before the Payment state shows. Null for a gateway with nothing to scan (e.g. a card reader). Only meaningful in vendo mode.</summary>
+    public byte[]? PaymentQrPng { get; private set; }
+
+    /// <summary>What to tell the guest on the Payment screen -- gateway-specific (e.g. "Scan to pay" vs "Tap your card"), set right before the Payment state shows. Only meaningful in vendo mode.</summary>
+    public string? PaymentInstructions { get; private set; }
+
+    /// <summary>Outcome of the current/most recent session's disclaimer+opt-in prompt, set right after the Consent state shows.</summary>
+    public ConsentResult? LastConsent { get; private set; }
 
     public event Action<BoothState>? StateChanged;
     public event Action<int>? CountdownTick;
@@ -28,12 +38,11 @@ public class BoothStateMachine
     /// <summary>Fires when the background upload for the current session's photo finishes -- may land during Reviewing, Printing, or Complete, whichever is showing when the network call happens to finish.</summary>
     public event Action<Uri>? PhotoUploaded;
 
-    public BoothStateMachine(ICameraService camera, IPrinterService printer, ICloudUploadService cloudUpload, ISessionRepository sessions)
+    /// <param name="mode">'event' or 'vendo', matching the booth's Location.Type -- fixed for the life of this state machine since one booth machine serves one location. Event-mode sessions skip straight through as a free_event Payment row; vendo-mode sessions run the Payment state before Printing.</param>
+    public BoothStateMachine(BoothServices services, string mode = "event")
     {
-        _camera = camera;
-        _printer = printer;
-        _cloudUpload = cloudUpload;
-        _sessions = sessions;
+        _services = services;
+        _mode = mode;
     }
 
     private void SetState(BoothState state)
@@ -50,20 +59,44 @@ public class BoothStateMachine
     /// </summary>
     public async Task RunSessionAsync(CancellationToken ct = default)
     {
-        // No vendo payment flow yet (that's Day 6), so every session today
-        // is event mode; recorded as a zero-amount 'free_event' Payment
-        // rather than skipping the Payment row, so the revenue-by-mode query
-        // the admin dashboard will eventually run doesn't have to special-case
-        // sessions with no Payment at all.
-        const string mode = "event";
+        // Event mode is recorded as a zero-amount 'free_event' Payment rather
+        // than skipping the Payment row entirely, so the admin dashboard's
+        // revenue-by-mode query doesn't have to special-case sessions with
+        // no Payment at all.
         int? sessionId = null;
+
+        // Best-effort flush of any earlier session's upload that failed
+        // (dropped venue WiFi, Cloudinary hiccup) -- fire-and-forget so a
+        // backlog doesn't have to wait for a dedicated retry timer, just the
+        // next guest walking up. Never allowed to block or fail this session.
+        _ = RetryQueuedUploadsAsync(ct);
 
         try
         {
-            sessionId = await _sessions.CreateAsync(mode, ct);
+            // Read fresh at the start of every session, not cached anywhere,
+            // so an admin's settings change (see AdminWindow) takes effect
+            // for the very next guest instead of needing an app restart.
+            BoothSettings settings = await _services.Settings.GetSettingsAsync(ct);
+
+            sessionId = await _services.Sessions.CreateAsync(_mode, ct);
+
+            SetState(BoothState.Consent);
+            ConsentResult consent = await _services.Consent.CollectAsync(ct);
+            LastConsent = consent;
+            await _services.Sessions.RecordConsentAsync(
+                sessionId.Value, consent.DisclaimerAccepted, consent.EmailOptIn, consent.Email, ct);
+
+            if (!consent.DisclaimerAccepted)
+            {
+                // Declining is a legitimate guest choice, not a failure -- no
+                // countdown, no capture, and recorded as Abandoned rather
+                // than Error so the admin dashboard can tell the two apart.
+                await _services.Sessions.AbandonAsync(sessionId.Value, ct);
+                return;
+            }
 
             SetState(BoothState.Countdown);
-            for (int i = 3; i > 0; i--)
+            for (int i = settings.CountdownSeconds; i > 0; i--)
             {
                 CountdownTick?.Invoke(i);
                 await Task.Delay(1000, ct);
@@ -71,25 +104,72 @@ public class BoothStateMachine
 
             SetState(BoothState.Capturing);
             LastPhotoUrl = null;
-            LastCapturedImagePath = await _camera.CaptureAsync(ct);
+            PaymentQrPng = null;
+            PaymentInstructions = null;
+            LastCapturedImagePath = await _services.Camera.CaptureAsync(ct);
+
+            // Glam filter (if this booth's settings have it on) applies
+            // before branding, not after -- the caption bar is always white
+            // text on a solid black bar regardless of the photo's colors, so
+            // filter order doesn't affect its legibility either way, but
+            // doing the color/contrast pass on the plain capture first keeps
+            // the two effects independent and easy to reason about.
+            if (settings.GlamFilterEnabled)
+            {
+                LastCapturedImagePath = await _services.Filter.ApplyGlamFilterAsync(LastCapturedImagePath, ct);
+            }
+
+            // Branded before anything downstream ever sees the path -- the
+            // Reviewing screen, the print, and the upload should all show
+            // the guest exactly the same (branded) photo, not three
+            // different versions depending on which step ran first.
+            LastCapturedImagePath = await _services.Branding.ApplyBrandingAsync(LastCapturedImagePath, ct);
 
             // Fire-and-forget: upload runs alongside Reviewing/Printing rather
             // than blocking the guest flow on network latency. A failed or
             // slow upload just means no QR code shows this session -- it
             // never holds up the print, which is the part that actually
             // matters to the guest standing at the booth.
-            _ = UploadInBackgroundAsync(LastCapturedImagePath, ct);
+            Task uploadTask = UploadInBackgroundAsync(LastCapturedImagePath, ct);
 
             SetState(BoothState.Reviewing);
             await Task.Delay(2000, ct); // guest sees the shot before it prints
 
+            if (_mode == "vendo")
+            {
+                string reference = Guid.NewGuid().ToString("N");
+                PaymentPrompt prompt = _services.Payment.Initiate(VendoPricePerPrint, reference);
+                PaymentInstructions = prompt.Instructions;
+                PaymentQrPng = prompt.QrCodePng;
+                SetState(BoothState.Payment);
+                PaymentResult result = await _services.Payment.WaitForConfirmationAsync(reference, VendoPricePerPrint, ct);
+                if (!result.Success)
+                {
+                    throw new InvalidOperationException("Payment was not completed.");
+                }
+                await _services.Sessions.RecordPaymentAsync(sessionId.Value, VendoPricePerPrint, result.Method, ct);
+            }
+
+            // The guest has definitely earned their photo by this point --
+            // event mode is free by design, and vendo mode just cleared
+            // payment above (a thrown/declined payment never reaches this
+            // line, so a guest who didn't pay never gets emailed a free
+            // copy, nor a queued retry that would eventually email one).
+            // Fire-and-forget so a still-in-flight upload or a slow email
+            // send doesn't hold up Printing.
+            _ = FinalizeUploadAsync(uploadTask, ct);
+
             SetState(BoothState.Printing);
-            await _printer.PrintAsync(LastCapturedImagePath, ct);
-            await _sessions.RecordPrintAsync(sessionId.Value, LastCapturedImagePath, ct);
-            await _sessions.RecordPaymentAsync(sessionId.Value, 0m, "free_event", ct);
+            await _services.Printer.PrintAsync(LastCapturedImagePath, ct);
+            await _services.Sessions.RecordPrintAsync(sessionId.Value, LastCapturedImagePath, ct);
+
+            if (_mode != "vendo")
+            {
+                await _services.Sessions.RecordPaymentAsync(sessionId.Value, 0m, "free_event", ct);
+            }
 
             SetState(BoothState.Complete);
-            await _sessions.CompleteAsync(sessionId.Value, ct);
+            await _services.Sessions.CompleteAsync(sessionId.Value, ct);
             await Task.Delay(1500, ct); // "thank you" screen dwell time
         }
         catch (Exception ex)
@@ -98,7 +178,7 @@ public class BoothStateMachine
             SetState(BoothState.Error);
             if (sessionId.HasValue)
             {
-                await _sessions.FailAsync(sessionId.Value, ct);
+                await _services.Sessions.FailAsync(sessionId.Value, ct);
             }
             await Task.Delay(3000, ct); // show the error briefly before resetting
         }
@@ -112,14 +192,116 @@ public class BoothStateMachine
     {
         try
         {
-            LastPhotoUrl = await _cloudUpload.UploadAsync(imagePath, ct);
+            LastPhotoUrl = await _services.CloudUpload.UploadAsync(imagePath, ct);
             PhotoUploaded?.Invoke(LastPhotoUrl);
         }
         catch (Exception)
         {
-            // Best-effort: swallow so an upload failure can't surface as an
-            // unobserved task exception -- it's not on the guest-facing
-            // error path, just a missing QR code for this session.
+            // Deliberately doesn't queue the failure here -- see
+            // FinalizeUploadAsync for why that decision waits until the
+            // payment gate has cleared.
+        }
+    }
+
+    /// <summary>
+    /// Waits for the in-flight upload to settle, then either emails the
+    /// guest their photo link (if they opted in and the upload succeeded)
+    /// or queues the file for retry (carrying the same email along, so a
+    /// later successful retry can still send it). Only ever called once the
+    /// guest has definitely earned their photo (see the call site) -- never
+    /// for a declined vendo payment, so neither a same-session email nor a
+    /// queued retry-with-email can happen for a guest who didn't pay.
+    /// </summary>
+    private async Task FinalizeUploadAsync(Task uploadTask, CancellationToken ct)
+    {
+        await uploadTask; // UploadInBackgroundAsync catches its own failures, never throws
+
+        string? email = LastConsent is { EmailOptIn: true, Email: string toEmail } ? toEmail : null;
+
+        if (LastPhotoUrl is Uri photoUrl)
+        {
+            if (email is not null)
+            {
+                try
+                {
+                    await _services.Email.SendPhotoLinkAsync(email, photoUrl, ct);
+                }
+                catch (Exception)
+                {
+                    // Best-effort: a failed email isn't the guest's problem
+                    // to see -- they still have the QR code as a working way
+                    // to get their photo.
+                }
+            }
+        }
+        else if (LastCapturedImagePath is string imagePath)
+        {
+            // Upload failed -- the photo isn't lost, queue it (with the
+            // email, if any) so the next session or app startup retries it.
+            try
+            {
+                await _services.UploadQueue.EnqueueAsync(imagePath, email, ct);
+            }
+            catch (Exception)
+            {
+                // Best-effort: swallow so a failure to even queue can't
+                // surface as an unobserved task exception -- it's not on the
+                // guest-facing error path, just a missing QR code (and
+                // eventually, email) for this session.
+            }
+        }
+    }
+
+    /// <summary>
+    /// Retries every upload that failed in a previous session, emailing
+    /// whoever opted in once their retry actually succeeds. Safe to call as
+    /// often as convenient (opportunistically at the start of a session, or
+    /// once at app startup), including from multiple BoothStateMachine
+    /// instances sharing one queue -- DequeueAllAsync atomically claims the
+    /// whole backlog, so a second overlapping call (e.g. a still-in-flight
+    /// retry from the previous session racing this one) sees nothing left
+    /// to do instead of double-processing the same item (confirmed:
+    /// reproduced as a duplicate guest email via Photobooth.ConsoleDemo
+    /// before this existed).
+    /// </summary>
+    public async Task RetryQueuedUploadsAsync(CancellationToken ct = default)
+    {
+        IReadOnlyList<PendingUpload> claimed = await _services.UploadQueue.DequeueAllAsync(ct);
+        foreach (PendingUpload item in claimed)
+        {
+            try
+            {
+                Uri url = await _services.CloudUpload.UploadAsync(item.FilePath, ct);
+
+                if (item.Email is string toEmail)
+                {
+                    try
+                    {
+                        await _services.Email.SendPhotoLinkAsync(toEmail, url, ct);
+                    }
+                    catch (Exception)
+                    {
+                        // Best-effort: the upload itself already succeeded --
+                        // a failed email here isn't worth re-queuing over.
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // Still offline (or this particular file's upload still
+                // fails) -- put it back for next time. Already claimed out
+                // of the queue by DequeueAllAsync above, so re-enqueue
+                // rather than leave it (as the old Get+Remove version did).
+                try
+                {
+                    await _services.UploadQueue.EnqueueAsync(item.FilePath, item.Email, ct);
+                }
+                catch (Exception)
+                {
+                    // Best-effort: swallow so a failure to even re-queue
+                    // can't surface as an unobserved task exception.
+                }
+            }
         }
     }
 }

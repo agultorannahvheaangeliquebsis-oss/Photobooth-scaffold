@@ -11,8 +11,14 @@ namespace Photobooth.Data;
 /// </summary>
 public static class SqlConnectionFactory
 {
+    // Connect Timeout is explicit rather than relying on SqlClient's own
+    // default: a missing or stopped LocalDB instance was observed hanging
+    // well past that default rather than failing, leaving the booth on a
+    // black screen instead of an error. 5s is enough for an automatic
+    // instance to auto-start (confirmed: ~1s in practice) without making a
+    // guest wait long on a genuinely dead instance.
     private const string DefaultConnectionString =
-        @"Server=(localdb)\MSSQLLocalDB;Database=Photobooth;Trusted_Connection=True;TrustServerCertificate=True;";
+        @"Server=(localdb)\MSSQLLocalDB;Database=Photobooth;Trusted_Connection=True;TrustServerCertificate=True;Connect Timeout=5;";
 
     public static string ConnectionString =>
         Environment.GetEnvironmentVariable("PHOTOBOOTH_DB_CONNECTION") ?? DefaultConnectionString;

@@ -8,6 +8,15 @@ namespace Photobooth.Core;
 /// </summary>
 public class MockCameraService : ICameraService
 {
+    // Every instance writes into the same shared ./captures folder, and
+    // xunit runs test classes in parallel by default -- without a
+    // per-instance suffix, two tests each starting their own
+    // MockCameraService both write "mock_0001.bmp" and race on the same
+    // file (confirmed: an intermittent "file in use" IOException once
+    // enough parallel tests exercised this). The suffix goes after the
+    // frame number, not before, so existing `Contains("mock_0001", ...)`
+    // assertions still match.
+    private readonly string _instanceId = Guid.NewGuid().ToString("N")[..8];
     private int _captureCount = 0;
 
     /// <summary>When true, the next CaptureAsync call throws instead of succeeding.
@@ -34,7 +43,7 @@ public class MockCameraService : ICameraService
         // until real hardware showed up. BMP rather than JPEG because the
         // placeholder is written without any imaging dependency -- see
         // PlaceholderImage.
-        string path = $"./captures/mock_{_captureCount:D4}.bmp";
+        string path = $"./captures/mock_{_captureCount:D4}_{_instanceId}.bmp";
         PlaceholderImage.Write(path, _captureCount, DateTime.Now);
         return path;
     }

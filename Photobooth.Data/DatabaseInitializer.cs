@@ -12,7 +12,7 @@ namespace Photobooth.Data;
 /// </summary>
 public static class DatabaseInitializer
 {
-    public record SeedIds(int LocationId, int PrinterId);
+    public record SeedIds(int LocationId, int PrinterId, string LocationType);
 
     public static async Task<SeedIds> InitializeAsync(CancellationToken ct = default)
     {
@@ -42,15 +42,63 @@ public static class DatabaseInitializer
         using (var checkCommand = new SqlCommand(
             "SELECT 1 FROM sys.tables WHERE name = 'Location';", connection))
         {
-            if (await checkCommand.ExecuteScalarAsync(ct) is not null)
+            if (await checkCommand.ExecuteScalarAsync(ct) is null)
             {
-                return; // schema already applied
+                string schemaPath = Path.Combine(AppContext.BaseDirectory, "schema.sql");
+                string schema = await File.ReadAllTextAsync(schemaPath, ct);
+                using var createCommand = new SqlCommand(schema, connection);
+                await createCommand.ExecuteNonQueryAsync(ct);
+                return; // schema.sql above already includes Consent for a fresh database
             }
         }
 
-        string schemaPath = Path.Combine(AppContext.BaseDirectory, "schema.sql");
-        string schema = await File.ReadAllTextAsync(schemaPath, ct);
-        using var createCommand = new SqlCommand(schema, connection);
+        // Location already existed, so schema.sql didn't run above -- that
+        // check predates the Consent table, so a database seeded before this
+        // feature needs it added on its own. Not a real migration system,
+        // just enough to keep an already-seeded LocalDB working without a
+        // manual DROP DATABASE.
+        await EnsureConsentTableAsync(connection, ct);
+        await EnsureBoothSettingsColumnsAsync(connection, ct);
+    }
+
+    /// <summary>Same reasoning as EnsureConsentTableAsync, for the two admin-settings
+    /// columns added to Location after this check was originally written.</summary>
+    private static async Task EnsureBoothSettingsColumnsAsync(SqlConnection connection, CancellationToken ct)
+    {
+        using var command = new SqlCommand(
+            """
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'CountdownSeconds')
+                ALTER TABLE Location ADD CountdownSeconds INT NOT NULL DEFAULT 3;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'GlamFilterEnabled')
+                ALTER TABLE Location ADD GlamFilterEnabled BIT NOT NULL DEFAULT 0;
+            """,
+            connection);
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task EnsureConsentTableAsync(SqlConnection connection, CancellationToken ct)
+    {
+        using (var checkCommand = new SqlCommand("SELECT 1 FROM sys.tables WHERE name = 'Consent';", connection))
+        {
+            if (await checkCommand.ExecuteScalarAsync(ct) is not null)
+            {
+                return;
+            }
+        }
+
+        using var createCommand = new SqlCommand(
+            """
+            CREATE TABLE Consent (
+                ConsentId           INT IDENTITY(1,1) PRIMARY KEY,
+                SessionId           INT             NOT NULL REFERENCES Session(SessionId),
+                DisclaimerAccepted  BIT             NOT NULL,
+                EmailOptIn          BIT             NOT NULL DEFAULT 0,
+                Email               NVARCHAR(255)   NULL,
+                RecordedAt          DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
+            );
+            CREATE INDEX IX_Consent_Session ON Consent(SessionId);
+            """,
+            connection);
         await createCommand.ExecuteNonQueryAsync(ct);
     }
 
@@ -63,17 +111,24 @@ public static class DatabaseInitializer
         var existing = await locations.GetAllAsync(ct);
         if (existing.Count > 0)
         {
-            int existingLocationId = existing[0].LocationId;
-            var existingPrinters = await printers.GetByLocationAsync(existingLocationId, ct);
-            return new SeedIds(existingLocationId, existingPrinters[0].PrinterId);
+            var existingLocation = existing[0];
+            var existingPrinters = await printers.GetByLocationAsync(existingLocation.LocationId, ct);
+            return new SeedIds(existingLocation.LocationId, existingPrinters[0].PrinterId, existingLocation.Type);
         }
 
-        int locationId = await locations.InsertAsync("Focus & Snap Studio", "event", null, ct);
+        const string locationType = "event";
+        int locationId = await locations.InsertAsync("Focus & Snap Studio", locationType, null, ct);
         int printerId = await printers.InsertAsync(locationId, "Canon Selphy CP1500", null, ct);
 
         await bookings.InsertAsync(locationId, "Sample Client A", DateTime.UtcNow.Date.AddDays(7), "Standard", 8000m, ct);
         await bookings.InsertAsync(locationId, "Sample Client B", DateTime.UtcNow.Date.AddDays(14), "Premium", 12000m, ct);
 
-        return new SeedIds(locationId, printerId);
+        // Seeds one reading so the admin dashboard's low-inventory alert has
+        // something to evaluate on first run, same reasoning as the Location/
+        // Printer/Booking seeds above -- real usage will log its own rows
+        // over time once something writes to InventoryLog on print.
+        await new InventoryLogRepository().InsertAsync(printerId, "paper", 100, ct);
+
+        return new SeedIds(locationId, printerId, locationType);
     }
 }

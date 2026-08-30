@@ -7,9 +7,11 @@ namespace Photobooth.Core;
 public enum BoothState
 {
     Idle,
+    Consent,
     Countdown,
     Capturing,
     Reviewing,
+    Payment,
     Printing,
     Complete,
     Error

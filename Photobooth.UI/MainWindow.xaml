@@ -7,7 +7,8 @@
         WindowStartupLocation="CenterScreen"
         WindowState="Maximized"
         MinWidth="800"
-        MinHeight="600">
+        MinHeight="600"
+        KeyDown="Window_KeyDown">
     <Window.Resources>
         <Style x:Key="ScreenTitle" TargetType="TextBlock">
             <Setter Property="FontFamily" Value="Segoe UI" />
@@ -47,6 +48,13 @@
                 </Border>
             </StackPanel>
 
+            <StackPanel x:Name="ConsentView" Visibility="Collapsed" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="620">
+                <TextBlock Text="Before you strike a pose" Style="{StaticResource ScreenTitle}" />
+                <TextBlock Text="By continuing, you agree to let Focus &amp; Snap capture and print your photo, and use it for the event gallery. You'll also get the option to receive a digital copy by email."
+                           Style="{StaticResource ScreenSubtitle}" TextWrapping="Wrap" Margin="0,18,0,0" />
+                <TextBlock Text="Reading and confirming..." Style="{StaticResource ScreenSubtitle}" FontSize="16" Margin="0,24,0,0" />
+            </StackPanel>
+
             <Grid x:Name="CountdownView" Visibility="Collapsed">
                 <!-- Live camera preview fills the screen behind the countdown;
                      LiveViewImage.Source is only ever set while this state is
@@ -73,6 +81,17 @@
                         <TextBlock x:Name="PhotoFallback" Text="Your photo is ready to print" Style="{StaticResource ScreenSubtitle}"
                                    VerticalAlignment="Center" Visibility="Collapsed" />
                     </Grid>
+                </Border>
+            </StackPanel>
+
+            <StackPanel x:Name="PaymentView" Visibility="Collapsed" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="480">
+                <TextBlock Text="Complete your payment" Style="{StaticResource ScreenTitle}" />
+                <!-- Text is gateway-specific (set from BoothStateMachine.PaymentInstructions in
+                     code-behind) since "Scan to pay" doesn't apply to a card-reader gateway. -->
+                <TextBlock x:Name="PaymentInstructionsText" Style="{StaticResource ScreenSubtitle}" TextWrapping="Wrap" Margin="0,18,0,0" />
+                <!-- Collapsed in code-behind for a gateway with nothing to scan (e.g. a card reader). -->
+                <Border x:Name="PaymentQrBorder" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Background="White" Padding="16" Margin="0,24,0,0" HorizontalAlignment="Center">
+                    <Image x:Name="PaymentQrCodeImage" Width="220" Height="220" />
                 </Border>
             </StackPanel>
 
