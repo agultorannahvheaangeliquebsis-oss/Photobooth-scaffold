@@ -136,6 +136,115 @@ public class MockEmailDeliveryServiceTests
     }
 }
 
+public class MockFrameLibraryServiceTests
+{
+    [Fact]
+    public async Task GetActiveFramesAsync_DefaultsToEmpty()
+    {
+        var library = new MockFrameLibraryService();
+
+        var frames = await library.GetActiveFramesAsync();
+
+        Assert.Empty(frames);
+    }
+
+    [Fact]
+    public async Task GetActiveFramesAsync_ReturnsWhateverWasConfigured()
+    {
+        var library = new MockFrameLibraryService
+        {
+            Frames = new List<FrameOption> { new(1, "Gold Border", "./frames/gold.png") },
+        };
+
+        var frames = await library.GetActiveFramesAsync();
+
+        var frame = Assert.Single(frames);
+        Assert.Equal("Gold Border", frame.Name);
+    }
+}
+
+public class MockFrameSelectionServiceTests
+{
+    [Fact]
+    public async Task SelectFrameAsync_DefaultsToPickingTheFirstOption()
+    {
+        var selection = new MockFrameSelectionService();
+        var options = new[] { new FrameOption(1, "Gold Border", "./frames/gold.png"), new FrameOption(2, "Confetti", "./frames/confetti.png") };
+
+        FrameOption? chosen = await selection.SelectFrameAsync(options);
+
+        Assert.Equal(1, chosen?.FrameId);
+    }
+
+    [Fact]
+    public async Task SelectFrameAsync_WhenSkipNextSet_ReturnsNullOnceThenResets()
+    {
+        var selection = new MockFrameSelectionService { SkipNext = true };
+        var options = new[] { new FrameOption(1, "Gold Border", "./frames/gold.png") };
+
+        FrameOption? skipped = await selection.SelectFrameAsync(options);
+        Assert.Null(skipped);
+        Assert.False(selection.SkipNext);
+
+        FrameOption? next = await selection.SelectFrameAsync(options);
+        Assert.NotNull(next);
+    }
+}
+
+public class MockFrameOverlayServiceTests
+{
+    [Fact]
+    public async Task ApplyFrameAsync_ReturnsANewPathAndLeavesOriginalUntouched()
+    {
+        var camera = new MockCameraService();
+        string originalPath = await camera.CaptureAsync();
+        var overlay = new MockFrameOverlayService();
+
+        string framedPath = await overlay.ApplyFrameAsync(originalPath, "./frames/gold.png");
+
+        Assert.NotEqual(originalPath, framedPath);
+        Assert.Contains("_framed", framedPath);
+        Assert.True(File.Exists(framedPath));
+        Assert.True(File.Exists(originalPath));
+    }
+}
+
+public class UiFrameSelectionServiceTests
+{
+    [Fact]
+    public async Task SelectFrameAsync_RaisesSelectionRequestedAndCompletesOnceSubmitSelectionIsCalled()
+    {
+        var selection = new UiFrameSelectionService();
+        IReadOnlyList<FrameOption>? requestedOptions = null;
+        selection.SelectionRequested += options => requestedOptions = options;
+        var offered = new[] { new FrameOption(1, "Gold Border", "./frames/gold.png") };
+
+        Task<FrameOption?> pending = selection.SelectFrameAsync(offered);
+
+        // SelectFrameAsync shouldn't complete on its own -- it's waiting on a
+        // guest tap, simulated here via SubmitSelection.
+        Assert.False(pending.IsCompleted);
+        Assert.Same(offered, requestedOptions);
+
+        selection.SubmitSelection(offered[0]);
+
+        FrameOption? result = await pending;
+        Assert.Equal(offered[0], result);
+    }
+
+    [Fact]
+    public async Task SelectFrameAsync_SubmitSelectionWithNull_MeansGuestSkippedTheFrame()
+    {
+        var selection = new UiFrameSelectionService();
+        var offered = new[] { new FrameOption(1, "Gold Border", "./frames/gold.png") };
+
+        Task<FrameOption?> pending = selection.SelectFrameAsync(offered);
+        selection.SubmitSelection(null);
+
+        Assert.Null(await pending);
+    }
+}
+
 public class MockConsentServiceTests
 {
     [Fact]

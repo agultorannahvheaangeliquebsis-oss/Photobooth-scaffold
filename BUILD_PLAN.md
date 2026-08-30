@@ -885,6 +885,97 @@ Status as of 2026-08-30.
   restarting anything, which is the entire point of reading settings
   fresh per-session instead of once at startup.
 
+**Extra, not in the original plan — frame library + guest-facing frame picker**
+- Picked this up next: the two pieces explicitly flagged as "not started"
+  the last time this project's status was reviewed (admin-managed frame
+  overlays and the guest picker screen). Both fully code/test-verifiable
+  without hardware; the guest-facing screen is the first genuinely real
+  (not mocked) interactive UI seam in the app -- see below.
+- New `Frame` table (`Name`, `ImagePath`, `SortOrder`, `IsActive`),
+  scoped to a `Location` the same way `Printer`/`Booking` are.
+  `DatabaseInitializer` got another top-up migration
+  (`EnsureFrameTableAsync`, same pattern as `Consent`'s/the booth-settings
+  columns' before it). Starts empty on any database (fresh or
+  already-seeded), so `FramePicker` is skipped entirely until an admin
+  adds a frame -- zero behavior change for every existing deployment/test.
+- Three new `Photobooth.Core` seams, same interface-plus-mock pattern as
+  everything else: `IFrameLibraryService` (reads active frames, real impl
+  `SqlFrameLibraryService` in `Photobooth.Data`, read fresh every session
+  like `IBoothSettingsProvider`), `IFrameOverlayService` (GDI+ compositing
+  via `GdiFrameOverlayService`, same Windows-only pattern as
+  `IPhotoBrandingService`/`IPhotoFilterService` -- frame PNG stretched to
+  the photo's exact dimensions so it lines up regardless of the asset's
+  native resolution), and `IFrameSelectionService` (collects the guest's
+  pick).
+- `IFrameSelectionService` is the interesting one: unlike
+  `IConsentService`/`IPaymentService` (still mock-only -- a real
+  disclaimer/gateway needs external integration this project hasn't done),
+  a frame pick is just a button tap with no hardware or network dependency
+  to stand up. Built a real implementation, `UiFrameSelectionService` -- a
+  `TaskCompletionSource` bridge that raises `SelectionRequested` (the UI
+  shows the offered thumbnails) and completes once `MainWindow` calls
+  `SubmitSelection` in response to a tap. `MockFrameSelectionService`
+  (defaults to picking the first option; `SkipNext` simulates "no frame")
+  is what `Photobooth.Tests`/`Photobooth.ConsoleDemo` use instead.
+- `BoothStateMachine` reads the active frame list right after `Reviewing`
+  (guest has seen the raw shot first). If any exist, shows `FramePicker`,
+  awaits the pick, and applies it (if any) *before* the upload task starts
+  and before `Printing` -- moved the upload kickoff later than it used to
+  fire (previously right after branding, overlapping with the Reviewing
+  delay) specifically so the QR code and the physical print show the same
+  final composited photo, same invariant branding/filter ordering already
+  established. If nothing's configured, `FramePicker` never shows and
+  upload timing is unchanged from before this feature.
+- `BoothServices` picked up its 12th-14th properties for this
+  (`FrameLibrary`/`FrameSelection`/`FrameOverlay`) -- same "one new
+  property per seam, no constructor signature change" cost the record
+  refactor was built for, though the parameter list is now long enough
+  that a future feature might be the one to finally split it.
+- WPF: `MainWindow` gained a real `FramePickerView` -- thumbnails built
+  from actual frame image files (not placeholders), each a clickable
+  `Button` wired to `UiFrameSelectionService.SubmitSelection`, plus a "No
+  frame" button. `AdminWindow` gained a "Frame library" section: an
+  `ItemsControl` listing frames with an Active checkbox and Delete button
+  per row, plus an "Add Frame" form (name + `OpenFileDialog` image picker)
+  that copies the chosen file into a local `Assets/Frames/` folder and
+  inserts the row.
+- Verified via `Photobooth.Tests`: 12 new tests. Three
+  `BoothStateMachineTests` cases cover frame chosen (states show
+  `FramePicker` between `Reviewing` and `Printing`, the framed path -- not
+  the pre-frame one -- is what gets recorded as the print and appears in
+  the uploaded URL), guest skips (state still shows, nothing applied), and
+  no active frames configured (state never shows at all, matching every
+  pre-existing test's unchanged expectations). Plus mock coverage for
+  `MockFrameLibraryService`/`MockFrameSelectionService`/
+  `MockFrameOverlayService`, a real round-trip test for
+  `UiFrameSelectionService` (doesn't complete until `SubmitSelection`
+  fires; a null submission means skipped), and `GdiFrameOverlayServiceTests`
+  compositing a real frame PNG (transparent center, opaque red border)
+  onto a real captured photo -- confirms a genuine same-dimension JPEG
+  comes out, the transparent region still shows the original photo's
+  color, and the opaque region shows the frame's. `dotnet test` -- **65
+  passed, 0 failed**, run twice in a row clean (still watching for the
+  earlier parallel-test race, since this added more `MockCameraService`
+  usage).
+- Verified via `Photobooth.ConsoleDemo`: session 9 (admin adds two frames)
+  shows `[STATE] FramePicker`, picks "Classic Gold Border" by default, and
+  both the final photo path and the uploaded URL carry a `_framed` suffix;
+  session 10 (guest skips) shows `FramePicker` too but no `_framed` suffix
+  anywhere.
+- Verified the real SQL path directly, since `Photobooth.Tests` doesn't
+  cover SQL-backed code (same gap as `SqlSessionRepository`/
+  `SqlBoothSettingsProvider`): a throwaway script (not checked in) ran the
+  migration against this machine's real, already-seeded LocalDB --
+  confirmed the `Frame` table got created cleanly on a database that
+  predates it -- inserted a frame, confirmed `SqlFrameLibraryService`
+  returned it as active, deactivated it and confirmed the active list
+  emptied while `GetAllByLocationAsync` still showed it (inactive), then
+  deleted it and confirmed the table was back to its starting row count.
+- **Not yet verified:** `FramePickerView`/`AdminWindow`'s new section
+  actually rendering or being tapped through -- same interactive-desktop
+  gap as every other WPF screen in this project (`ConsentView`,
+  `PaymentView`, the rest of `AdminWindow`).
+
 ## Remaining
 
 **Day 7 — Buffer**

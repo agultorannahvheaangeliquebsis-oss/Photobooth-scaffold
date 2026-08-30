@@ -31,6 +31,9 @@ public class BoothStateMachine
     /// <summary>Outcome of the current/most recent session's disclaimer+opt-in prompt, set right after the Consent state shows.</summary>
     public ConsentResult? LastConsent { get; private set; }
 
+    /// <summary>The frame the guest picked during FramePicker, or null if they skipped it (or no active frames were configured, in which case FramePicker never shows at all).</summary>
+    public FrameOption? LastSelectedFrame { get; private set; }
+
     public event Action<BoothState>? StateChanged;
     public event Action<int>? CountdownTick;
     public event Action<string>? ErrorOccurred;
@@ -106,6 +109,7 @@ public class BoothStateMachine
             LastPhotoUrl = null;
             PaymentQrPng = null;
             PaymentInstructions = null;
+            LastSelectedFrame = null;
             LastCapturedImagePath = await _services.Camera.CaptureAsync(ct);
 
             // Glam filter (if this booth's settings have it on) applies
@@ -125,15 +129,31 @@ public class BoothStateMachine
             // different versions depending on which step ran first.
             LastCapturedImagePath = await _services.Branding.ApplyBrandingAsync(LastCapturedImagePath, ct);
 
-            // Fire-and-forget: upload runs alongside Reviewing/Printing rather
-            // than blocking the guest flow on network latency. A failed or
-            // slow upload just means no QR code shows this session -- it
-            // never holds up the print, which is the part that actually
-            // matters to the guest standing at the booth.
-            Task uploadTask = UploadInBackgroundAsync(LastCapturedImagePath, ct);
-
             SetState(BoothState.Reviewing);
             await Task.Delay(2000, ct); // guest sees the shot before it prints
+
+            // Skipped entirely when no admin-configured frames are active --
+            // a fresh booth with an empty Frame table behaves exactly as it
+            // did before this feature existed.
+            IReadOnlyList<FrameOption> frames = await _services.FrameLibrary.GetActiveFramesAsync(ct);
+            if (frames.Count > 0)
+            {
+                SetState(BoothState.FramePicker);
+                LastSelectedFrame = await _services.FrameSelection.SelectFrameAsync(frames, ct);
+                if (LastSelectedFrame is not null)
+                {
+                    LastCapturedImagePath = await _services.FrameOverlay.ApplyFrameAsync(
+                        LastCapturedImagePath, LastSelectedFrame.ImagePath, ct);
+                }
+            }
+
+            // Fire-and-forget, and deliberately started only now (after any
+            // frame choice), not right after branding -- the QR code and the
+            // print both need to show the same final composited photo, same
+            // reasoning branding/filter ordering already established. A
+            // failed or slow upload just means no QR code shows this
+            // session -- it never holds up the print.
+            Task uploadTask = UploadInBackgroundAsync(LastCapturedImagePath, ct);
 
             if (_mode == "vendo")
             {

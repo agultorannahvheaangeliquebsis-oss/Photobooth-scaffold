@@ -84,6 +84,14 @@
                 </Border>
             </StackPanel>
 
+            <StackPanel x:Name="FramePickerView" Visibility="Collapsed" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="700">
+                <TextBlock Text="Pick a frame" Style="{StaticResource ScreenTitle}" />
+                <TextBlock Text="Tap one to add it to your photo, or skip." Style="{StaticResource ScreenSubtitle}" Margin="0,10,0,24" />
+                <!-- Populated in code-behind (ShowFrameOptions) each time UiFrameSelectionService
+                     raises SelectionRequested: one button per active frame plus "No frame". -->
+                <WrapPanel x:Name="FrameOptionsPanel" HorizontalAlignment="Center" />
+            </StackPanel>
+
             <StackPanel x:Name="PaymentView" Visibility="Collapsed" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="480">
                 <TextBlock Text="Complete your payment" Style="{StaticResource ScreenTitle}" />
                 <!-- Text is gateway-specific (set from BoothStateMachine.PaymentInstructions in

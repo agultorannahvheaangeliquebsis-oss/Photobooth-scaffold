@@ -22,4 +22,7 @@ public record BoothServices(
     IEmailDeliveryService Email,
     IPhotoBrandingService Branding,
     IPhotoFilterService Filter,
-    IBoothSettingsProvider Settings);
+    IBoothSettingsProvider Settings,
+    IFrameLibraryService FrameLibrary,
+    IFrameSelectionService FrameSelection,
+    IFrameOverlayService FrameOverlay);

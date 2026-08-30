@@ -20,12 +20,14 @@ full system, not just the UI layer.
   without hardware and swappable between mock and real implementations
   without touching business logic.
 - **`BoothStateMachine`** — drives a guest session through
-  `Idle → Consent → Countdown → Capturing → Reviewing → Printing → Complete → Idle`,
+  `Idle → Consent → Countdown → Capturing → Reviewing → FramePicker → Printing → Complete → Idle`
+  (`FramePicker` only shows when at least one admin-configured frame is
+  active — a fresh booth skips straight from `Reviewing` to `Printing`),
   with every failure path recovering back to `Idle` instead of hanging.
-  Takes its dependencies as one `BoothServices` record rather than ten
-  separate constructor parameters — that seam grew one interface at a
-  time as features landed, and a bundle stayed readable (and cheap to
-  extend) where a positional parameter list stopped being.
+  Takes its dependencies as one `BoothServices` record rather than
+  thirteen separate constructor parameters — that seam grew one interface
+  at a time as features landed, and a bundle stayed readable (and cheap
+  to extend) where a positional parameter list stopped being.
 - **`Photobooth.ConsoleDemo`** — proves the state machine end to end,
   including a forced failure, before any UI or real hardware exists.
 - **`schema.sql`** — relational schema covering locations, bookings,
@@ -77,14 +79,28 @@ full system, not just the UI layer.
 - **`IBoothSettingsProvider`** — same seam again, backs the admin-editable
   countdown duration and Glam Booth toggle. See "Admin settings screen"
   below.
+- **`IFrameLibraryService`**/**`IFrameOverlayService`** — the data and
+  compositing halves of admin-managed frame overlays: the first reads
+  which frames are currently active, the second composites the guest's
+  pick onto the photo. Same interface-plus-mock seams as everything else
+  above them. See "Frame library & guest frame picker" below.
+- **`IFrameSelectionService`** — collects the guest's frame pick during
+  `FramePicker`. Unlike `IConsentService`/`IPaymentService` (both still
+  mock-only — a real disclaimer/gateway needs external integration work
+  this project hasn't done yet), this one has a real implementation,
+  `UiFrameSelectionService`: a frame pick is just a button tap with no
+  hardware or network dependency to stand up. See "Frame library & guest
+  frame picker" below.
 - **`Photobooth.Tests`** — xunit coverage for `Photobooth.Core`: state
   machine transitions (happy path, forced-failure path, vendo payment
   via both gateways, payment decline, offline upload queueing,
-  disclaimer decline, email delivery, Glam Booth mode, and custom
-  countdown settings) and the mock/real camera, printer, cloud upload,
-  session repository, both payment gateways, pending-upload-queue,
-  consent, email, photo-branding, photo-filter, and settings
-  implementations. `dotnet test` — 53 passed.
+  disclaimer decline, email delivery, Glam Booth mode, custom countdown
+  settings, and the frame picker's three cases — frame chosen, frame
+  skipped, no frames configured) and the mock/real camera, printer,
+  cloud upload, session repository, both payment gateways,
+  pending-upload-queue, consent, email, photo-branding, photo-filter,
+  settings, and frame-library/frame-selection/frame-overlay
+  implementations. `dotnet test` — 65 passed.
 
 ```
 Location ──< Session >── Print
@@ -92,6 +108,7 @@ Location ──< Session >── Print
    │            ├──< Payment
    │            └──< Consent
    ├──< Booking
+   ├──< Frame
    └──< Printer ──< InventoryLog
 ```
 
@@ -141,6 +158,10 @@ Location ──< Session >── Print
 - [x] Admin settings screen (`IBoothSettingsProvider`) — countdown
       duration and Glam Booth mode, editable and taking effect without a
       restart. See "Admin settings screen" below.
+- [x] Frame library & guest frame picker (`IFrameLibraryService`,
+      `IFrameSelectionService`, `IFrameOverlayService`) — admin-managed
+      frame overlays, plus a real (not mocked) guest-facing picker
+      screen. See "Frame library & guest frame picker" below.
 
 ## Running it
 
@@ -663,3 +684,87 @@ used for earlier sessions, and the next session picks up both the 5-second
 countdown and the Glam filter without recreating anything. **Not yet
 verified:** the settings screen actually rendering or being clicked
 through — same interactive-desktop gap as the rest of `AdminWindow`.
+
+## Frame library & guest frame picker
+
+Admin-managed frame overlays a guest can pick during a session, plus the
+picker screen itself — the two pieces flagged as "not started" the last
+time this project's status was reviewed.
+
+- **`Frame`** table in `schema.sql` (`Name`, `ImagePath`, `SortOrder`,
+  `IsActive`). One row per overlay, scoped to a `Location` the same way
+  `Printer`/`Booking` are. `IsActive` lets an admin retire a frame
+  without losing its history; a fresh database (or an already-seeded one,
+  via another `ALTER`-free `CREATE TABLE` top-up, same pattern as
+  `Consent`/the booth-settings columns before it) starts with zero
+  frames, so `FramePicker` is skipped entirely until an admin adds one —
+  existing deployments and tests see no behavior change.
+- **`FrameRepository`** (`Photobooth.Data`) — plain CRUD, same shape as
+  `LocationRepository`/`InventoryLogRepository` (no interface/mock; only
+  `AdminWindow` and `SqlFrameLibraryService` talk to it directly).
+- **`IFrameLibraryService`** reads the active frames for a location, same
+  interface-plus-mock seam (and same "read fresh every session, no
+  caching" reasoning) as `IBoothSettingsProvider` — an admin's newly
+  added or retired frame takes effect for the very next guest, not the
+  app's next restart.
+- **`IFrameOverlayService`** composites the chosen frame's PNG onto the
+  photo via GDI+ (`GdiFrameOverlayService`), stretched to the photo's
+  exact dimensions so it lines up regardless of the frame asset's native
+  resolution — same Windows-only, interface-plus-mock pattern as
+  `IPhotoBrandingService`/`IPhotoFilterService`.
+- **`IFrameSelectionService`** collects the guest's pick. This is the one
+  seam in this list that's genuinely real rather than "mock for now, real
+  integration is future work" (the status `IConsentService`/
+  `IPaymentService` still carry): a frame pick has no external
+  hardware/gateway to integrate, it's just a button tap. Real
+  implementation is `UiFrameSelectionService` — a `TaskCompletionSource`
+  bridge that raises `SelectionRequested` (the UI shows the offered
+  thumbnails) and completes once `MainWindow` calls `SubmitSelection` in
+  response to a tap. `MockFrameSelectionService` (picks the first option,
+  or none if `SkipNext` is set) is what `Photobooth.Tests`/
+  `Photobooth.ConsoleDemo` use instead.
+- **`BoothStateMachine`** reads the active frame list right after the
+  guest's seen their photo on `Reviewing`. If any exist, it shows
+  `FramePicker`, waits for a pick, and — if the guest chose one — applies
+  it before the upload starts and before printing, so the QR code and the
+  physical print both show the same final composited photo (same
+  invariant branding/filter ordering already established). If nothing's
+  configured, `FramePicker` never shows and the session behaves exactly
+  as it did before this feature existed.
+- **UI**: `MainWindow` gained a real `FramePickerView` — a WPF screen
+  built from actual frame thumbnails (not a placeholder), each a clickable
+  `Button` wired to `UiFrameSelectionService.SubmitSelection`, plus a "No
+  frame" button. `AdminWindow` gained a "Frame library" section: an
+  `ItemsControl` listing existing frames with an Active checkbox and
+  Delete button per row, and an "Add Frame" form (name + `OpenFileDialog`
+  image picker) that copies the chosen image into a local
+  `Assets/Frames/` folder and inserts the row.
+
+Verified via `Photobooth.Tests`: three new `BoothStateMachineTests` cases
+(frame chosen — `FramePicker` shows between `Reviewing` and `Printing`,
+the framed path is what gets printed and uploaded, not the pre-frame one;
+guest skips the frame — `FramePicker` still shows but nothing's applied;
+no active frames — `FramePicker` never shows at all) plus unit coverage
+for each new mock (`MockFrameLibraryService`, `MockFrameSelectionService`,
+`MockFrameOverlayService`), a real round-trip test for
+`UiFrameSelectionService` (`SelectFrameAsync` doesn't complete until
+`SubmitSelection` is called, and a null submission means "skipped"), and a
+`GdiFrameOverlayServiceTests` that composites a real frame PNG with a
+transparent center and an opaque red border onto a real captured photo,
+confirming the output is a genuine same-dimension JPEG, the transparent
+region still shows the original photo's color, and the opaque region
+shows the frame's. `dotnet test` — 65 passed. Verified via
+`Photobooth.ConsoleDemo`: session 9 (an admin-simulated two-frame library)
+shows `[STATE] FramePicker`, picks "Classic Gold Border", and the final
+photo path/uploaded URL both carry a `_framed` suffix; session 10 (guest
+skips) shows `FramePicker` too but the final path has no `_framed`
+suffix. Verified the real SQL path directly, same reasoning as
+`SqlSessionRepository`/`SqlBoothSettingsProvider` (`Photobooth.Tests`
+doesn't cover SQL-backed code): a throwaway script ran the migration
+against this machine's real, already-seeded LocalDB, inserted a frame,
+confirmed `SqlFrameLibraryService` returned it as active, deactivated it
+and confirmed the active list emptied while the all-frames list still
+showed it, then deleted it and confirmed the table was back to its
+starting count. **Not yet verified:** `FramePickerView`/`AdminWindow`'s
+new section actually rendering or being tapped through — same
+interactive-desktop gap as the rest of the WPF UI.

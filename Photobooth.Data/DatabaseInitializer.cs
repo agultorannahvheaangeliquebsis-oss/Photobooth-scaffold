@@ -59,6 +59,36 @@ public static class DatabaseInitializer
         // manual DROP DATABASE.
         await EnsureConsentTableAsync(connection, ct);
         await EnsureBoothSettingsColumnsAsync(connection, ct);
+        await EnsureFrameTableAsync(connection, ct);
+    }
+
+    /// <summary>Same reasoning as EnsureConsentTableAsync, for the Frame table added
+    /// after this check was originally written.</summary>
+    private static async Task EnsureFrameTableAsync(SqlConnection connection, CancellationToken ct)
+    {
+        using (var checkCommand = new SqlCommand("SELECT 1 FROM sys.tables WHERE name = 'Frame';", connection))
+        {
+            if (await checkCommand.ExecuteScalarAsync(ct) is not null)
+            {
+                return;
+            }
+        }
+
+        using var createCommand = new SqlCommand(
+            """
+            CREATE TABLE Frame (
+                FrameId         INT IDENTITY(1,1) PRIMARY KEY,
+                LocationId      INT             NOT NULL REFERENCES Location(LocationId),
+                Name            NVARCHAR(100)   NOT NULL,
+                ImagePath       NVARCHAR(500)   NOT NULL,
+                SortOrder       INT             NOT NULL DEFAULT 0,
+                IsActive        BIT             NOT NULL DEFAULT 1,
+                CreatedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
+            );
+            CREATE INDEX IX_Frame_Location_Active ON Frame(LocationId, IsActive, SortOrder);
+            """,
+            connection);
+        await createCommand.ExecuteNonQueryAsync(ct);
     }
 
     /// <summary>Same reasoning as EnsureConsentTableAsync, for the two admin-settings

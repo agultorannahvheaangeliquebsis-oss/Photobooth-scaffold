@@ -85,9 +85,24 @@ CREATE TABLE InventoryLog (
     LoggedAt        DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
 );
 
+-- Admin-managed frame overlays a guest can pick during a session (see
+-- AdminWindow's Frame library section, IFrameLibraryService). IsActive lets
+-- an admin retire a frame without losing its history; SortOrder controls
+-- the order guests see them in the picker.
+CREATE TABLE Frame (
+    FrameId         INT IDENTITY(1,1) PRIMARY KEY,
+    LocationId      INT             NOT NULL REFERENCES Location(LocationId),
+    Name            NVARCHAR(100)   NOT NULL,
+    ImagePath       NVARCHAR(500)   NOT NULL,
+    SortOrder       INT             NOT NULL DEFAULT 0,
+    IsActive        BIT             NOT NULL DEFAULT 1,
+    CreatedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
 -- Helpful indexes for the dashboard queries you'll write later
 CREATE INDEX IX_Session_Location_Mode ON Session(LocationId, Mode);
 CREATE INDEX IX_Print_Session ON [Print](SessionId);
 CREATE INDEX IX_Payment_Session ON Payment(SessionId);
 CREATE INDEX IX_Consent_Session ON Consent(SessionId);
 CREATE INDEX IX_InventoryLog_Printer_LoggedAt ON InventoryLog(PrinterId, LoggedAt DESC);
+CREATE INDEX IX_Frame_Location_Active ON Frame(LocationId, IsActive, SortOrder);

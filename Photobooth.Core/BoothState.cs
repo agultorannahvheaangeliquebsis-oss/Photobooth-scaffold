@@ -11,6 +11,7 @@ public enum BoothState
     Countdown,
     Capturing,
     Reviewing,
+    FramePicker,
     Payment,
     Printing,
     Complete,

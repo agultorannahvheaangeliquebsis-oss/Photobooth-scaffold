@@ -5,7 +5,7 @@
         Background="{StaticResource CanvasBrush}"
         WindowStartupLocation="CenterOwner"
         Width="480"
-        Height="680">
+        Height="820">
     <Window.Resources>
         <Style x:Key="SectionHeader" TargetType="TextBlock">
             <Setter Property="FontFamily" Value="Segoe UI" />
@@ -75,6 +75,42 @@
                            Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" />
                 <Button x:Name="SaveSettingsButton" Content="Save Settings" Padding="16,8"
                         HorizontalAlignment="Left" Margin="0,8,0,0" Click="SaveSettingsButton_Click" />
+
+                <!-- Frames an admin adds here show up in the guest-facing
+                     FramePicker screen (see MainWindow's FramePickerView):
+                     takes effect for the next guest session, no restart. -->
+                <TextBlock Text="Frame library" Style="{StaticResource SectionHeader}" />
+                <ItemsControl x:Name="FramesList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="{Binding Name}" Style="{StaticResource Row}" VerticalAlignment="Center" />
+                                <CheckBox Grid.Column="1" IsChecked="{Binding IsActive, Mode=OneWay}" Content="Active"
+                                          Tag="{Binding FrameId}" Margin="8,0" VerticalAlignment="Center" Click="FrameActiveCheckBox_Click" />
+                                <Button Grid.Column="2" Content="Delete" Padding="8,4" Tag="{Binding FrameId}" Click="DeleteFrameButton_Click" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock x:Name="FramesEmptyText" Text="No frames added yet -- FramePicker won't show for guests until one exists."
+                           Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Visibility="Collapsed" />
+
+                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                    <TextBlock Text="New frame name:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
+                    <TextBox x:Name="NewFrameNameBox" Width="140" Margin="0,0,8,0" />
+                    <Button x:Name="BrowseFrameImageButton" Content="Browse..." Padding="8,4" Click="BrowseFrameImageButton_Click" />
+                </StackPanel>
+                <TextBlock x:Name="SelectedFrameImageText" Text="No image selected." Style="{StaticResource Row}"
+                           Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
+                <Button x:Name="AddFrameButton" Content="Add Frame" Padding="16,8"
+                        HorizontalAlignment="Left" Margin="0,8,0,0" Click="AddFrameButton_Click" />
+                <TextBlock x:Name="FrameStatusText" Style="{StaticResource Row}"
+                           Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
             </StackPanel>
         </ScrollViewer>
 

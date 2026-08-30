@@ -1,5 +1,7 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Photobooth.Core;
@@ -11,6 +13,7 @@ public partial class MainWindow : Window
 {
     private BoothStateMachine _stateMachine = null!;
     private ILiveViewService _liveView = null!;
+    private UiFrameSelectionService _frameSelection = null!;
     private readonly DispatcherTimer _liveViewTimer;
     private bool _sessionRunning;
     private bool _liveViewFetchInProgress;
@@ -59,6 +62,13 @@ public partial class MainWindow : Window
         {
             var sessionRepository = new SqlSessionRepository(seedIds.LocationId, seedIds.PrinterId);
 
+            // Real, not mocked, unlike Consent/Payment below -- a frame pick
+            // is just a button tap with no external hardware/gateway to
+            // integrate, so there's no "mock only for now" gap here. See
+            // UiFrameSelectionService.
+            _frameSelection = new UiFrameSelectionService();
+            _frameSelection.SelectionRequested += options => Dispatcher.Invoke(() => ShowFrameOptions(options));
+
             var services = new BoothServices(
                 Camera: new PtpCameraService(),
                 Printer: new SpoolerPrinterService(),
@@ -70,7 +80,10 @@ public partial class MainWindow : Window
                 Email: new MockEmailDeliveryService(),
                 Branding: new GdiPhotoBrandingService(),
                 Filter: new GdiPhotoFilterService(),
-                Settings: new SqlBoothSettingsProvider(seedIds.LocationId));
+                Settings: new SqlBoothSettingsProvider(seedIds.LocationId),
+                FrameLibrary: new SqlFrameLibraryService(seedIds.LocationId),
+                FrameSelection: _frameSelection,
+                FrameOverlay: new GdiFrameOverlayService());
             _stateMachine = new BoothStateMachine(services, mode: seedIds.LocationType);
         }
         catch (Exception ex)
@@ -140,6 +153,7 @@ public partial class MainWindow : Window
         CountdownView.Visibility = state == BoothState.Countdown ? Visibility.Visible : Visibility.Collapsed;
         CapturingView.Visibility = state == BoothState.Capturing ? Visibility.Visible : Visibility.Collapsed;
         ReviewingView.Visibility = state == BoothState.Reviewing ? Visibility.Visible : Visibility.Collapsed;
+        FramePickerView.Visibility = state == BoothState.FramePicker ? Visibility.Visible : Visibility.Collapsed;
         PaymentView.Visibility = state == BoothState.Payment ? Visibility.Visible : Visibility.Collapsed;
         PrintingView.Visibility = state == BoothState.Printing ? Visibility.Visible : Visibility.Collapsed;
         CompleteView.Visibility = state == BoothState.Complete ? Visibility.Visible : Visibility.Collapsed;
@@ -178,6 +192,43 @@ public partial class MainWindow : Window
         QrPanel.Visibility = qrEligibleScreen && _stateMachine.LastPhotoUrl != null
             ? Visibility.Visible
             : Visibility.Collapsed;
+    }
+
+    /// <summary>Populates FramePickerView with one button per active frame plus a
+    /// "No frame" option, called when UiFrameSelectionService raises SelectionRequested
+    /// (i.e. right as BoothStateMachine enters FramePicker and starts waiting for a tap).</summary>
+    private void ShowFrameOptions(IReadOnlyList<FrameOption> options)
+    {
+        FrameOptionsPanel.Children.Clear();
+
+        foreach (FrameOption option in options)
+        {
+            var thumbnail = new Image { Width = 130, Height = 90, Stretch = Stretch.Uniform, Margin = new Thickness(0, 0, 0, 8) };
+            if (System.IO.File.Exists(option.ImagePath))
+            {
+                thumbnail.Source = new BitmapImage(new Uri(System.IO.Path.GetFullPath(option.ImagePath)));
+            }
+
+            var content = new StackPanel();
+            content.Children.Add(thumbnail);
+            content.Children.Add(new TextBlock { Text = option.Name, HorizontalAlignment = HorizontalAlignment.Center, FontSize = 14 });
+
+            var button = new Button { Content = content, Tag = option, Padding = new Thickness(12), Margin = new Thickness(8) };
+            button.Click += FrameOptionButton_Click;
+            FrameOptionsPanel.Children.Add(button);
+        }
+
+        var skipButton = new Button { Content = "No frame", Padding = new Thickness(16, 12, 16, 12), Margin = new Thickness(8) };
+        skipButton.Click += (_, _) => _frameSelection.SubmitSelection(null);
+        FrameOptionsPanel.Children.Add(skipButton);
+    }
+
+    private void FrameOptionButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: FrameOption option })
+        {
+            _frameSelection.SubmitSelection(option);
+        }
     }
 
     private void LoadQrCode(Uri photoUrl)

@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using Photobooth.Data;
 
 namespace Photobooth.UI;
@@ -7,18 +8,23 @@ namespace Photobooth.UI;
 /// Dashboard over AdminDashboardRepository (sessions today, revenue by
 /// mode, low-inventory alerts -- read-only) plus an editable Settings
 /// section (countdown duration, Glam Booth mode -- backed by the
-/// Location row's own columns). Reached from MainWindow via F12 (see
-/// Window_KeyDown there), never from the guest-facing surface.
+/// Location row's own columns) and a Frame library section (add/retire the
+/// overlays guests can pick during FramePicker). Reached from MainWindow
+/// via F12 (see Window_KeyDown there), never from the guest-facing surface.
 /// </summary>
 public partial class AdminWindow : Window
 {
     private readonly AdminDashboardRepository _repository = new();
     private readonly LocationRepository _locations = new();
+    private readonly FrameRepository _frames = new();
 
     // "One booth machine has one location" -- same assumption
-    // DatabaseInitializer's own seeding already makes -- so Settings always
-    // edits the first (only) Location row rather than needing one passed in.
+    // DatabaseInitializer's own seeding already makes -- so Settings and the
+    // Frame library always target the first (only) Location row rather than
+    // needing one passed in.
     private int _locationId;
+
+    private string? _pendingFrameImagePath;
 
     public AdminWindow()
     {
@@ -81,6 +87,7 @@ public partial class AdminWindow : Window
                 _locationId = locations[0].LocationId;
                 CountdownSecondsBox.Text = locations[0].CountdownSeconds.ToString();
                 GlamFilterCheckBox.IsChecked = locations[0].GlamFilterEnabled;
+                await LoadFramesAsync();
             }
         }
         catch (Exception ex)
@@ -90,6 +97,89 @@ public partial class AdminWindow : Window
         finally
         {
             RefreshButton.IsEnabled = true;
+        }
+    }
+
+    private async Task LoadFramesAsync()
+    {
+        var frames = await _frames.GetAllByLocationAsync(_locationId);
+        FramesList.ItemsSource = frames;
+        FramesEmptyText.Visibility = frames.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void BrowseFrameImageButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Filter = "Image files (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg",
+            Title = "Choose a frame overlay image",
+        };
+        if (dialog.ShowDialog() == true)
+        {
+            _pendingFrameImagePath = dialog.FileName;
+            SelectedFrameImageText.Text = System.IO.Path.GetFileName(dialog.FileName);
+        }
+    }
+
+    /// <summary>Copies the chosen image into a local Assets/Frames folder (same
+    /// "own local copy, not a reference to wherever the admin picked it from"
+    /// reasoning MockCameraService's captures/ folder already uses) and inserts
+    /// the Frame row.</summary>
+    private async void AddFrameButton_Click(object sender, RoutedEventArgs e)
+    {
+        string name = NewFrameNameBox.Text.Trim();
+        if (name.Length == 0 || _pendingFrameImagePath is null)
+        {
+            FrameStatusText.Text = "Enter a name and choose an image first.";
+            FrameStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+            return;
+        }
+
+        AddFrameButton.IsEnabled = false;
+        try
+        {
+            string framesDirectory = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "Frames");
+            System.IO.Directory.CreateDirectory(framesDirectory);
+            string storedFileName = $"{Guid.NewGuid():N}{System.IO.Path.GetExtension(_pendingFrameImagePath)}";
+            string storedPath = System.IO.Path.Combine(framesDirectory, storedFileName);
+            System.IO.File.Copy(_pendingFrameImagePath, storedPath, overwrite: true);
+
+            var existing = await _frames.GetAllByLocationAsync(_locationId);
+            await _frames.InsertAsync(_locationId, name, storedPath, sortOrder: existing.Count);
+
+            NewFrameNameBox.Text = string.Empty;
+            _pendingFrameImagePath = null;
+            SelectedFrameImageText.Text = "No image selected.";
+            FrameStatusText.Text = "Frame added -- available to the next guest.";
+            FrameStatusText.Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush");
+            await LoadFramesAsync();
+        }
+        catch (Exception ex)
+        {
+            FrameStatusText.Text = $"Couldn't add frame: {ex.Message}";
+            FrameStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+        }
+        finally
+        {
+            AddFrameButton.IsEnabled = true;
+        }
+    }
+
+    private async void FrameActiveCheckBox_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is CheckBox { Tag: int frameId } checkBox)
+        {
+            await _frames.SetActiveAsync(frameId, checkBox.IsChecked == true);
+            await LoadFramesAsync();
+        }
+    }
+
+    private async void DeleteFrameButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: int frameId })
+        {
+            await _frames.DeleteAsync(frameId);
+            await LoadFramesAsync();
         }
     }
 }

@@ -11,6 +11,9 @@ var email = new MockEmailDeliveryService();
 var branding = new MockPhotoBrandingService();
 var filter = new MockPhotoFilterService();
 var settings = new MockBoothSettingsProvider();
+var frameLibrary = new MockFrameLibraryService();
+var frameSelection = new MockFrameSelectionService();
+var frameOverlay = new MockFrameOverlayService();
 int emailsPrinted = 0;
 void PrintNewEmails(MockEmailDeliveryService service)
 {
@@ -21,7 +24,7 @@ void PrintNewEmails(MockEmailDeliveryService service)
     }
 }
 
-var services = new BoothServices(camera, printer, cloudUpload, sessions, payment, uploadQueue, consent, email, branding, filter, settings);
+var services = new BoothServices(camera, printer, cloudUpload, sessions, payment, uploadQueue, consent, email, branding, filter, settings, frameLibrary, frameSelection, frameOverlay);
 var eventMachine = new BoothStateMachine(services, mode: "event");
 
 eventMachine.StateChanged += state => Console.WriteLine($"  [STATE]     {state}");
@@ -124,6 +127,30 @@ Console.WriteLine("--- Session 8 (event, Glam Booth mode + 5s countdown) ---");
 Console.WriteLine("  (simulating an admin turning on Glam Booth mode and lengthening the countdown)");
 settings.Settings = new BoothSettings(CountdownSeconds: 5, GlamFilterEnabled: true);
 await eventMachine.RunSessionAsync();
+Console.WriteLine($"  Final photo path: {eventMachine.LastCapturedImagePath}");
+PrintNewEmails(email);
+Console.WriteLine();
+
+// Frame library is admin-managed and off by default (an empty Frame table,
+// same as this MockFrameLibraryService's default) -- simulating an admin
+// adding two frames here, same as flipping settings.Settings above.
+Console.WriteLine("--- Session 9 (event, frame library has two frames) ---");
+Console.WriteLine("  (simulating an admin adding frame overlays -- guest picks the first one)");
+frameLibrary.Frames = new List<FrameOption>
+{
+    new(1, "Classic Gold Border", "./frames/gold_border.png"),
+    new(2, "Confetti", "./frames/confetti.png"),
+};
+await eventMachine.RunSessionAsync();
+Console.WriteLine($"  Frame picked: {eventMachine.LastSelectedFrame?.Name ?? "(none)"}");
+Console.WriteLine($"  Final photo path: {eventMachine.LastCapturedImagePath}");
+PrintNewEmails(email);
+Console.WriteLine();
+
+Console.WriteLine("--- Session 10 (event, guest skips the frame) ---");
+frameSelection.SkipNext = true;
+await eventMachine.RunSessionAsync();
+Console.WriteLine($"  Frame picked: {eventMachine.LastSelectedFrame?.Name ?? "(none)"}");
 Console.WriteLine($"  Final photo path: {eventMachine.LastCapturedImagePath}");
 PrintNewEmails(email);
 Console.WriteLine();
