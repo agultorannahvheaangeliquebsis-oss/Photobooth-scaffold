@@ -199,9 +199,10 @@ public class BoothStateMachine
             // see BUILD_PLAN.md's "dslrBooth feature-parity plan", Phase 2.
             // Photo mode (the default, and the only mode that existed
             // before this feature) is unchanged below. GIF/Boomerang also
-            // deliberately skip the glam filter/branding/frame-overlay
-            // pipeline entirely: those are all single-still GDI+ operations
-            // (see GdiPhotoBrandingService/GdiPhotoFilterService/
+            // deliberately skip the green screen/glam filter/branding/
+            // frame-overlay pipeline entirely: those are all single-still
+            // GDI+ operations (see GdiGreenScreenService/
+            // GdiPhotoBrandingService/GdiPhotoFilterService/
             // GdiFrameOverlayService) that would either only touch the
             // first frame or corrupt the animation outright if pointed at a
             // multi-frame GIF -- a real fix means compositing each effect
@@ -237,6 +238,18 @@ public class BoothStateMachine
             else
             {
                 LastCapturedImagePath = await _services.Camera.CaptureAsync(ct);
+
+                // Green screen composites first, before the glam filter --
+                // its green-dominance threshold needs the plain camera
+                // colors, and a background composited after a B&W pass would
+                // itself need to be desaturated to match, which isn't
+                // attempted here. Skipped with no background configured:
+                // nothing to composite against yet, even if the toggle is on.
+                if (settings.GreenScreen is { Enabled: true, BackgroundImagePath: not null } greenScreen)
+                {
+                    LastCapturedImagePath = await _services.GreenScreen.ApplyGreenScreenAsync(
+                        LastCapturedImagePath, greenScreen.BackgroundImagePath, ct);
+                }
 
                 // Glam filter (if this booth's settings have it on) applies
                 // before branding, not after -- the caption bar is always white

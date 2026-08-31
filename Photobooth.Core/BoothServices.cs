@@ -43,4 +43,10 @@ public record BoothServices(
     /// problem. No real gateway yet -- same "mock now, real vendor later"
     /// status IPaymentService/IConsentService have.</summary>
     public ISmsDeliveryService Sms { get; init; } = new MockSmsDeliveryService();
+
+    /// <summary>Chroma-key compositing for the green screen feature (see
+    /// BoothStateMachine's capture step) -- an init property here for the
+    /// same reason Sms is: avoids a 23rd positional constructor parameter
+    /// every existing call site would otherwise need to learn about.</summary>
+    public IGreenScreenService GreenScreen { get; init; } = new MockGreenScreenService();
 }

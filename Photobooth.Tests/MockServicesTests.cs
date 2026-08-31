@@ -312,6 +312,35 @@ public class MockFrameOverlayServiceTests
     }
 }
 
+public class MockGreenScreenServiceTests
+{
+    [Fact]
+    public async Task ApplyGreenScreenAsync_ReturnsANewPathAndLeavesOriginalUntouched()
+    {
+        var camera = new MockCameraService();
+        string originalPath = await camera.CaptureAsync();
+        var greenScreen = new MockGreenScreenService();
+
+        string compositedPath = await greenScreen.ApplyGreenScreenAsync(originalPath, "./backgrounds/beach.jpg");
+
+        Assert.NotEqual(originalPath, compositedPath);
+        Assert.Contains("_greenscreen", compositedPath);
+        Assert.True(File.Exists(compositedPath));
+        Assert.True(File.Exists(originalPath));
+    }
+
+    [Fact]
+    public async Task ApplyToLiveFrameAsync_ReturnsTheFrameBytesUnchanged()
+    {
+        var greenScreen = new MockGreenScreenService();
+        byte[] frameBytes = { 1, 2, 3, 4 };
+
+        byte[] result = await greenScreen.ApplyToLiveFrameAsync(frameBytes, "./backgrounds/beach.jpg");
+
+        Assert.Same(frameBytes, result);
+    }
+}
+
 public class UiFrameSelectionServiceTests
 {
     [Fact]

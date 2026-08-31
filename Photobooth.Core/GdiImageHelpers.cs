@@ -11,9 +11,15 @@ internal static class GdiImageHelpers
     /// of the source file -- GDI+'s stream-backed Bitmap constructor requires the
     /// stream to stay open for the image's lifetime, and callers don't want to
     /// think about that.</summary>
-    public static Bitmap LoadIndependentCopy(string path)
+    public static Bitmap LoadIndependentCopy(string path) => LoadIndependentCopyFromBytes(File.ReadAllBytes(path));
+
+    /// <summary>Same independent-memory guarantee as <see cref="LoadIndependentCopy"/>,
+    /// for callers that already have the image bytes in memory (e.g. a live-view
+    /// frame straight off the camera bridge pipe) and don't want a round trip
+    /// through disk just to decode them.</summary>
+    public static Bitmap LoadIndependentCopyFromBytes(byte[] bytes)
     {
-        using var stream = new MemoryStream(File.ReadAllBytes(path));
+        using var stream = new MemoryStream(bytes);
         using var loaded = new Bitmap(stream);
         return new Bitmap(loaded);
     }

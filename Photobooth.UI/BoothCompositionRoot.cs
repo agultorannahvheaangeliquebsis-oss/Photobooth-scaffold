@@ -102,6 +102,7 @@ public static class BoothCompositionRoot
             Survey: survey)
         {
             Sms = new MockSmsDeliveryService(),
+            GreenScreen = new GdiGreenScreenService(),
         };
 
         return new RealBooth(

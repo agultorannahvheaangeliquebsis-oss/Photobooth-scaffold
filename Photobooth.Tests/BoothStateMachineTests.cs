@@ -144,6 +144,73 @@ public class BoothStateMachineTests
     }
 
     [Fact]
+    public async Task RunSessionAsync_GreenScreenEnabledWithBackground_AppliesItBeforeGlamFilterAndBranding()
+    {
+        var camera = new MockCameraService();
+        var printer = new MockPrinterService();
+        var cloudUpload = new MockCloudUploadService();
+        var paymentService = new MockQrPaymentService();
+        var sessions = new MockSessionRepository();
+        var uploadQueue = new MockPendingUploadQueue();
+        var consent = new MockConsentService();
+        var email = new MockEmailDeliveryService();
+        var branding = new MockPhotoBrandingService();
+        var filter = new MockPhotoFilterService();
+        var settings = new MockBoothSettingsProvider
+        {
+            Settings = new BoothSettings(CountdownSeconds: 3, GlamFilterEnabled: true, PrintTemplate: PrintTemplate.Default)
+            {
+                GreenScreen = new GreenScreenSettings(Enabled: true, BackgroundImagePath: "./backgrounds/beach.jpg"),
+            },
+        };
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
+        var machine = new BoothStateMachine(services, mode: "event");
+
+        await machine.RunSessionAsync();
+
+        Assert.NotNull(machine.LastCapturedImagePath);
+        // Green screen runs first, so "_greenscreen" appears before both
+        // "_glam" and "_branded" in the final filename -- proves the
+        // ordering, not just that all three ran.
+        int greenScreenIndex = machine.LastCapturedImagePath!.IndexOf("_greenscreen", StringComparison.Ordinal);
+        int glamIndex = machine.LastCapturedImagePath.IndexOf("_glam", StringComparison.Ordinal);
+        int brandedIndex = machine.LastCapturedImagePath.IndexOf("_branded", StringComparison.Ordinal);
+        Assert.True(greenScreenIndex >= 0 && glamIndex >= 0 && brandedIndex >= 0
+            && greenScreenIndex < glamIndex && glamIndex < brandedIndex);
+    }
+
+    [Fact]
+    public async Task RunSessionAsync_GreenScreenEnabledButNoBackgroundConfigured_SkipsGreenScreen()
+    {
+        var camera = new MockCameraService();
+        var printer = new MockPrinterService();
+        var cloudUpload = new MockCloudUploadService();
+        var paymentService = new MockQrPaymentService();
+        var sessions = new MockSessionRepository();
+        var uploadQueue = new MockPendingUploadQueue();
+        var consent = new MockConsentService();
+        var email = new MockEmailDeliveryService();
+        var branding = new MockPhotoBrandingService();
+        var filter = new MockPhotoFilterService();
+        var settings = new MockBoothSettingsProvider
+        {
+            Settings = new BoothSettings(CountdownSeconds: 3, GlamFilterEnabled: false, PrintTemplate: PrintTemplate.Default)
+            {
+                // Enabled with nothing to composite against yet -- e.g. an
+                // admin turned the toggle on before picking a background.
+                GreenScreen = new GreenScreenSettings(Enabled: true, BackgroundImagePath: null),
+            },
+        };
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
+        var machine = new BoothStateMachine(services, mode: "event");
+
+        await machine.RunSessionAsync();
+
+        Assert.NotNull(machine.LastCapturedImagePath);
+        Assert.DoesNotContain("_greenscreen", machine.LastCapturedImagePath);
+    }
+
+    [Fact]
     public async Task RunSessionAsync_CustomCountdownInSettings_FiresThatManyCountdownTicks()
     {
         var camera = new MockCameraService();

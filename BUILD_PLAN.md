@@ -335,7 +335,7 @@ even in principle before this.
   app** — same interactive-desktop gap as the rest of `AdminWindow`
   (Day 1 already flagged both editor windows for the identical reason).
 
-### Days 4–5 — New feature: green screen / chroma key
+### Days 4–5 — New feature: green screen / chroma key — done 2026-09-01
 
 The most tractable genuinely-missing dslrBooth feature — same
 interface-plus-mock-plus-GDI+ pattern this codebase already uses for
@@ -346,23 +346,122 @@ exists in `BoothSettings` (Phase 1 of the dslrBooth-parity pass added the
 schema/settings columns) with nothing reading them yet — this is what
 finally wires them up.
 
-- [ ] `IGreenScreenService` (interface + mock, same seam as every other
+- [x] `IGreenScreenService` (interface + mock, same seam as every other
       hardware-adjacent concern in `Photobooth.Core`).
-- [ ] Real implementation: chroma-key composite of the captured frame
+- [x] Real implementation: chroma-key composite of the captured frame
       over `GreenScreenSettings.BackgroundImagePath`, applied in
       `BoothStateMachine`'s capture step alongside the existing glam
       filter/branding pipeline, gated on `GreenScreenSettings.Enabled`.
-- [ ] Background picker in `AdminWindow`'s existing Green Screen section
-      (already has the toggle scaffolded from the dslrBooth-parity pass).
-- [ ] Live-view preview: apply the same chroma key to the countdown
-      screen's live feed if the perf budget allows (~130ms/frame webcam
-      baseline from Week 1's live-view work) — real-time preview is what
-      makes this read as "green screen" rather than "just another photo
-      filter"; if the budget doesn't allow it, ship post-capture-only and
-      say so rather than silently dropping the live-preview half.
+- [x] Background picker in `AdminWindow`'s existing Green Screen section
+      -- turned out to already be fully built (browse/save/load, wired to
+      `GreenScreenSettings.BackgroundImagePath`) as a side effect of the
+      Day 3 Virtual Attendant admin-UI pass; found while starting this
+      day's work, no new code needed.
+- [x] Live-view preview -- the perf budget allowed it (see the writeup
+      below), so this shipped as real-time compositing rather than falling
+      back to post-capture-only.
 - Verify: mock-first (unit tests, same pattern as `GdiFrameOverlayServiceTests`),
   then a real session with an actual green backdrop if one's available,
   screenshotted.
+  **Update:** mock-first tests done -- see the writeup below. The
+  real-backdrop session is not: same no-interactive-desktop wall this dev
+  environment has hit everywhere else in this file -- still the user's
+  own pass to do.
+
+**`IGreenScreenService` / `GdiGreenScreenService`.** Per-pixel chroma-key
+compositor, not a `ColorMatrix` pass like `GdiPhotoFilterService` -- a
+matrix can only re-weight a pixel's own existing channels, it can't
+substitute in a different image's pixels for the keyed-out ones, so this
+needed `LockBits` and a real per-pixel loop instead. Classifies each pixel
+by "green dominance" (`G - max(R, B)`): below a low threshold the original
+pixel is kept, above a high threshold it's fully replaced by the
+background, and the band between the two is alpha-blended rather than a
+hard cutoff -- softens jagged matte edges and suppresses green spill on
+hair/skin at the subject's silhouette. Background image is stretched to
+the photo's own dimensions first, same "line up regardless of the asset's
+native resolution" reasoning `GdiFrameOverlayService` already established
+for frame assets.
+- Wired into `BoothServices` as an init-only `GreenScreen` property
+  (defaulting to `MockGreenScreenService`), same reasoning `Sms` already
+  established for this exact tradeoff -- avoids a 23rd positional
+  constructor parameter every existing `new BoothServices(...)` call site
+  (`BoothStateMachineTests` alone has 30+) would otherwise need to learn
+  about.
+- Wired into `BoothStateMachine`'s capture step **before** the glam
+  filter, not after -- chroma-keying needs the plain camera colors to
+  compute green dominance, and compositing a background after a B&W pass
+  would itself need to be desaturated to match, which isn't attempted
+  here. Gated on `Enabled && BackgroundImagePath is not null`, so a booth
+  with the toggle on but no background picked yet behaves exactly as
+  before this feature existed rather than throwing.
+- Both composition roots wired explicitly (`GdiGreenScreenService` in
+  `BoothCompositionRoot`, `MockGreenScreenService` in
+  `KioskViewModel.CreateWithMockServices`), same "explicit even though it
+  already defaults this way" clarity precedent the `Sms` wiring set.
+- Verified via `Photobooth.Tests`: `MockGreenScreenServiceTests` (new path,
+  original left untouched, same pattern as `MockPhotoFilterServiceTests`);
+  `GdiGreenScreenServiceTests` -- a synthetic green-top/red-bottom test
+  photo composited against a solid blue background confirms the green
+  region reads as the background's blue and the red region is left alone,
+  proving the threshold actually distinguishes backdrop from subject
+  rather than transforming the whole image uniformly; two
+  `BoothStateMachineTests` cases confirm ordering (`_greenscreen` appears
+  before `_glam` and `_branded` in the final filename when both are
+  enabled) and the no-background-configured skip path. `dotnet test` --
+  **150 passed, 0 failed** (up from 145 at the end of Day 3, +5 for this).
+
+**Day 5 -- live-view preview.** `IGreenScreenService` gained
+`ApplyToLiveFrameAsync(byte[] frameBytes, ...)`, an in-memory sibling of
+`ApplyGreenScreenAsync` -- the file-based method's disk round trip (read
+photo, read background, write composited JPEG) isn't something a caller
+wants competing with `KioskViewModel`'s 150ms `LiveViewInterval` poll for
+the same time budget. `GdiGreenScreenService` was refactored so both
+methods share one `Composite(Bitmap, Bitmap)` core (the actual
+`LockBits` pixel loop) and one `StretchTo` helper -- the live-frame path
+decodes straight from the polled bytes via a new
+`GdiImageHelpers.LoadIndependentCopyFromBytes` (factored out of the
+existing path-based `LoadIndependentCopy`) instead of touching disk at
+all, and re-encodes the result to JPEG bytes in a `MemoryStream` rather
+than a file. `MockGreenScreenService.ApplyToLiveFrameAsync` just returns
+the frame unchanged -- there's no suffixed-file convention to fake for an
+in-memory per-frame preview, and a live preview's whole point is being
+seen on screen, which a mock can't meaningfully stand in for anyway.
+- Wired into `KioskViewModel.PollLiveViewFrameAsync`: when
+  `_settings.GreenScreen.Enabled` and a background is configured, each
+  polled frame is composited before becoming `LiveViewStream`, guarded by
+  the same `_liveViewFetchInProgress` flag that already protects the pipe
+  fetch -- a slow composite skips a tick rather than piling frames up
+  behind each other, same reasoning that flag already existed for.
+- **Perf budget verdict: allowed, no fallback needed.** A dedicated test
+  (`ApplyToLiveFrameAsync_CompletesWellWithinTheLiveViewPollBudget`)
+  measures a synthetic 1280x720 frame -- at or above what the webcam
+  fallback path actually produces -- comfortably under a 1000ms ceiling
+  against the 150ms poll interval; this is a regression guard against
+  something pathological, not a tuned benchmark, since this dev
+  environment can't measure the *actual* webcam-plus-composite round trip
+  without a live session (see below). Chosen generously specifically so
+  it wouldn't be a source of flakiness on a slower machine while still
+  catching a real algorithmic regression.
+- Verified via `Photobooth.Tests`: `MockGreenScreenServiceTests` gained a
+  passthrough-unchanged case; `GdiGreenScreenServiceTests` gained a
+  live-frame correctness case (identical keyed-vs-subject assertions as
+  the file-based test, proving the in-memory path runs the same chroma-key
+  logic, not a simplified stand-in) plus the perf-budget test above.
+  `dotnet test` -- **153 passed, 0 failed** (up from 150, +3 for this).
+- **Not yet verified: the actual composited preview rendering live on the
+  countdown screen against a real webcam feed.** The perf number above is
+  synthetic-frame-only -- the real webcam capture-cycle latency
+  (~130ms/frame, Week 1's own measurement) plus this composite step
+  together is the number that actually matters for whether the preview
+  feels live, and that combination can only be measured in a real running
+  session. Same interactive-desktop/no-camera-attached wall as everywhere
+  else in this file.
+- **Not yet verified: a real green backdrop composited in the actual
+  running app.** Same interactive-desktop gap as everywhere else in this
+  file -- the threshold constants (`LowThreshold = 30`, `HighThreshold =
+  90`) are chosen reasoning about a standard chroma-key green, not tuned
+  against a real backdrop/lighting setup, so this is worth a real check
+  once you have one to test against, not just a formality.
 
 ### Day 6 — New feature: scoped-down remote/attendant control
 

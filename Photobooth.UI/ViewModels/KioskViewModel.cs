@@ -218,6 +218,7 @@ public class KioskViewModel : ObservableObject, IDisposable
             Survey: new MockSurveyService())
         {
             Sms = new MockSmsDeliveryService(),
+            GreenScreen = new MockGreenScreenService(),
         },
         new MockLiveViewService());
 
@@ -1076,6 +1077,16 @@ public class KioskViewModel : ObservableObject, IDisposable
             byte[]? frame = await _liveView.GetFrameAsync();
             if (frame is not null)
             {
+                // Same threshold this booth's capture step will apply to the
+                // still, run live so the preview reads as "green screen" while
+                // the guest is still posing, not just on the reviewed photo
+                // afterward. Guarded by _liveViewFetchInProgress like the pipe
+                // fetch above -- a slow composite skips a tick rather than
+                // piling frames up behind each other.
+                if (_settings.GreenScreen is { Enabled: true, BackgroundImagePath: not null } greenScreen)
+                {
+                    frame = await _services.GreenScreen.ApplyToLiveFrameAsync(frame, greenScreen.BackgroundImagePath);
+                }
                 LiveViewStream = LoadImageFromBytes(frame);
             }
             // null frame: keep the last one on screen. A dropped frame is normal
