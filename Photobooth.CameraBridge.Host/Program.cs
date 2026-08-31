@@ -29,6 +29,8 @@ namespace Photobooth.CameraBridge.Host
         private static readonly CameraDeviceManager Manager = new CameraDeviceManager();
         private static TaskCompletionSource<PhotoCapturedEventArgs> _pendingCapture;
         private static bool _liveViewStarted;
+        private static bool _requireDslr;
+        private static readonly object RescanLock = new object();
 
         private static void Main(string[] args)
         {
@@ -37,6 +39,7 @@ namespace Photobooth.CameraBridge.Host
             // stand in for the D3500. Leave it unset everywhere else so the
             // bridge picks up whatever camera the device actually has.
             bool requireDslr = Array.Exists(args, a => a.Equals("--require-dslr", StringComparison.OrdinalIgnoreCase));
+            _requireDslr = requireDslr;
 
             Manager.CameraConnected += device =>
                 Console.WriteLine($"[camera] connected: {device.DeviceName}");
@@ -72,7 +75,67 @@ namespace Photobooth.CameraBridge.Host
                     ? "[bridge] no DSLR detected and --require-dslr was set -- pipe server will report ERR on CAPTURE until one connects"
                     : "[bridge] no camera detected at all (checked DSLR and webcam) -- pipe server will report ERR on CAPTURE until one connects");
 
+            // The two-pass scan above only runs once, at startup. If the
+            // camera was in use by another app (e.g. its manufacturer
+            // software) at that moment, PTP claim fails silently and no
+            // amount of closing that other app afterward would ever get
+            // picked up -- nothing re-triggers detection, since the USB
+            // device itself never disconnects/reconnects. Keep retrying in
+            // the background for as long as no camera is connected so a
+            // guest doesn't need to restart the whole booth app just because
+            // the DSLR was briefly held by something else.
+            var rescanTimer = new Timer(_ => RescanIfDisconnected(), null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+            GC.KeepAlive(rescanTimer);
+
             RunPipeServerLoop();
+        }
+
+        // Runs on a background timer thread while the pipe server loop blocks
+        // the main thread on WaitForConnection -- guarded by RescanLock so a
+        // slow scan can't overlap itself if a previous tick is still running.
+        private static void RescanIfDisconnected()
+        {
+            if (Manager.SelectedCameraDevice is { IsConnected: true })
+            {
+                return;
+            }
+
+            if (!Monitor.TryEnter(RescanLock))
+            {
+                return;
+            }
+
+            try
+            {
+                if (Manager.SelectedCameraDevice is { IsConnected: true })
+                {
+                    return;
+                }
+
+                Manager.DetectWebcams = false;
+                Manager.ConnectToCamera();
+                bool found = WaitForSelectedCamera(TimeSpan.FromSeconds(2));
+
+                if (!found && !_requireDslr)
+                {
+                    Manager.DetectWebcams = true;
+                    Manager.ConnectToCamera();
+                    found = WaitForSelectedCamera(TimeSpan.FromSeconds(2));
+                }
+
+                if (found)
+                {
+                    Console.WriteLine($"[bridge] camera (re)detected: {Manager.SelectedCameraDevice?.DeviceName}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[bridge] rescan failed: {ex.Message}");
+            }
+            finally
+            {
+                Monitor.Exit(RescanLock);
+            }
         }
 
         // ConnectToCamera()'s own return value isn't reliable -- confirmed on

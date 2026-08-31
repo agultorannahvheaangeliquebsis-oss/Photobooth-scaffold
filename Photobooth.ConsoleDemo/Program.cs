@@ -17,6 +17,7 @@ var frameOverlay = new MockFrameOverlayService();
 var feedback = new MockFeedbackService();
 var guestbookPrompt = new MockGuestbookPromptService();
 var videoGuestbook = new MockVideoGuestbookService();
+var gifComposer = new MockGifComposerService();
 int emailsPrinted = 0;
 void PrintNewEmails(MockEmailDeliveryService service)
 {
@@ -27,7 +28,7 @@ void PrintNewEmails(MockEmailDeliveryService service)
     }
 }
 
-var services = new BoothServices(camera, printer, cloudUpload, sessions, payment, uploadQueue, consent, email, branding, filter, settings, frameLibrary, frameSelection, frameOverlay, feedback, guestbookPrompt, videoGuestbook);
+var services = new BoothServices(camera, printer, cloudUpload, sessions, payment, uploadQueue, consent, email, branding, filter, settings, frameLibrary, frameSelection, frameOverlay, feedback, guestbookPrompt, videoGuestbook, gifComposer);
 var eventMachine = new BoothStateMachine(services, mode: "event");
 
 eventMachine.StateChanged += state => Console.WriteLine($"  [STATE]     {state}");

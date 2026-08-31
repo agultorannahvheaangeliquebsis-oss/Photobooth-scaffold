@@ -83,6 +83,14 @@
                 <CheckBox x:Name="GlamFilterCheckBox" Content="Glam Booth mode (high-contrast B&amp;W filter)"
                           Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
 
+                <!-- Gates the startup Setup/Launch Event screen (see MainWindow's
+                     SetupView): an admin enters this PIN there before they can
+                     open settings or launch the event for guests. -->
+                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                    <TextBlock Text="Admin PIN (Setup screen):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
+                    <TextBox x:Name="AdminPinBox" Width="100" MaxLength="20" />
+                </StackPanel>
+
                 <TextBlock Text="Print template" Style="{StaticResource Row}" FontWeight="SemiBold" Margin="0,12,0,4" />
                 <StackPanel Orientation="Horizontal" Margin="0,2">
                     <RadioButton x:Name="SingleLayoutRadio" GroupName="PrintLayout" Content="Single"

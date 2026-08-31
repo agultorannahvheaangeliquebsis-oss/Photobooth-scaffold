@@ -59,12 +59,75 @@ public static class DatabaseInitializer
         // manual DROP DATABASE.
         await EnsureConsentTableAsync(connection, ct);
         await EnsureBoothSettingsColumnsAsync(connection, ct);
+        await EnsureAdminPinColumnAsync(connection, ct);
         await EnsureFrameTableAsync(connection, ct);
         await EnsurePrintTemplateColumnsAsync(connection, ct);
         await EnsureFeedbackTableAsync(connection, ct);
         await EnsureBoothThemeColumnsAsync(connection, ct);
         await EnsureGuestbookVideoTableAsync(connection, ct);
         await EnsurePrintTemplateElementTableAsync(connection, ct);
+        await EnsureDslrBoothParitySettingsColumnsAsync(connection, ct);
+    }
+
+    /// <summary>Same reasoning as EnsureBoothSettingsColumnsAsync, for the dslrBooth
+    /// feature-parity settings columns added to Location after this check was
+    /// originally written (see BUILD_PLAN.md's "dslrBooth feature-parity plan"
+    /// section, Phase 1).</summary>
+    private static async Task EnsureDslrBoothParitySettingsColumnsAsync(SqlConnection connection, CancellationToken ct)
+    {
+        using var command = new SqlCommand(
+            """
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'CaptureMode')
+                ALTER TABLE Location ADD CaptureMode NVARCHAR(20) NOT NULL DEFAULT 'Photo' CHECK (CaptureMode IN ('Photo', 'GIF', 'Boomerang', 'Video'));
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'AlsoCreateGif')
+                ALTER TABLE Location ADD AlsoCreateGif BIT NOT NULL DEFAULT 0;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'GifFrameCount')
+                ALTER TABLE Location ADD GifFrameCount INT NOT NULL DEFAULT 4;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'GifFrameDelayMs')
+                ALTER TABLE Location ADD GifFrameDelayMs INT NOT NULL DEFAULT 500;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'BoothIconsEnabled')
+                ALTER TABLE Location ADD BoothIconsEnabled BIT NOT NULL DEFAULT 0;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'ShowLiveView')
+                ALTER TABLE Location ADD ShowLiveView BIT NOT NULL DEFAULT 1;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'MirrorLiveView')
+                ALTER TABLE Location ADD MirrorLiveView BIT NOT NULL DEFAULT 1;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'LiveViewRotation')
+                ALTER TABLE Location ADD LiveViewRotation INT NOT NULL DEFAULT 0;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'BeautyFilterEnabled')
+                ALTER TABLE Location ADD BeautyFilterEnabled BIT NOT NULL DEFAULT 0;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'FiltersMode')
+                ALTER TABLE Location ADD FiltersMode NVARCHAR(20) NOT NULL DEFAULT 'Ask' CHECK (FiltersMode IN ('Ask', 'Auto'));
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'WatermarkImagePath')
+                ALTER TABLE Location ADD WatermarkImagePath NVARCHAR(500) NULL;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'GreenScreenEnabled')
+                ALTER TABLE Location ADD GreenScreenEnabled BIT NOT NULL DEFAULT 0;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'GreenScreenBackgroundPath')
+                ALTER TABLE Location ADD GreenScreenBackgroundPath NVARCHAR(500) NULL;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'SurveyEnabled')
+                ALTER TABLE Location ADD SurveyEnabled BIT NOT NULL DEFAULT 0;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'DisclaimerHeader')
+                ALTER TABLE Location ADD DisclaimerHeader NVARCHAR(200) NOT NULL DEFAULT 'Do you agree with the terms?';
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'DisclaimerText')
+                ALTER TABLE Location ADD DisclaimerText NVARCHAR(MAX) NOT NULL DEFAULT '';
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'PrintAutomatically')
+                ALTER TABLE Location ADD PrintAutomatically BIT NOT NULL DEFAULT 1;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'ShowPrintButton')
+                ALTER TABLE Location ADD ShowPrintButton BIT NOT NULL DEFAULT 0;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'PrintLimitPerEvent')
+                ALTER TABLE Location ADD PrintLimitPerEvent INT NOT NULL DEFAULT 5000;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'PrintLimitPerSession')
+                ALTER TABLE Location ADD PrintLimitPerSession INT NOT NULL DEFAULT 3;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'PrintSharpening')
+                ALTER TABLE Location ADD PrintSharpening NVARCHAR(10) NOT NULL DEFAULT 'Medium' CHECK (PrintSharpening IN ('Low', 'Medium', 'High'));
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'EmailEnabled')
+                ALTER TABLE Location ADD EmailEnabled BIT NOT NULL DEFAULT 1;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'SmsEnabled')
+                ALTER TABLE Location ADD SmsEnabled BIT NOT NULL DEFAULT 0;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'QrEnabled')
+                ALTER TABLE Location ADD QrEnabled BIT NOT NULL DEFAULT 1;
+            """,
+            connection);
+        await command.ExecuteNonQueryAsync(ct);
     }
 
     /// <summary>Same reasoning as EnsureConsentTableAsync, for the PrintTemplateElement
@@ -239,6 +302,20 @@ public static class DatabaseInitializer
                 ALTER TABLE Location ADD CountdownSeconds INT NOT NULL DEFAULT 3;
             IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'GlamFilterEnabled')
                 ALTER TABLE Location ADD GlamFilterEnabled BIT NOT NULL DEFAULT 0;
+            """,
+            connection);
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>Same reasoning as EnsureConsentTableAsync, for the AdminPin column
+    /// added to Location after this check was originally written -- gates
+    /// MainWindow's Setup/launch screen (see BoothState.Setup).</summary>
+    private static async Task EnsureAdminPinColumnAsync(SqlConnection connection, CancellationToken ct)
+    {
+        using var command = new SqlCommand(
+            """
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'AdminPin')
+                ALTER TABLE Location ADD AdminPin NVARCHAR(20) NOT NULL DEFAULT '1234';
             """,
             connection);
         await command.ExecuteNonQueryAsync(ct);

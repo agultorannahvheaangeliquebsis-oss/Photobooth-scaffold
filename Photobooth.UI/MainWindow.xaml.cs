@@ -110,7 +110,8 @@ public partial class MainWindow : Window
                 FrameOverlay: new GdiFrameOverlayService(),
                 Feedback: _feedback,
                 GuestbookPrompt: _guestbookPrompt,
-                VideoGuestbook: new FfmpegVideoGuestbookService());
+                VideoGuestbook: new FfmpegVideoGuestbookService(),
+                GifComposer: new GdiGifComposerService());
             _settingsProvider = services.Settings;
             _stateMachine = new BoothStateMachine(services, mode: seedIds.LocationType);
         }
@@ -316,6 +317,61 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>Checks the PIN typed into SetupPinBox against the current
+    /// AdminPin setting (fetched fresh, not cached, so a PIN changed from a
+    /// previous run's AdminWindow session takes effect immediately). Reveals
+    /// SetupUnlockedView (Open Settings / Launch Event) on a match.</summary>
+    private async void SetupUnlockButton_Click(object sender, RoutedEventArgs e)
+    {
+        string enteredPin = SetupPinBox.Password;
+        SetupErrorText.Visibility = Visibility.Collapsed;
+
+        BoothSettings settings;
+        try
+        {
+            settings = await _settingsProvider.GetSettingsAsync();
+        }
+        catch (Exception ex)
+        {
+            SetupErrorText.Text = $"Couldn't check the PIN: {ex.Message}";
+            SetupErrorText.Visibility = Visibility.Visible;
+            return;
+        }
+
+        if (enteredPin != settings.AdminPin)
+        {
+            SetupErrorText.Text = "Incorrect PIN.";
+            SetupErrorText.Visibility = Visibility.Visible;
+            SetupPinBox.Password = string.Empty;
+            return;
+        }
+
+        SetupEventNameText.Text = $"Ready to launch \"{settings.Theme.EventName}\".";
+        SetupLockedView.Visibility = Visibility.Collapsed;
+        SetupUnlockedView.Visibility = Visibility.Visible;
+    }
+
+    private void SetupPinBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            SetupUnlockButton_Click(sender, e);
+        }
+    }
+
+    // No PIN re-check here -- reaching this button already required the
+    // correct PIN in SetupUnlockButton_Click above, same trust level F12's
+    // Idle-only AdminWindow access already has.
+    private void SetupOpenSettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        new AdminWindow { Owner = this }.ShowDialog();
+    }
+
+    private void SetupLaunchEventButton_Click(object sender, RoutedEventArgs e)
+    {
+        _stateMachine.LaunchEvent();
+    }
+
     private void Surface_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
         if (_stateMachine.CurrentState == BoothState.Idle && !_sessionRunning)
@@ -350,6 +406,7 @@ public partial class MainWindow : Window
 
     private void ShowState(BoothState state)
     {
+        SetupView.Visibility = state == BoothState.Setup ? Visibility.Visible : Visibility.Collapsed;
         IdleView.Visibility = state == BoothState.Idle ? Visibility.Visible : Visibility.Collapsed;
         ConsentView.Visibility = state == BoothState.Consent ? Visibility.Visible : Visibility.Collapsed;
         CountdownView.Visibility = state == BoothState.Countdown ? Visibility.Visible : Visibility.Collapsed;
@@ -362,6 +419,14 @@ public partial class MainWindow : Window
         GuestbookView.Visibility = state == BoothState.Guestbook ? Visibility.Visible : Visibility.Collapsed;
         FeedbackView.Visibility = state == BoothState.Feedback ? Visibility.Visible : Visibility.Collapsed;
         ErrorView.Visibility = state == BoothState.Error ? Visibility.Visible : Visibility.Collapsed;
+
+        if (state == BoothState.Setup)
+        {
+            SetupPinBox.Password = string.Empty;
+            SetupErrorText.Visibility = Visibility.Collapsed;
+            SetupLockedView.Visibility = Visibility.Visible;
+            SetupUnlockedView.Visibility = Visibility.Collapsed;
+        }
 
         if (state == BoothState.Payment)
         {

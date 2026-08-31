@@ -18,7 +18,7 @@ public class BoothStateMachine
     private readonly BoothServices _services;
     private readonly string _mode;
 
-    public BoothState CurrentState { get; private set; } = BoothState.Idle;
+    public BoothState CurrentState { get; private set; } = BoothState.Setup;
     public string? LastCapturedImagePath { get; private set; }
     public Uri? LastPhotoUrl { get; private set; }
 
@@ -52,6 +52,18 @@ public class BoothStateMachine
     {
         CurrentState = state;
         StateChanged?.Invoke(state);
+    }
+
+    /// <summary>Admin has confirmed the PIN and settings and wants guests to
+    /// start using the booth -- the only transition out of Setup. A no-op once
+    /// the event is already running (e.g. a stray double-tap on Launch Event),
+    /// so it can never interrupt an in-progress guest session.</summary>
+    public void LaunchEvent()
+    {
+        if (CurrentState == BoothState.Setup)
+        {
+            SetState(BoothState.Idle);
+        }
     }
 
     /// <summary>
@@ -110,32 +122,69 @@ public class BoothStateMachine
             PaymentQrPng = null;
             PaymentInstructions = null;
             LastSelectedFrame = null;
-            LastCapturedImagePath = await _services.Camera.CaptureAsync(ct);
 
-            // Glam filter (if this booth's settings have it on) applies
-            // before branding, not after -- the caption bar is always white
-            // text on a solid black bar regardless of the photo's colors, so
-            // filter order doesn't affect its legibility either way, but
-            // doing the color/contrast pass on the plain capture first keeps
-            // the two effects independent and easy to reason about.
-            if (settings.GlamFilterEnabled)
+            // GIF/Boomerang: capture a burst of stills and composite them
+            // into one animated file -- see BUILD_PLAN.md's "dslrBooth
+            // feature-parity plan", Phase 2. Photo mode (the default, and
+            // the only mode that existed before this feature) is unchanged
+            // below. Deliberately skips the glam filter/branding/frame-
+            // overlay pipeline entirely for GIF/Boomerang: those are all
+            // single-still GDI+ operations (see GdiPhotoBrandingService/
+            // GdiPhotoFilterService/GdiFrameOverlayService) that would
+            // either only touch the first frame or corrupt the animation
+            // outright if pointed at a multi-frame GIF -- a real fix means
+            // compositing each effect onto every frame before assembly, not
+            // attempted here.
+            bool isBurstMode = settings.Capture.Mode is "GIF" or "Boomerang";
+            if (isBurstMode)
             {
-                LastCapturedImagePath = await _services.Filter.ApplyGlamFilterAsync(LastCapturedImagePath, ct);
-            }
+                var framePaths = new List<string>();
+                for (int i = 0; i < settings.Capture.FrameCount; i++)
+                {
+                    framePaths.Add(await _services.Camera.CaptureAsync(ct));
+                    if (i < settings.Capture.FrameCount - 1)
+                    {
+                        await Task.Delay(settings.Capture.FrameDelayMs, ct);
+                    }
+                }
 
-            // Branded before anything downstream ever sees the path -- the
-            // Reviewing screen, the print, and the upload should all show
-            // the guest exactly the same (branded) photo, not three
-            // different versions depending on which step ran first.
-            LastCapturedImagePath = await _services.Branding.ApplyBrandingAsync(LastCapturedImagePath, settings.Theme.EventName, ct);
+                LastCapturedImagePath = await _services.GifComposer.ComposeAsync(
+                    framePaths, reversed: settings.Capture.Mode == "Boomerang", settings.Capture.FrameDelayMs, ct);
+            }
+            else
+            {
+                LastCapturedImagePath = await _services.Camera.CaptureAsync(ct);
+
+                // Glam filter (if this booth's settings have it on) applies
+                // before branding, not after -- the caption bar is always white
+                // text on a solid black bar regardless of the photo's colors, so
+                // filter order doesn't affect its legibility either way, but
+                // doing the color/contrast pass on the plain capture first keeps
+                // the two effects independent and easy to reason about.
+                if (settings.GlamFilterEnabled)
+                {
+                    LastCapturedImagePath = await _services.Filter.ApplyGlamFilterAsync(LastCapturedImagePath, ct);
+                }
+
+                // Branded before anything downstream ever sees the path -- the
+                // Reviewing screen, the print, and the upload should all show
+                // the guest exactly the same (branded) photo, not three
+                // different versions depending on which step ran first.
+                LastCapturedImagePath = await _services.Branding.ApplyBrandingAsync(LastCapturedImagePath, settings.Theme.EventName, ct);
+            }
 
             SetState(BoothState.Reviewing);
             await Task.Delay(2000, ct); // guest sees the shot before it prints
 
-            // Skipped entirely when no admin-configured frames are active --
-            // a fresh booth with an empty Frame table behaves exactly as it
-            // did before this feature existed.
-            IReadOnlyList<FrameOption> frames = await _services.FrameLibrary.GetActiveFramesAsync(ct);
+            // Frame picker is a single-still GDI+ overlay too (see the
+            // isBurstMode comment above) -- skipped for GIF/Boomerang for
+            // the same reason. Also skipped entirely when no
+            // admin-configured frames are active -- a fresh booth with an
+            // empty Frame table behaves exactly as it did before this
+            // feature existed.
+            IReadOnlyList<FrameOption> frames = isBurstMode
+                ? []
+                : await _services.FrameLibrary.GetActiveFramesAsync(ct);
             if (frames.Count > 0)
             {
                 SetState(BoothState.FramePicker);

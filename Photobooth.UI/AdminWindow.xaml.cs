@@ -72,10 +72,18 @@ public partial class AdminWindow : Window
             return;
         }
 
+        string adminPin = AdminPinBox.Text.Trim();
+        if (adminPin.Length == 0)
+        {
+            SettingsStatusText.Text = "Admin PIN can't be blank.";
+            SettingsStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+            return;
+        }
+
         SaveSettingsButton.IsEnabled = false;
         try
         {
-            await _locations.UpdateSettingsAsync(_locationId, countdownSeconds, GlamFilterCheckBox.IsChecked == true, printTemplate);
+            await _locations.UpdateSettingsAsync(_locationId, countdownSeconds, GlamFilterCheckBox.IsChecked == true, printTemplate, adminPin);
             SettingsStatusText.Text = "Saved -- takes effect for the next guest session.";
             SettingsStatusText.Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush");
         }
@@ -225,6 +233,7 @@ public partial class AdminWindow : Window
                 _locationId = locations[0].LocationId;
                 CountdownSecondsBox.Text = locations[0].CountdownSeconds.ToString();
                 GlamFilterCheckBox.IsChecked = locations[0].GlamFilterEnabled;
+                AdminPinBox.Text = locations[0].AdminPin;
 
                 _currentPrintTemplate = locations[0].PrintTemplate;
                 SingleLayoutRadio.IsChecked = _currentPrintTemplate.Layout != "Strip";

@@ -3,7 +3,7 @@ using Photobooth.Core;
 
 namespace Photobooth.Data;
 
-public record LocationRecord(int LocationId, string Name, string Type, string? Address, int CountdownSeconds, bool GlamFilterEnabled, PrintTemplate PrintTemplate, BoothTheme Theme);
+public record LocationRecord(int LocationId, string Name, string Type, string? Address, int CountdownSeconds, bool GlamFilterEnabled, PrintTemplate PrintTemplate, BoothTheme Theme, string AdminPin);
 
 public class LocationRepository
 {
@@ -27,7 +27,7 @@ public class LocationRepository
             """
             SELECT LocationId, Name, Type, Address, CountdownSeconds, GlamFilterEnabled,
                    PrintLayout, PrintWidthInches, PrintHeightInches, PrintStripCopies,
-                   AccentColorHex, CanvasColorHex, InkColorHex, LogoImagePath, EventName
+                   AccentColorHex, CanvasColorHex, InkColorHex, LogoImagePath, EventName, AdminPin
             FROM Location ORDER BY LocationId;
             """,
             connection);
@@ -53,7 +53,8 @@ public class LocationRepository
                     reader.GetString(11),
                     reader.GetString(12),
                     reader.IsDBNull(13) ? null : reader.GetString(13),
-                    reader.GetString(14))));
+                    reader.GetString(14)),
+                reader.GetString(15)));
         }
         return results;
     }
@@ -82,17 +83,19 @@ public class LocationRepository
     }
 
     /// <summary>Updates the admin-editable booth settings for a location -- countdown
-    /// duration, whether Glam Booth mode is on, and the print template. Read fresh by
-    /// SqlBoothSettingsProvider at the start of every session, so a change here takes
-    /// effect for the very next guest without needing to restart the app.</summary>
-    public async Task UpdateSettingsAsync(int locationId, int countdownSeconds, bool glamFilterEnabled, PrintTemplate printTemplate, CancellationToken ct = default)
+    /// duration, whether Glam Booth mode is on, the print template, and the PIN that
+    /// gates MainWindow's Setup/launch screen. Read fresh by SqlBoothSettingsProvider
+    /// at the start of every session, so a change here takes effect for the very next
+    /// guest without needing to restart the app.</summary>
+    public async Task UpdateSettingsAsync(int locationId, int countdownSeconds, bool glamFilterEnabled, PrintTemplate printTemplate, string adminPin, CancellationToken ct = default)
     {
         using var connection = await SqlConnectionFactory.OpenAsync(ct);
         using var command = new SqlCommand(
             """
             UPDATE Location SET CountdownSeconds = @CountdownSeconds, GlamFilterEnabled = @GlamFilterEnabled,
                                  PrintLayout = @PrintLayout, PrintWidthInches = @PrintWidthInches,
-                                 PrintHeightInches = @PrintHeightInches, PrintStripCopies = @PrintStripCopies
+                                 PrintHeightInches = @PrintHeightInches, PrintStripCopies = @PrintStripCopies,
+                                 AdminPin = @AdminPin
             WHERE LocationId = @LocationId;
             """,
             connection);
@@ -102,6 +105,7 @@ public class LocationRepository
         command.Parameters.AddWithValue("@PrintWidthInches", printTemplate.WidthInches);
         command.Parameters.AddWithValue("@PrintHeightInches", printTemplate.HeightInches);
         command.Parameters.AddWithValue("@PrintStripCopies", printTemplate.StripCopies);
+        command.Parameters.AddWithValue("@AdminPin", adminPin);
         command.Parameters.AddWithValue("@LocationId", locationId);
         await command.ExecuteNonQueryAsync(ct);
     }

@@ -9,6 +9,7 @@ CREATE TABLE Location (
     Address         NVARCHAR(255)   NULL,
     CountdownSeconds   INT          NOT NULL DEFAULT 3,   -- admin-editable, see AdminWindow's Settings section
     GlamFilterEnabled  BIT          NOT NULL DEFAULT 0,   -- admin-editable, see AdminWindow's Settings section
+    AdminPin           NVARCHAR(20) NOT NULL DEFAULT '1234',  -- gates MainWindow's Setup/launch screen, admin-editable, see AdminWindow's Settings section
     PrintLayout        NVARCHAR(20) NOT NULL DEFAULT 'Single' CHECK (PrintLayout IN ('Single', 'Strip')),
     PrintWidthInches   DECIMAL(5,2) NOT NULL DEFAULT 4,    -- e.g. 4 for a 4x6, 2 for a 2x6 strip
     PrintHeightInches  DECIMAL(5,2) NOT NULL DEFAULT 6,
@@ -18,6 +19,37 @@ CREATE TABLE Location (
     InkColorHex        NVARCHAR(9)  NOT NULL DEFAULT '#202124',
     LogoImagePath      NVARCHAR(500) NULL,
     EventName          NVARCHAR(100) NOT NULL DEFAULT 'Focus & Snap',
+
+    -- dslrBooth feature-parity settings (see BUILD_PLAN.md's "dslrBooth
+    -- feature-parity plan" section, Phase 1). Booth-wide, admin-editable,
+    -- read fresh every session same as CountdownSeconds/GlamFilterEnabled
+    -- above -- one booth machine has one Location, so these live here
+    -- rather than a new settings table.
+    CaptureMode         NVARCHAR(20) NOT NULL DEFAULT 'Photo' CHECK (CaptureMode IN ('Photo', 'GIF', 'Boomerang', 'Video')),
+    AlsoCreateGif       BIT          NOT NULL DEFAULT 0,
+    GifFrameCount       INT          NOT NULL DEFAULT 4,   -- GIF/Boomerang capture loop, see BoothStateMachine's Phase 2 branch
+    GifFrameDelayMs     INT          NOT NULL DEFAULT 500,
+    BoothIconsEnabled   BIT          NOT NULL DEFAULT 0,
+    ShowLiveView        BIT          NOT NULL DEFAULT 1,
+    MirrorLiveView      BIT          NOT NULL DEFAULT 1,
+    LiveViewRotation    INT          NOT NULL DEFAULT 0,
+    BeautyFilterEnabled BIT          NOT NULL DEFAULT 0,
+    FiltersMode         NVARCHAR(20) NOT NULL DEFAULT 'Ask' CHECK (FiltersMode IN ('Ask', 'Auto')),
+    WatermarkImagePath  NVARCHAR(500) NULL,
+    GreenScreenEnabled  BIT          NOT NULL DEFAULT 0,
+    GreenScreenBackgroundPath NVARCHAR(500) NULL,
+    SurveyEnabled       BIT          NOT NULL DEFAULT 0,
+    DisclaimerHeader    NVARCHAR(200) NOT NULL DEFAULT 'Do you agree with the terms?',
+    DisclaimerText      NVARCHAR(MAX) NOT NULL DEFAULT '',
+    PrintAutomatically  BIT          NOT NULL DEFAULT 1,
+    ShowPrintButton     BIT          NOT NULL DEFAULT 0,
+    PrintLimitPerEvent  INT          NOT NULL DEFAULT 5000,
+    PrintLimitPerSession INT         NOT NULL DEFAULT 3,
+    PrintSharpening     NVARCHAR(10) NOT NULL DEFAULT 'Medium' CHECK (PrintSharpening IN ('Low', 'Medium', 'High')),
+    EmailEnabled        BIT          NOT NULL DEFAULT 1,
+    SmsEnabled          BIT          NOT NULL DEFAULT 0,
+    QrEnabled           BIT          NOT NULL DEFAULT 1,
+
     CreatedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
 );
 

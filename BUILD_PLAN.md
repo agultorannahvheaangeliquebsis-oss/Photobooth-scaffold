@@ -1467,3 +1467,179 @@ and unscheduled until there's a week to plan around it.
       reader hardware or payment gateway behind it.
 - [ ] Remote booth control: guests/attendants trigger workflows from a
       companion mobile app.
+
+## dslrBooth feature-parity plan (2026-08-31)
+
+Screenshots of dslrBooth's admin UI (Event Manager, Screen Editor, Print
+Layout designer, General/Capture/Camera Settings, Virtual Attendant,
+Effects & Stickers, Green Screen, Survey, Disclaimer, Sharing Settings,
+Print Setup) were reviewed feature-by-feature and mapped onto this
+project's actual architecture (state-machine-driven single session flow +
+`AdminWindow` settings dashboard + `PrintTemplateEditorWindow`), not a
+screen-editor rebuild. Full feature inventory from the screenshots lives
+in chat history; below is the subset actually being tracked, in build
+order. Items already covered by the roadmap above are cross-referenced,
+not duplicated.
+
+**Phase 1 — Settings foundation (schema + BoothSettings) — done 2026-08-31**
+- [x] Extended `Location` (`schema.sql`) with columns grouped by dslrBooth
+      section: `CaptureMode`/`AlsoCreateGif`; `BoothIconsEnabled`/
+      `ShowLiveView`/`MirrorLiveView`/`LiveViewRotation`; `BeautyFilterEnabled`/
+      `FiltersMode`/`WatermarkImagePath`; `GreenScreenEnabled`/
+      `GreenScreenBackgroundPath`; `SurveyEnabled`; `DisclaimerHeader`/
+      `DisclaimerText`; `PrintAutomatically`/`ShowPrintButton`/
+      `PrintLimitPerEvent`/`PrintLimitPerSession`/`PrintSharpening`;
+      `EmailEnabled`/`SmsEnabled`/`QrEnabled`.
+- [x] Expanded `BoothSettings` (`Photobooth.Core/IBoothSettingsProvider.cs`)
+      with 8 new nested init-only records, one per dslrBooth section --
+      `CaptureSettings`, `ScreenSettings`, `EffectsSettings`,
+      `GreenScreenSettings`, `SurveySettings`, `DisclaimerSettings`,
+      `PrintOptions`, `SharingSettings` -- each with a `static Default`
+      instance, same pattern `Theme` already used. Init properties (not
+      positional constructor params), so every existing
+      `new BoothSettings(...)` call site (mocks, tests, ConsoleDemo,
+      `SqlBoothSettingsProvider`) keeps compiling unchanged with these
+      silently defaulting.
+- [x] `SqlBoothSettingsProvider.GetSettingsAsync` now selects all new
+      columns in the same query and maps them into the 8 new records.
+- [x] `DatabaseInitializer.EnsureDslrBoothParitySettingsColumnsAsync`
+      added (same top-up-migration pattern as
+      `EnsureBoothSettingsColumnsAsync`/`EnsureBoothThemeColumnsAsync`) so
+      an already-seeded LocalDB picks up all 22 new columns via
+      `ALTER TABLE` without a manual `DROP DATABASE`.
+- Verified: `dotnet build Photobooth.sln` -- clean, 0 warnings, 0 errors,
+      all 7 projects. `dotnet test` -- **119 passed, 0 failed** (no
+      regressions; this phase added no new test coverage of its own since
+      nothing yet reads the new settings -- Phases 3/5 wire them into
+      actual behavior).
+- **Not yet verified:** the real SQL path against a live LocalDB instance
+      (same recurring gap noted throughout this file for SQL-backed
+      features -- no LocalDB instance available in this environment) and
+      `AdminWindow`/`MainWindow` don't read any of these settings yet
+      (that's Phases 3 and 5).
+
+**Phase 2 — Capture mode expansion (BoothStateMachine) — unblocked 2026-08-31**
+- Overlaps the existing unstarted roadmap item "Alternative capture
+      formats: GIFs, Boomerangs, ... video" above — scope GIF/Boomerang/
+      Video as a `CaptureSettings.Mode` branch inside the existing
+      `Capturing` step rather than new `BoothState` values.
+- **No longer flagged as hardware-blocked.** `PtpCameraService` already
+      talks to whatever the camera bridge has on the other end of the pipe
+      -- Day 2's `--allow-webcam` verification proved the full
+      pipe/`CaptureAsync()` path end to end against this machine's UVC
+      webcam, not just the (still not attached) D3500. GIF/Boomerang are
+      just multiple `CaptureAsync()` calls composited together, so they
+      need no camera-specific code at all and can be built and verified
+      today the same way every other webcam-stand-in feature in this file
+      already has been.
+  - [ ] GIF mode: loop `ICameraService.CaptureAsync()` N times (frame
+        count/delay from `CaptureSettings`), then a new
+        `IGifComposerService` (interface + mock, same seam as everything
+        else -- real implementation via an animated-GIF-capable imaging
+        library) composites the frames into one animated GIF.
+  - [ ] Boomerang mode: same capture loop as GIF, real
+        `IGifComposerService` implementation appends the frames
+        reversed after the forward sequence (forward-then-backward loop).
+  - [ ] Video mode is the one piece that genuinely needs continuous
+        recording rather than discrete stills -- reuses the
+        `IVideoGuestbookService`/ffmpeg precedent (ordinary webcam+mic,
+        independent of the PTP pipe) rather than inventing a new capture
+        mechanism: a new `IBoothVideoService` with the same
+        Start/StopRecording shape, driven by `CaptureSettings` instead of
+        the guestbook prompt flow.
+- Real D3500 hardware is still the one thing that can't be verified from
+      this environment (same as every camera-touching feature in this
+      file) -- but that only affects the *real* PTP capture path, which
+      already works today via `PtpCameraService` for a single photo; GIF/
+      Boomerang/Video build directly on top of that same already-working
+      call, so they carry no additional hardware risk beyond what Day 2
+      already accepted.
+
+**Phase 3 — Admin Dashboard UI (`AdminWindow.xaml`/`.cs`)**
+- [ ] Extend the existing sectioned layout (`SectionHeader`/`Row` styles)
+      with new sections once Phase 1 settings exist: Capture Settings,
+      Effects & Stickers (beauty filter/watermark/filters-mode — beauty
+      filter overlaps the existing "Glam Booth mode" roadmap item),
+      Green Screen, Survey on/off, Disclaimer text editor, Sharing
+      Settings (email/SMS/QR toggles — overlaps "Instant digital
+      sharing"), Print Setup extensions (auto-print, limits, sharpening).
+- Explicitly out of scope (no analog in this architecture, dslrBooth-
+      ecosystem-specific): Event Manager grid, fotoShare Cloud, LumaShare,
+      Triggers/local HTTP API. (Virtual Attendant, the Survey
+      question-builder, and the visual Screen Editor were cut from this
+      "out of scope" list on 2026-08-31 -- see Phase 6 below, they're in
+      scope now.)
+
+**Phase 4 — Print Template Designer (`PrintTemplateEditorWindow`)**
+- [ ] Extend existing editor (already covers `PrintTemplateElement` =
+      dslrBooth's layers) with a layer list panel and alignment tools if
+      not already present. Paper size/orientation already covered by
+      `PrintLayout`/`PrintWidthInches`/`PrintHeightInches`.
+
+**Phase 5 — MainWindow guest-facing screens**
+- [ ] Apply `ScreenSettings` to existing state-bound views: `Idle` view
+      reads `BoothIconsEnabled`/`ShowLiveView`; `Capturing` view reads
+      `MirrorLiveView`/`LiveViewRotation`/countdown color.
+- [ ] Post-`Complete` sharing step: surface `LastPhotoUrl` as QR (reuses
+      existing `CloudUpload`/`PhotoUploaded`) gated by
+      `SharingSettings` Email/SMS/QR toggles.
+
+**Phase 6 — Virtual Attendant, Survey question-builder, visual Screen
+Editor (added to scope 2026-08-31, was previously the open question below)**
+
+- **Virtual Attendant** — per-stage audio/video cues, not a new
+      `BoothState` (the existing states already mark every stage dslrBooth
+      cues: Consent, Countdown, Capturing, Reviewing, Printing, Complete).
+  - [ ] New `VirtualAttendantClip` table (`LocationId`, `Stage`, `FilePath`,
+        `SortOrder`) -- a list per stage, not a single settings row, since
+        dslrBooth's Randomize toggle needs a pool to pick from.
+  - [ ] `VirtualAttendantSettings` record on `BoothSettings` (`Enabled`,
+        `Style`, per-stage `Randomize` flags).
+  - [ ] `IVirtualAttendantService` (interface + mock, same seam as
+        everything else) -- `BoothStateMachine` calls it once per
+        `SetState`, it picks (or randomizes) a clip for that stage and
+        raises a new `AttendantCueChanged` event; `MainWindow` plays the
+        clip alongside whatever screen is already showing. Purely
+        additive to existing state transitions, no new states.
+- **Survey question-builder** — dslrBooth's "+ Question"/"View Responses"
+      screen, currently just the `SurveySettings.Enabled` on/off switch
+      from Phase 1.
+  - [ ] New `SurveyQuestion` (`LocationId`, `Text`, `SortOrder`) and
+        `SurveyResponse` (`SessionId`, `SurveyQuestionId`, `Answer`) tables.
+  - [ ] `ISurveyService` (interface + mock) -- `GetActiveQuestionsAsync`,
+        `RecordResponsesAsync`. New `BoothState.Survey`, shown after
+        `Feedback` (same "best-effort, wrapped in its own try/catch, never
+        turns a completed session into an Error one" pattern the Feedback
+        step already uses) and skipped entirely when
+        `SurveySettings.Enabled` is off or there are no active questions
+        -- same "empty table = feature invisible" reasoning `Frame`/
+        `FramePicker` already established.
+  - [ ] Admin UI: `+ Question` add/remove list and a `View Responses`
+        list, in `AdminWindow`'s new Survey section from Phase 3.
+- **Visual Screen Editor** — dslrBooth's drag/resize canvas for Welcome/
+      Capture/Sharing screens. Mapped onto the same
+      percent-of-canvas element model `PrintTemplateElement` /
+      `PrintTemplateEditorWindow` already use for prints, not a new UI
+      paradigm.
+  - [ ] New `ScreenTemplateElement` table (`LocationId`, `Screen` --
+        `'Welcome'|'Capture'|'Sharing'`, `Kind` -- `'Text'|'Image'|'Shape'`,
+        `X/Y/Width/HeightPercent`, plus the same text/image/font/color
+        columns `PrintTemplateElement` already has).
+  - [ ] New `ScreenTemplateEditorWindow` (WPF), sibling to
+        `PrintTemplateEditorWindow`, reusing its drag/resize/percent-math
+        approach across three tabs (Welcome/Capture/Sharing) instead of
+        one canvas.
+  - [ ] `MainWindow`'s `Idle`/`Countdown`/sharing views render the saved
+        elements as an overlay on top of the existing state-bound
+        controls, the same way `PrintCompositor` overlays
+        `PrintTemplateElement` rows onto the captured photo at print time.
+
+**Build order (updated 2026-08-31, reordered same day):** Phase 1 (done)
+→ **Phase 2 (next)** → Phase 3 → Phase 5 → Phase 4 → Phase 6. Moved
+Phase 2 up from last to second on request, now that it's confirmed
+unblocked (see above) -- it's independent of Phases 3-6, so there's no
+ordering cost to building it now instead of after the admin UI work.
+Phase 6 still sits after Phase 4 because all three of its pieces extend
+patterns Phases 3-4 establish first (settings sections, the
+percent-of-canvas editor); building it any earlier would mean
+re-deriving those patterns from scratch.
