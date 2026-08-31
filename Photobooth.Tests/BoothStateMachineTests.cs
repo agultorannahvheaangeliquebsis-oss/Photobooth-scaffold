@@ -810,4 +810,68 @@ public class BoothStateMachineTests
         Assert.Empty(sessions.RecordedGuestbookVideos);
         Assert.Contains(BoothState.Feedback, states);
     }
+
+    [Fact]
+    public async Task RunSessionAsync_GifMode_CapturesConfiguredFrameCountAndComposesForward()
+    {
+        var camera = new MockCameraService();
+        var printer = new MockPrinterService();
+        var cloudUpload = new MockCloudUploadService();
+        var paymentService = new MockQrPaymentService();
+        var sessions = new MockSessionRepository();
+        var uploadQueue = new MockPendingUploadQueue();
+        var consent = new MockConsentService();
+        var email = new MockEmailDeliveryService();
+        var branding = new MockPhotoBrandingService();
+        var filter = new MockPhotoFilterService();
+        var gifComposer = new MockGifComposerService();
+        var settings = new MockBoothSettingsProvider();
+        settings.Settings = settings.Settings with { Capture = new CaptureSettings(Mode: "GIF", FrameCount: 3, FrameDelayMs: 10) };
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), gifComposer);
+        var machine = new BoothStateMachine(services, mode: "event");
+
+        var states = new List<BoothState>();
+        machine.StateChanged += state => states.Add(state);
+
+        await machine.RunSessionAsync();
+
+        Assert.Equal(3, gifComposer.LastFrameCount);
+        Assert.False(gifComposer.LastReversed);
+        Assert.NotNull(machine.LastCapturedImagePath);
+        Assert.Contains("_gif", machine.LastCapturedImagePath);
+        // GIF mode skips the single-still GDI+ pipeline entirely (see
+        // BoothStateMachine's isBurstMode branch) -- confirms branding/
+        // filter/frame-picker didn't run against the composed animation.
+        Assert.DoesNotContain("_branded", machine.LastCapturedImagePath);
+        Assert.DoesNotContain(BoothState.FramePicker, states);
+        Assert.Equal(BoothState.Idle, machine.CurrentState);
+        Assert.DoesNotContain(BoothState.Error, states);
+    }
+
+    [Fact]
+    public async Task RunSessionAsync_BoomerangMode_ComposesReversed()
+    {
+        var camera = new MockCameraService();
+        var printer = new MockPrinterService();
+        var cloudUpload = new MockCloudUploadService();
+        var paymentService = new MockQrPaymentService();
+        var sessions = new MockSessionRepository();
+        var uploadQueue = new MockPendingUploadQueue();
+        var consent = new MockConsentService();
+        var email = new MockEmailDeliveryService();
+        var branding = new MockPhotoBrandingService();
+        var filter = new MockPhotoFilterService();
+        var gifComposer = new MockGifComposerService();
+        var settings = new MockBoothSettingsProvider();
+        settings.Settings = settings.Settings with { Capture = new CaptureSettings(Mode: "Boomerang", FrameCount: 4, FrameDelayMs: 10) };
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), gifComposer);
+        var machine = new BoothStateMachine(services, mode: "event");
+
+        await machine.RunSessionAsync();
+
+        Assert.Equal(4, gifComposer.LastFrameCount);
+        Assert.True(gifComposer.LastReversed);
+        Assert.NotNull(machine.LastCapturedImagePath);
+        Assert.Contains("_boomerang", machine.LastCapturedImagePath);
+    }
 }
