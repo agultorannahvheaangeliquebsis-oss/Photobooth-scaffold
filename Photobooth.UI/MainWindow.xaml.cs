@@ -50,20 +50,12 @@ public partial class MainWindow : Window
         // has a bounded Connect Timeout) -- show a real message and exit
         // cleanly instead of leaving the booth on a black screen or crashing
         // with a raw stack trace a guest or attendant can't act on.
-        //
-        // Task.Run is required, not just .GetAwaiter().GetResult() directly:
-        // this runs on the WPF Dispatcher thread, which installs a
-        // SynchronizationContext. Without Task.Run, the awaited continuations
-        // inside InitializeAsync try to resume on that same thread, which is
-        // blocked waiting on GetResult() -- a deadlock that hangs forever
-        // (confirmed: identical code completes in <1s from a console app,
-        // which has no SynchronizationContext to deadlock on).
-        DatabaseInitializer.SeedIds seedIds;
+        BoothCompositionRoot.RealBooth booth;
         try
         {
-            seedIds = Task.Run(() => DatabaseInitializer.InitializeAsync()).GetAwaiter().GetResult();
+            booth = BoothCompositionRoot.Build();
         }
-        catch (Exception ex)
+        catch (BoothCompositionRoot.DatabaseUnavailableException ex)
         {
             MessageBox.Show(
                 $"Couldn't reach the booth database and can't start.\n\n{ex.Message}\n\n" +
@@ -72,81 +64,36 @@ public partial class MainWindow : Window
             Environment.Exit(1);
             return;
         }
-
-        // Service constructors below can throw synchronously (e.g.
-        // CloudinaryCloudUploadService requires CLOUDINARY_URL to be set) --
-        // same reasoning as the DatabaseInitializer try/catch above: fail
-        // with a clear message instead of an uncaught exception before the
-        // window is shown, which previously manifested as the app silently
-        // never appearing rather than a raw crash or a hang.
-        try
-        {
-            _locationId = seedIds.LocationId;
-            var sessionRepository = new SqlSessionRepository(seedIds.LocationId, seedIds.PrinterId);
-
-            // Real, not mocked, unlike Consent/Payment below -- a frame pick
-            // is just a button tap with no external hardware/gateway to
-            // integrate, so there's no "mock only for now" gap here. See
-            // UiFrameSelectionService.
-            _frameSelection = new UiFrameSelectionService();
-            _frameSelection.SelectionRequested += options => Dispatcher.Invoke(() => ShowFrameOptions(options));
-
-            // Real, not mocked, same reasoning as _frameSelection above -- a
-            // star rating and a comment box is just button taps and text
-            // input, no external gateway to integrate.
-            _feedback = new UiFeedbackService();
-            _feedback.FeedbackRequested += () => Dispatcher.Invoke(ShowFeedbackPrompt);
-
-            // Real, not mocked, same reasoning as _frameSelection/_feedback
-            // above for the ask/stop taps -- IVideoGuestbookService (the
-            // actual ffmpeg-backed capture) is the part still unverified
-            // against real hardware, not this UI handoff.
-            _guestbookPrompt = new UiGuestbookPromptService();
-            _guestbookPrompt.RecordDecisionRequested += () => Dispatcher.Invoke(ShowGuestbookAskPrompt);
-            _guestbookPrompt.StopRequested += () => Dispatcher.Invoke(ShowGuestbookRecordingPrompt);
-
-            // Real, not mocked, same reasoning as _frameSelection/_feedback above --
-            // answering survey questions is just taps/text input, no external
-            // gateway; the SQL persistence (GetActiveQuestionsAsync/RecordResponsesAsync)
-            // lives in this same class since ISurveyService bundles both concerns.
-            _survey = new SqlSurveyService(seedIds.LocationId);
-            _survey.AnswersRequested += questions => Dispatcher.Invoke(() => ShowSurveyQuestions(questions));
-
-            EnsureCameraBridgeRunning();
-
-            var services = new BoothServices(
-                Camera: new PtpCameraService(),
-                Printer: new SpoolerPrinterService(),
-                CloudUpload: new CloudinaryCloudUploadService(),
-                Sessions: sessionRepository,
-                Payment: new MockQrPaymentService(),
-                UploadQueue: new FileSystemPendingUploadQueue(),
-                Consent: new MockConsentService(),
-                Email: new MockEmailDeliveryService(),
-                Branding: new GdiPhotoBrandingService(),
-                Filter: new GdiPhotoFilterService(),
-                Settings: new SqlBoothSettingsProvider(seedIds.LocationId),
-                FrameLibrary: new SqlFrameLibraryService(seedIds.LocationId),
-                FrameSelection: _frameSelection,
-                FrameOverlay: new GdiFrameOverlayService(),
-                Feedback: _feedback,
-                GuestbookPrompt: _guestbookPrompt,
-                VideoGuestbook: new FfmpegVideoGuestbookService(),
-                GifComposer: new GdiGifComposerService(),
-                BoothVideo: new FfmpegBoothVideoService(),
-                AttendantCue: new SqlVirtualAttendantService(seedIds.LocationId),
-                Survey: _survey);
-            _settingsProvider = services.Settings;
-            _stateMachine = new BoothStateMachine(services, mode: seedIds.LocationType);
-        }
         catch (Exception ex)
         {
+            // Service constructors can throw synchronously (e.g.
+            // CloudinaryCloudUploadService requires CLOUDINARY_URL to be
+            // set) -- same reasoning as the DB catch above: fail with a
+            // clear message instead of an uncaught exception before the
+            // window is shown, which previously manifested as the app
+            // silently never appearing rather than a raw crash or a hang.
             MessageBox.Show(
                 $"Couldn't start the booth services.\n\n{ex.Message}",
                 "Focus & Snap -- startup failed", MessageBoxButton.OK, MessageBoxImage.Error);
             Environment.Exit(1);
             return;
         }
+
+        _locationId = booth.SeedIds.LocationId;
+        _cameraBridgeProcess = booth.CameraBridgeProcess;
+        _frameSelection = booth.FrameSelection;
+        _frameSelection.SelectionRequested += options => Dispatcher.Invoke(() => ShowFrameOptions(options));
+        _feedback = booth.Feedback;
+        _feedback.FeedbackRequested += () => Dispatcher.Invoke(ShowFeedbackPrompt);
+        _guestbookPrompt = booth.GuestbookPrompt;
+        _guestbookPrompt.RecordDecisionRequested += () => Dispatcher.Invoke(ShowGuestbookAskPrompt);
+        _guestbookPrompt.StopRequested += () => Dispatcher.Invoke(ShowGuestbookRecordingPrompt);
+        _survey = booth.Survey;
+        _survey.AnswersRequested += questions => Dispatcher.Invoke(() => ShowSurveyQuestions(questions));
+        _settingsProvider = booth.Services.Settings;
+        _stateMachine = new BoothStateMachine(booth.Services, mode: booth.SeedIds.LocationType);
+        _liveView = booth.LiveView;
+
         _stateMachine.StateChanged += state => Dispatcher.Invoke(() => ShowState(state));
         _stateMachine.StateChanged += state =>
         {
@@ -169,7 +116,6 @@ public partial class MainWindow : Window
         // once a guest actually walks up, which could be a while after open.
         _ = _stateMachine.RetryQueuedUploadsAsync();
 
-        _liveView = new PtpLiveViewService();
         // ~7fps: fast enough to feel live, slow enough that a pipe round trip
         // per frame doesn't pile up (see _liveViewFetchInProgress below).
         _liveViewTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
@@ -203,99 +149,6 @@ public partial class MainWindow : Window
         {
             try { process.Kill(); } catch { /* already gone */ }
         }
-    }
-
-    /// <summary>Launches Photobooth.CameraBridge.Host (the out-of-process pipe
-    /// server that drives the camera -- see PtpCameraService and the README's
-    /// "Camera: Nikon D3500" section) if it isn't already listening, so an
-    /// attendant/dev doesn't have to start it by hand before opening this app.
-    /// The bridge auto-detects whatever camera the device actually has (a
-    /// tethered D3500 if one's attached, otherwise a laptop webcam) -- set
-    /// PHOTOBOOTH_REQUIRE_DSLR=1 on real booth hardware to disable the webcam
-    /// fallback instead (see Program.cs in that project for why that matters).</summary>
-    private void EnsureCameraBridgeRunning()
-    {
-        if (PtpCameraService.IsBridgeHostRunning())
-        {
-            return;
-        }
-
-        string? exePath = ResolveCameraBridgeHostPath();
-        if (exePath is null)
-        {
-            // Not found -- PtpCameraService will surface a clear "is the bridge
-            // process running?" error on first capture instead of failing here.
-            return;
-        }
-
-        var startInfo = new ProcessStartInfo(exePath)
-        {
-            WorkingDirectory = System.IO.Path.GetDirectoryName(exePath)!,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-        if (Environment.GetEnvironmentVariable("PHOTOBOOTH_REQUIRE_DSLR") is "1" or "true")
-        {
-            startInfo.ArgumentList.Add("--require-dslr");
-        }
-
-        try
-        {
-            _cameraBridgeProcess = Process.Start(startInfo);
-        }
-        catch
-        {
-            // Swallow -- same reasoning as the exePath-not-found case above.
-            return;
-        }
-
-        // The bridge doesn't start listening on its pipe until after it
-        // finishes scanning for a camera (DSLR pass, then a webcam fallback
-        // pass -- see Program.cs), which can take a few seconds. Without this
-        // wait, the window shows and is tappable before that finishes, so an
-        // attendant/guest who taps Start immediately hits "is the bridge
-        // process running?" even though the bridge comes up moments later --
-        // confirmed by reproducing that exact race against a real run. Block
-        // here, before the window is shown, same reasoning as the
-        // DatabaseInitializer wait above -- an extra few seconds once at
-        // startup beats a confusing false error on the guest's first tap.
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
-        while (!PtpCameraService.IsBridgeHostRunning() && DateTime.UtcNow < deadline)
-        {
-            Thread.Sleep(250);
-        }
-    }
-
-    private static string? ResolveCameraBridgeHostPath()
-    {
-        string? overridePath = Environment.GetEnvironmentVariable("PHOTOBOOTH_CAMERA_BRIDGE_EXE");
-        if (overridePath is { Length: > 0 } && System.IO.File.Exists(overridePath))
-        {
-            return overridePath;
-        }
-
-        // Dev layout: walk up from this app's own build output to the solution
-        // root, then into the bridge host project's build output for the same
-        // configuration. Deployed installs should set
-        // PHOTOBOOTH_CAMERA_BRIDGE_EXE instead of relying on this.
-        var dir = new System.IO.DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
-        while (dir is not null && !System.IO.File.Exists(System.IO.Path.Combine(dir.FullName, "Photobooth.sln")))
-        {
-            dir = dir.Parent;
-        }
-        if (dir is null)
-        {
-            return null;
-        }
-
-#if DEBUG
-        const string configuration = "Debug";
-#else
-        const string configuration = "Release";
-#endif
-        var candidate = System.IO.Path.Combine(
-            dir.FullName, "Photobooth.CameraBridge.Host", "bin", configuration, "net48", "Photobooth.CameraBridge.Host.exe");
-        return System.IO.File.Exists(candidate) ? candidate : null;
     }
 
     /// <summary>Reads the current BoothTheme and repaints the window's colors,

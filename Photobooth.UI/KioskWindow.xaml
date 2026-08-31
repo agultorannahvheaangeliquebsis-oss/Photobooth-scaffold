@@ -1,0 +1,864 @@
+<Window x:Class="Photobooth.UI.KioskWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:conv="clr-namespace:Photobooth.UI.Converters"
+        xmlns:vm="clr-namespace:Photobooth.UI.ViewModels"
+        xmlns:beh="clr-namespace:Photobooth.UI.Behaviors"
+        mc:Ignorable="d"
+        d:DataContext="{d:DesignInstance Type=vm:KioskViewModel}"
+        Title="{Binding EventName}"
+        Icon="Assets/Logo.png"
+        Background="{DynamicResource KioskCanvasBrush}"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        WindowState="Maximized"
+        Topmost="True"
+        UseLayoutRounding="True"
+        TextOptions.TextFormattingMode="Ideal">
+
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/KioskDark.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <conv:EnumToVisibilityConverter x:Key="ScreenVisibility" />
+            <conv:EnumToTagConverter x:Key="ModeTag" />
+            <conv:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+            <conv:BoolToVisibilityConverter x:Key="InverseBoolToVisibility" Invert="True" />
+            <conv:NullToVisibilityConverter x:Key="NullToVisibility" />
+            <conv:NullToVisibilityConverter x:Key="InverseNullToVisibility" Invert="True" />
+            <conv:RatingToStarConverter x:Key="RatingStar" />
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <!-- F12 opens the admin overlay for staff with a keyboard; Escape closes
+         it. Both are bound rather than handled in code-behind so the gating
+         logic stays in one place (the ViewModel/overlay), not two. -->
+    <Window.InputBindings>
+        <KeyBinding Key="F12" Command="{Binding OpenAdminCommand}" />
+        <KeyBinding Key="Escape" Command="{Binding Admin.CloseCommand}" />
+    </Window.InputBindings>
+
+    <!-- ================= CENTRAL STATE SWITCHER CONTAINER =================
+         One Grid, every screen stacked in the same cell, exactly one visible
+         at a time via CurrentScreenState. Layering, back to front:
+           1. the five guest screens + error screen
+           2. brand bar / footer chrome
+           3. the shutter flash wash
+           4. the admin overlay
+         Background is explicit (not null) so taps on empty space are still
+         hit-tested - a null Background is invisible to hit testing, which on
+         a full-screen kiosk means most of the window would swallow taps. -->
+    <Grid Background="{StaticResource KioskCanvasBrush}">
+
+        <!-- ============================ [1] IDLE ============================ -->
+        <Grid x:Name="IdleScreen"
+              Style="{StaticResource KioskScreenRoot}"
+              Visibility="{Binding CurrentScreenState, Converter={StaticResource ScreenVisibility}, ConverterParameter=Idle}">
+
+            <!-- Full-bleed touch-to-start target sitting behind the content, so
+                 a tap anywhere on empty canvas starts a session while the mode
+                 tiles above it still get their own taps. -->
+            <Button Command="{Binding StartSessionCommand}"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Focusable="False">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="Transparent" />
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
+
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+
+                <!-- Event branding: logo above the event name, both from
+                     BoothTheme so an admin's brand reaches the next guest. -->
+                <Image Source="{Binding BrandLogo}" MaxHeight="120" Stretch="Uniform"
+                       Margin="0,0,0,24"
+                       Visibility="{Binding BrandLogo, Converter={StaticResource NullToVisibility}}" />
+                <TextBlock Text="{Binding EventName}" Style="{StaticResource KioskH1}" />
+
+                <!-- Animated prompt. Pulses only while the booth is unlocked. -->
+                <Border x:Name="StartPrompt"
+                        Background="{StaticResource KioskAccentBrush}"
+                        CornerRadius="12" Padding="56,24" Margin="0,44,0,0"
+                        HorizontalAlignment="Center"
+                        Visibility="{Binding IsBoothLocked, Converter={StaticResource InverseBoolToVisibility}}">
+                    <Border.Triggers>
+                        <EventTrigger RoutedEvent="Loaded">
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                     From="0.55" To="1" Duration="0:0:1.3"
+                                                     AutoReverse="True" RepeatBehavior="Forever" />
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                    </Border.Triggers>
+                    <TextBlock Text="TOUCH SCREEN TO BEGIN"
+                               FontFamily="{StaticResource KioskFont}"
+                               FontSize="34" FontWeight="SemiBold"
+                               Foreground="{StaticResource KioskOnAccentBrush}" />
+                </Border>
+
+                <!-- Pre-launch state: guests must not be able to start a session
+                     before an admin has launched the event (BoothState.Setup). -->
+                <Border Style="{StaticResource KioskCard}" Margin="0,44,0,0" HorizontalAlignment="Center"
+                        Visibility="{Binding IsBoothLocked, Converter={StaticResource BoolToVisibility}}">
+                    <StackPanel>
+                        <TextBlock Text="This booth isn't open yet." Style="{StaticResource KioskPrompt}" />
+                        <TextBlock Text="An attendant needs to launch the event. Press F12 or tap the top-right corner."
+                                   Style="{StaticResource KioskCaption}" TextAlignment="Center" Margin="0,10,0,0" MaxWidth="420" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Capture mode picker. Selection styling is driven off the one
+                     SelectedCaptureMode enum via EnumToTagConverter - see the
+                     KioskModeTile template's Tag trigger. -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,48,0,0"
+                            Visibility="{Binding IsBoothLocked, Converter={StaticResource InverseBoolToVisibility}}">
+
+                    <Button Style="{StaticResource KioskModeTile}"
+                            Command="{Binding SelectModeCommand}" CommandParameter="Photo"
+                            Tag="{Binding SelectedCaptureMode, Converter={StaticResource ModeTag}, ConverterParameter=Photo}">
+                        <StackPanel>
+                            <TextBlock Text="&#xE722;" FontFamily="Segoe MDL2 Assets" FontSize="52"
+                                       Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
+                            <TextBlock Text="PHOTO" FontFamily="{StaticResource KioskFont}" FontSize="22" FontWeight="SemiBold"
+                                       Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,16,0,0" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button Style="{StaticResource KioskModeTile}"
+                            Command="{Binding SelectModeCommand}" CommandParameter="GIF"
+                            Tag="{Binding SelectedCaptureMode, Converter={StaticResource ModeTag}, ConverterParameter=GIF}">
+                        <StackPanel>
+                            <TextBlock Text="&#xE786;" FontFamily="Segoe MDL2 Assets" FontSize="52"
+                                       Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
+                            <TextBlock Text="GIF" FontFamily="{StaticResource KioskFont}" FontSize="22" FontWeight="SemiBold"
+                                       Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,16,0,0" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button Style="{StaticResource KioskModeTile}"
+                            Command="{Binding SelectModeCommand}" CommandParameter="Boomerang"
+                            Tag="{Binding SelectedCaptureMode, Converter={StaticResource ModeTag}, ConverterParameter=Boomerang}">
+                        <StackPanel>
+                            <TextBlock Text="&#xE8EE;" FontFamily="Segoe MDL2 Assets" FontSize="52"
+                                       Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
+                            <TextBlock Text="BOOMERANG" FontFamily="{StaticResource KioskFont}" FontSize="22" FontWeight="SemiBold"
+                                       Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,16,0,0" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button Style="{StaticResource KioskModeTile}"
+                            Command="{Binding SelectModeCommand}" CommandParameter="Video"
+                            Tag="{Binding SelectedCaptureMode, Converter={StaticResource ModeTag}, ConverterParameter=Video}">
+                        <StackPanel>
+                            <TextBlock Text="&#xE714;" FontFamily="Segoe MDL2 Assets" FontSize="52"
+                                       Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
+                            <TextBlock Text="VIDEO" FontFamily="{StaticResource KioskFont}" FontSize="22" FontWeight="SemiBold"
+                                       Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,16,0,0" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+
+        <!-- ========================== [2] COUNTDOWN ========================== -->
+        <Grid x:Name="CountdownScreen"
+              Style="{StaticResource KioskScreenRoot}"
+              Visibility="{Binding CurrentScreenState, Converter={StaticResource ScreenVisibility}, ConverterParameter=Countdown}">
+
+            <!-- Full-bleed camera feed. UniformToFill so the preview fills the
+                 kiosk the way the guest expects a mirror to; the saved capture
+                 is unaffected by this or by LiveViewTransform. -->
+            <Image Source="{Binding LiveViewStream}"
+                   Stretch="UniformToFill"
+                   LayoutTransform="{Binding LiveViewTransform}" />
+
+            <!-- Semi-transparent dark overlay so the countdown stays legible
+                 against whatever the camera happens to be pointed at. -->
+            <Rectangle Fill="{StaticResource KioskScrimBrush}" />
+
+            <!-- Preview frame: a rule around the live view area, giving the feed
+                 an intentional edge instead of bleeding into the bezel. -->
+            <Border Margin="64"
+                    BorderBrush="{StaticResource KioskAccentBrush}"
+                    BorderThickness="3"
+                    CornerRadius="12"
+                    Opacity="0.5" />
+
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock Text="GET READY" Style="{StaticResource KioskPrompt}"
+                           FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}" />
+
+                <!-- NotifyOnTargetUpdated turns every countdown tick into a
+                     Binding.TargetUpdated event, which is what drives the scale
+                     pulse below - no code-behind, and it re-fires even when the
+                     value repeats. -->
+                <TextBlock Text="{Binding CountdownValue, NotifyOnTargetUpdated=True}"
+                           Style="{StaticResource KioskDisplayText}"
+                           Foreground="{StaticResource KioskAccentBrush}"
+                           RenderTransformOrigin="0.5,0.5"
+                           Margin="0,-12,0,0">
+                    <TextBlock.RenderTransform>
+                        <ScaleTransform x:Name="CountdownScale" ScaleX="1" ScaleY="1" />
+                    </TextBlock.RenderTransform>
+                    <TextBlock.Triggers>
+                        <EventTrigger RoutedEvent="Binding.TargetUpdated">
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetName="CountdownScale"
+                                                     Storyboard.TargetProperty="ScaleX"
+                                                     From="1.75" To="1" Duration="0:0:0.55">
+                                        <DoubleAnimation.EasingFunction>
+                                            <BackEase EasingMode="EaseOut" Amplitude="0.35" />
+                                        </DoubleAnimation.EasingFunction>
+                                    </DoubleAnimation>
+                                    <DoubleAnimation Storyboard.TargetName="CountdownScale"
+                                                     Storyboard.TargetProperty="ScaleY"
+                                                     From="1.75" To="1" Duration="0:0:0.55">
+                                        <DoubleAnimation.EasingFunction>
+                                            <BackEase EasingMode="EaseOut" Amplitude="0.35" />
+                                        </DoubleAnimation.EasingFunction>
+                                    </DoubleAnimation>
+                                    <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                     From="0.3" To="1" Duration="0:0:0.35" />
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                    </TextBlock.Triggers>
+                </TextBlock>
+            </StackPanel>
+        </Grid>
+
+        <!-- ======================= [3] CAPTURE / SMILE ======================= -->
+        <Grid x:Name="CaptureScreen"
+              Style="{StaticResource KioskScreenRoot}"
+              Visibility="{Binding CurrentScreenState, Converter={StaticResource ScreenVisibility}, ConverterParameter=Capture}">
+
+            <Image Source="{Binding LiveViewStream}" Stretch="UniformToFill"
+                   LayoutTransform="{Binding LiveViewTransform}" Opacity="0.35" />
+            <Rectangle Fill="{StaticResource KioskScrimBrush}" />
+
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <Ellipse Width="120" Height="120"
+                         Stroke="{StaticResource KioskAccentBrush}" StrokeThickness="8"
+                         HorizontalAlignment="Center" Margin="0,0,0,32" />
+                <TextBlock Text="Say Cheese!" Style="{StaticResource KioskH1}" FontSize="80" />
+                <TextBlock Text="Hold that smile" Style="{StaticResource KioskPrompt}" Margin="0,16,0,0" />
+            </StackPanel>
+        </Grid>
+
+        <!-- ===================== [4] PROCESSING / STITCHER ===================== -->
+        <Grid x:Name="ProcessingScreen"
+              Style="{StaticResource KioskScreenRoot}"
+              Visibility="{Binding CurrentScreenState, Converter={StaticResource ScreenVisibility}, ConverterParameter=Processing}">
+
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <!-- The RotateTransform lives here, not in KioskSpinner: a
+                     Freezable in a sealed Style setter gets frozen, and the
+                     spin animation can't touch a frozen transform. -->
+                <Ellipse Style="{StaticResource KioskSpinner}" HorizontalAlignment="Center">
+                    <Ellipse.RenderTransform>
+                        <RotateTransform Angle="0" />
+                    </Ellipse.RenderTransform>
+                </Ellipse>
+                <TextBlock Text="{Binding ProcessingStatus}" Style="{StaticResource KioskH2}"
+                           TextAlignment="Center" Margin="0,40,0,0" />
+                <TextBlock Text="Hang tight - this only takes a moment."
+                           Style="{StaticResource KioskPrompt}" FontSize="22" Margin="0,14,0,0" />
+            </StackPanel>
+        </Grid>
+
+        <!-- ========================= [5] FRAME PICKER ========================= -->
+        <Grid x:Name="FramePickerScreen"
+              Style="{StaticResource KioskScreenRoot}"
+              Visibility="{Binding CurrentScreenState, Converter={StaticResource ScreenVisibility}, ConverterParameter=FramePicker}"
+              Margin="72">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock Text="Pick a frame" Style="{StaticResource KioskH1}" Margin="0,0,0,36" />
+                <ItemsControl ItemsSource="{Binding FrameOptions}" HorizontalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal" HorizontalAlignment="Center" MaxWidth="1100" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Style="{StaticResource KioskModeTile}"
+                                    Command="{Binding DataContext.SelectFrameCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    CommandParameter="{Binding}">
+                                <StackPanel>
+                                    <Image Width="150" Height="90" Stretch="Uniform" Source="{Binding ImagePath}" />
+                                    <TextBlock Text="{Binding Name}" FontFamily="{StaticResource KioskFont}" FontSize="16"
+                                               FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}"
+                                               HorizontalAlignment="Center" Margin="0,10,0,0" />
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Style="{StaticResource KioskGhostButton}" Content="NO FRAME" Margin="0,24,0,0"
+                        HorizontalAlignment="Center"
+                        Command="{Binding SelectFrameCommand}" CommandParameter="{x:Null}" />
+            </StackPanel>
+        </Grid>
+
+        <!-- ============================ [6] PAYMENT ============================ -->
+        <Grid x:Name="PaymentScreen"
+              Style="{StaticResource KioskScreenRoot}"
+              Visibility="{Binding CurrentScreenState, Converter={StaticResource ScreenVisibility}, ConverterParameter=Payment}">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock Text="Complete your payment" Style="{StaticResource KioskH1}" />
+                <TextBlock Text="{Binding PaymentInstructions}" Style="{StaticResource KioskPrompt}" Margin="0,16,0,0" MaxWidth="600" />
+                <Border Style="{StaticResource KioskCard}" Background="White" Margin="0,36,0,0" HorizontalAlignment="Center"
+                        Visibility="{Binding PaymentQrCode, Converter={StaticResource NullToVisibility}}">
+                    <Image Source="{Binding PaymentQrCode}" Width="260" Height="260" />
+                </Border>
+            </StackPanel>
+        </Grid>
+
+        <!-- =========================== [7] GUESTBOOK =========================== -->
+        <Grid x:Name="GuestbookScreen"
+              Style="{StaticResource KioskScreenRoot}"
+              Visibility="{Binding CurrentScreenState, Converter={StaticResource ScreenVisibility}, ConverterParameter=Guestbook}">
+
+            <!-- Ask sub-panel -->
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
+                        Visibility="{Binding GuestbookSubScreen, Converter={StaticResource ScreenVisibility}, ConverterParameter=Ask}">
+                <TextBlock Text="Leave a message in the guestbook?" Style="{StaticResource KioskH1}" MaxWidth="700" />
+                <TextBlock Text="A quick video note for the guest of honor." Style="{StaticResource KioskPrompt}" Margin="0,16,0,0" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,40,0,0">
+                    <Button Style="{StaticResource KioskPrimaryButton}" Content="YES, RECORD" Margin="0,0,16,0"
+                            Command="{Binding RecordGuestbookMessageCommand}" />
+                    <Button Style="{StaticResource KioskGhostButton}" Content="NO THANKS"
+                            Command="{Binding SkipGuestbookMessageCommand}" />
+                </StackPanel>
+            </StackPanel>
+
+            <!-- Recording sub-panel -->
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
+                        Visibility="{Binding GuestbookSubScreen, Converter={StaticResource ScreenVisibility}, ConverterParameter=Recording}">
+                <Ellipse Width="28" Height="28" Fill="{StaticResource KioskDangerBrush}" HorizontalAlignment="Center" Margin="0,0,0,24" />
+                <TextBlock Text="Recording..." Style="{StaticResource KioskH1}" />
+                <TextBlock Text="Say your message, then tap Stop." Style="{StaticResource KioskPrompt}" Margin="0,16,0,0" />
+                <Button Style="{StaticResource KioskPrimaryButton}" Content="&#x25A0; STOP" Margin="0,40,0,0"
+                        HorizontalAlignment="Center"
+                        Command="{Binding StopGuestbookRecordingCommand}" />
+            </StackPanel>
+        </Grid>
+
+        <!-- =========================== [8] FEEDBACK =========================== -->
+        <Grid x:Name="FeedbackScreen"
+              Style="{StaticResource KioskScreenRoot}"
+              Visibility="{Binding CurrentScreenState, Converter={StaticResource ScreenVisibility}, ConverterParameter=Feedback}">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="640">
+                <TextBlock Text="How was your experience?" Style="{StaticResource KioskH1}" />
+
+                <!-- Five stars sharing one SelectedFeedbackRating int via
+                     RatingToStarConverter -- each button's own rank is its
+                     ConverterParameter/CommandParameter. -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,32,0,0">
+                    <Button Style="{StaticResource KioskGhostButton}" CommandParameter="1" Command="{Binding SelectFeedbackStarCommand}"
+                            Content="{Binding SelectedFeedbackRating, Converter={StaticResource RatingStar}, ConverterParameter=1}"
+                            FontSize="44" MinWidth="70" BorderThickness="0" Foreground="{StaticResource KioskAccentBrush}" />
+                    <Button Style="{StaticResource KioskGhostButton}" CommandParameter="2" Command="{Binding SelectFeedbackStarCommand}"
+                            Content="{Binding SelectedFeedbackRating, Converter={StaticResource RatingStar}, ConverterParameter=2}"
+                            FontSize="44" MinWidth="70" BorderThickness="0" Foreground="{StaticResource KioskAccentBrush}" />
+                    <Button Style="{StaticResource KioskGhostButton}" CommandParameter="3" Command="{Binding SelectFeedbackStarCommand}"
+                            Content="{Binding SelectedFeedbackRating, Converter={StaticResource RatingStar}, ConverterParameter=3}"
+                            FontSize="44" MinWidth="70" BorderThickness="0" Foreground="{StaticResource KioskAccentBrush}" />
+                    <Button Style="{StaticResource KioskGhostButton}" CommandParameter="4" Command="{Binding SelectFeedbackStarCommand}"
+                            Content="{Binding SelectedFeedbackRating, Converter={StaticResource RatingStar}, ConverterParameter=4}"
+                            FontSize="44" MinWidth="70" BorderThickness="0" Foreground="{StaticResource KioskAccentBrush}" />
+                    <Button Style="{StaticResource KioskGhostButton}" CommandParameter="5" Command="{Binding SelectFeedbackStarCommand}"
+                            Content="{Binding SelectedFeedbackRating, Converter={StaticResource RatingStar}, ConverterParameter=5}"
+                            FontSize="44" MinWidth="70" BorderThickness="0" Foreground="{StaticResource KioskAccentBrush}" />
+                </StackPanel>
+
+                <TextBox Style="{StaticResource KioskTextBox}" Tag="Tell us more (optional)" Margin="0,32,0,0" MinHeight="100"
+                          AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top"
+                          Text="{Binding FeedbackComment, UpdateSourceTrigger=PropertyChanged}" />
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,32,0,0">
+                    <Button Style="{StaticResource KioskPrimaryButton}" Content="SUBMIT" Margin="0,0,16,0"
+                            Command="{Binding SubmitFeedbackCommand}" />
+                    <Button Style="{StaticResource KioskGhostButton}" Content="SKIP"
+                            Command="{Binding SkipFeedbackCommand}" />
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+
+        <!-- ============================= [9] SURVEY ============================= -->
+        <Grid x:Name="SurveyScreen"
+              Style="{StaticResource KioskScreenRoot}"
+              Visibility="{Binding CurrentScreenState, Converter={StaticResource ScreenVisibility}, ConverterParameter=Survey}"
+              Margin="72">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="700">
+                <TextBlock Text="A couple of quick questions" Style="{StaticResource KioskH1}" />
+                <ItemsControl ItemsSource="{Binding SurveyAnswers}" Margin="0,28,0,0">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="0,0,0,20">
+                                <TextBlock Text="{Binding QuestionText}" Style="{StaticResource KioskFieldLabel}" FontSize="16" />
+                                <TextBox Style="{StaticResource KioskTextBox}" Text="{Binding Answer, UpdateSourceTrigger=PropertyChanged}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,20,0,0">
+                    <Button Style="{StaticResource KioskPrimaryButton}" Content="SUBMIT" Margin="0,0,16,0"
+                            Command="{Binding SubmitSurveyCommand}" />
+                    <Button Style="{StaticResource KioskGhostButton}" Content="SKIP"
+                            Command="{Binding SkipSurveyCommand}" />
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+
+        <!-- ====================== [10] REVIEW &amp; SHARE ====================== -->
+        <Grid x:Name="ReviewScreen"
+              Style="{StaticResource KioskScreenRoot}"
+              Visibility="{Binding CurrentScreenState, Converter={StaticResource ScreenVisibility}, ConverterParameter=Review}"
+              Margin="72,110,72,72">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3*" />
+                <ColumnDefinition Width="28" />
+                <ColumnDefinition Width="2*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- LEFT: the rendered print template, composed through the same
+                 PrintCompositor geometry the printer draws with. White card on
+                 purpose - it should read as a physical print against the dark
+                 chrome, the convention MainWindow's photo panels already use. -->
+            <!-- Centred and sized to the print rather than stretched to fill the
+                 column: the card is meant to read as the piece of paper the
+                 guest is about to receive, and a full-height white slab with a
+                 small photo floating in it doesn't. -->
+            <Border Grid.Column="0" Background="White" CornerRadius="12" Padding="20"
+                    VerticalAlignment="Center" HorizontalAlignment="Center">
+                <Grid MinWidth="320" MinHeight="240" MaxHeight="760">
+                    <Image Source="{Binding TemplatePreview}" Stretch="Uniform"
+                           Visibility="{Binding TemplatePreview, Converter={StaticResource NullToVisibility}}" />
+                    <TextBlock Text="{Binding PreviewUnavailableReason}"
+                               FontFamily="{StaticResource KioskFont}" FontSize="22" Foreground="#6E706F"
+                               TextAlignment="Center" TextWrapping="Wrap"
+                               VerticalAlignment="Center" HorizontalAlignment="Center"
+                               Visibility="{Binding PreviewUnavailableReason, Converter={StaticResource NullToVisibility}}" />
+                </Grid>
+            </Border>
+
+            <!-- RIGHT: everything the guest can do with that photo. -->
+            <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel>
+
+                    <TextBlock Text="Your photo is ready" Style="{StaticResource KioskH2}" />
+                    <TextBlock Text="Scan, send, or print a copy." Style="{StaticResource KioskCaption}"
+                               FontSize="17" Margin="0,8,0,0" />
+
+                    <!-- QR: white card because a QR code needs a light quiet
+                         zone to scan reliably. Replaced by a status line while
+                         the background upload is still in flight. -->
+                    <Border Style="{StaticResource KioskCard}" Background="White" Margin="0,24,0,0"
+                            HorizontalAlignment="Left"
+                            Visibility="{Binding IsQrEnabled, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel>
+                            <Image Source="{Binding QrCodeImage}" Width="190" Height="190"
+                                   Visibility="{Binding QrCodeImage, Converter={StaticResource NullToVisibility}}" />
+                            <Grid Height="190" Width="190"
+                                  Visibility="{Binding QrCodeImage, Converter={StaticResource InverseNullToVisibility}}">
+                                <TextBlock Text="Uploading your photo..." FontFamily="{StaticResource KioskFont}"
+                                           FontSize="16" Foreground="#6E706F" TextWrapping="Wrap" TextAlignment="Center"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                            <TextBlock Text="Scan to download" FontFamily="{StaticResource KioskFont}"
+                                       FontSize="15" Foreground="#202124" HorizontalAlignment="Center" Margin="0,12,0,0" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Email -->
+                    <StackPanel Margin="0,26,0,0"
+                                Visibility="{Binding IsEmailEnabled, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock Text="EMAIL IT TO ME" Style="{StaticResource KioskFieldLabel}" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0"
+                                     Style="{StaticResource KioskTextBox}"
+                                     Tag="you@example.com"
+                                     Text="{Binding ShareEmail, UpdateSourceTrigger=PropertyChanged}" />
+                            <Button Grid.Column="1" Style="{StaticResource KioskCompactButton}"
+                                    Content="SEND" Margin="10,0,0,0" MinHeight="60"
+                                    Command="{Binding SendEmailCommand}" />
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- SMS: hidden unless SharingSettings.SmsEnabled is on. -->
+                    <StackPanel Margin="0,20,0,0"
+                                Visibility="{Binding IsSmsEnabled, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock Text="TEXT IT TO ME" Style="{StaticResource KioskFieldLabel}" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0"
+                                     Style="{StaticResource KioskTextBox}"
+                                     Tag="09xx xxx xxxx"
+                                     Text="{Binding SharePhone, UpdateSourceTrigger=PropertyChanged}" />
+                            <Button Grid.Column="1" Style="{StaticResource KioskCompactButton}"
+                                    Content="SEND" Margin="10,0,0,0" MinHeight="60"
+                                    Command="{Binding SendSmsCommand}" />
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- Print, with the remaining-prints badge. -->
+                    <Button Style="{StaticResource KioskPrimaryButton}" Margin="0,26,0,0"
+                            HorizontalAlignment="Stretch"
+                            Command="{Binding PrintCommand}">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <TextBlock Text="PRINT" VerticalAlignment="Center" />
+                            <Border Style="{StaticResource KioskBadge}">
+                                <TextBlock Text="{Binding PrintsRemaining}"
+                                           FontFamily="{StaticResource KioskFont}" FontSize="16" FontWeight="Bold"
+                                           Foreground="{StaticResource KioskAccentBrush}"
+                                           TextAlignment="Center" />
+                            </Border>
+                        </StackPanel>
+                    </Button>
+
+                    <TextBlock Text="{Binding ShareStatus}" Style="{StaticResource KioskCaption}"
+                               FontSize="16" Foreground="{StaticResource KioskAccentBrush}"
+                               Margin="0,14,0,0"
+                               Visibility="{Binding ShareStatus, Converter={StaticResource NullToVisibility}}" />
+
+                    <!-- Done timer bar. Purely an affordance: the state machine
+                         owns the real return to Idle (see KioskViewModel). -->
+                    <StackPanel Margin="0,28,0,0">
+                        <ProgressBar Style="{StaticResource KioskTimerBar}"
+                                     Maximum="{Binding ShareSecondsTotal}"
+                                     Value="{Binding ShareSecondsRemaining, Mode=OneWay}" />
+                        <Button Style="{StaticResource KioskGhostButton}" Content="I'M DONE"
+                                Margin="0,18,0,0" HorizontalAlignment="Stretch"
+                                Command="{Binding DoneCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <!-- ============================= ERROR ============================= -->
+        <Grid x:Name="ErrorScreen"
+              Style="{StaticResource KioskScreenRoot}"
+              Visibility="{Binding CurrentScreenState, Converter={StaticResource ScreenVisibility}, ConverterParameter=Error}">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="720">
+                <TextBlock Text="Something went wrong" Style="{StaticResource KioskH1}" />
+                <TextBlock Text="{Binding ErrorMessage}" Style="{StaticResource KioskPrompt}" Margin="0,24,0,0" />
+                <TextBlock Text="Returning to the welcome screen..." Style="{StaticResource KioskCaption}"
+                           FontSize="18" TextAlignment="Center" Margin="0,20,0,0" />
+            </StackPanel>
+        </Grid>
+
+        <!-- ====================== CHROME: BRAND BAR ====================== -->
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,40,0,0"
+                    IsHitTestVisible="False"
+                    Visibility="{Binding CurrentScreenState, Converter={StaticResource ScreenVisibility}, ConverterParameter='Countdown,Capture,Processing,Review'}">
+            <Image Source="{Binding BrandLogo}" Height="30" Margin="0,0,12,0"
+                   Visibility="{Binding BrandLogo, Converter={StaticResource NullToVisibility}}" />
+            <TextBlock Text="{Binding EventName}" FontFamily="{StaticResource KioskFont}"
+                       FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource KioskAccentBrush}"
+                       VerticalAlignment="Center" />
+        </StackPanel>
+
+        <!-- ============= HIDDEN ADMIN GESTURE (TOP-RIGHT CORNER) =============
+             Invisible, unlabelled, and small, so guests don't stumble into it
+             on a touchscreen - but the PIN behind it is the actual gate, not
+             the obscurity. Mirrors MainWindow's F12-only access while giving a
+             touch-only booth (no keyboard) a way in. -->
+        <Button Width="96" Height="96"
+                HorizontalAlignment="Right" VerticalAlignment="Top"
+                Background="Transparent" BorderThickness="0" Focusable="False"
+                Command="{Binding OpenAdminCommand}"
+                ToolTip="Admin">
+            <Button.Template>
+                <ControlTemplate TargetType="Button">
+                    <Border Background="Transparent" />
+                </ControlTemplate>
+            </Button.Template>
+        </Button>
+
+        <!-- ======================= SHUTTER FLASH WASH =======================
+             Above every guest screen, below the admin overlay, and never
+             hit-testable - it must not swallow the tap that starts the next
+             session while it fades out. -->
+        <Rectangle Fill="White" Opacity="0" IsHitTestVisible="False">
+            <Rectangle.Style>
+                <Style TargetType="Rectangle">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsFlashing}" Value="True">
+                            <DataTrigger.EnterActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimationUsingKeyFrames Storyboard.TargetProperty="Opacity">
+                                            <LinearDoubleKeyFrame Value="0.95" KeyTime="0:0:0.05" />
+                                            <LinearDoubleKeyFrame Value="0" KeyTime="0:0:0.45" />
+                                        </DoubleAnimationUsingKeyFrames>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </DataTrigger.EnterActions>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Rectangle.Style>
+        </Rectangle>
+
+        <!-- ========================= ADMIN OVERLAY ========================= -->
+        <Grid Visibility="{Binding Admin.IsOpen, Converter={StaticResource BoolToVisibility}}">
+
+            <!-- Scrim: also a hit-test blocker, so nothing behind the overlay
+                 can be tapped while it's up. -->
+            <Rectangle Fill="{StaticResource KioskOverlayScrimBrush}" />
+
+            <!-- Locked: PIN entry -->
+            <Border Style="{StaticResource KioskCard}" Padding="44"
+                    Width="480" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Visibility="{Binding Admin.IsUnlocked, Converter={StaticResource InverseBoolToVisibility}}">
+                <StackPanel>
+                    <TextBlock Text="Admin access" Style="{StaticResource KioskH2}" />
+                    <TextBlock Text="Enter the booth PIN to view settings and status."
+                               Style="{StaticResource KioskCaption}" FontSize="16" Margin="0,10,0,26" />
+
+                    <PasswordBox Style="{StaticResource KioskPasswordBox}"
+                                 beh:PasswordBoxBinder.Attach="True"
+                                 beh:PasswordBoxBinder.BoundPassword="{Binding Admin.PinInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
+                        <PasswordBox.InputBindings>
+                            <KeyBinding Key="Enter" Command="{Binding Admin.UnlockCommand}" />
+                        </PasswordBox.InputBindings>
+                    </PasswordBox>
+
+                    <TextBlock Text="{Binding Admin.PinError}" Style="{StaticResource KioskCaption}"
+                               FontSize="15" Foreground="{StaticResource KioskDangerBrush}" Margin="2,12,0,0"
+                               Visibility="{Binding Admin.PinError, Converter={StaticResource NullToVisibility}}" />
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,26,0,0">
+                        <Button Style="{StaticResource KioskCompactButton}" Content="CANCEL"
+                                Command="{Binding Admin.CloseCommand}" Margin="0,0,10,0" />
+                        <Button Style="{StaticResource KioskCompactButton}" Content="UNLOCK"
+                                Background="{StaticResource KioskAccentBrush}"
+                                Foreground="{StaticResource KioskOnAccentBrush}" BorderThickness="0"
+                                Command="{Binding Admin.UnlockCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Unlocked: four status tabs -->
+            <Border Style="{StaticResource KioskCard}" Padding="32"
+                    Width="900" MaxHeight="720" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Visibility="{Binding Admin.IsUnlocked, Converter={StaticResource BoolToVisibility}}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="0,0,0,22">
+                        <StackPanel>
+                            <TextBlock Text="Booth status" Style="{StaticResource KioskH2}" />
+                            <TextBlock Style="{StaticResource KioskCaption}" Margin="0,6,0,0">
+                                <Run Text="Pipeline state:" />
+                                <Run Text="{Binding CurrentBoothState, Mode=OneWay}" Foreground="{StaticResource KioskAccentBrush}" />
+                            </TextBlock>
+                        </StackPanel>
+                        <Button Style="{StaticResource KioskCompactButton}" Content="CLOSE"
+                                HorizontalAlignment="Right" VerticalAlignment="Top"
+                                Command="{Binding Admin.CloseCommand}" />
+                    </Grid>
+
+                    <TabControl Grid.Row="1" Style="{StaticResource KioskTabControl}"
+                                ItemContainerStyle="{StaticResource KioskTabItem}">
+
+                        <!-- Camera -->
+                        <TabItem Header="CAMERA">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,14">
+                                    <TextBlock Text="Camera bridge" Style="{StaticResource KioskBody}" />
+                                    <TextBlock Text="{Binding Admin.CameraBridgeStatus}" Style="{StaticResource KioskBody}"
+                                               Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Right" />
+                                </Grid>
+                                <Grid Margin="0,0,0,14">
+                                    <TextBlock Text="Capture mode" Style="{StaticResource KioskBody}" />
+                                    <TextBlock Text="{Binding Admin.CaptureMode}" Style="{StaticResource KioskBody}"
+                                               Foreground="{StaticResource KioskMutedBrush}" HorizontalAlignment="Right" />
+                                </Grid>
+                                <Grid Margin="0,0,0,14">
+                                    <TextBlock Text="Countdown (seconds)" Style="{StaticResource KioskBody}" />
+                                    <TextBlock Text="{Binding Admin.CountdownSeconds}" Style="{StaticResource KioskBody}"
+                                               Foreground="{StaticResource KioskMutedBrush}" HorizontalAlignment="Right" />
+                                </Grid>
+                                <Grid Margin="0,0,0,14">
+                                    <TextBlock Text="Show live view" Style="{StaticResource KioskBody}" />
+                                    <CheckBox Style="{StaticResource KioskSwitch}" IsChecked="{Binding Admin.ShowLiveView, Mode=OneWay}"
+                                              HorizontalAlignment="Right" />
+                                </Grid>
+                                <Grid Margin="0,0,0,14">
+                                    <TextBlock Text="Mirror live view" Style="{StaticResource KioskBody}" />
+                                    <CheckBox Style="{StaticResource KioskSwitch}" IsChecked="{Binding Admin.MirrorLiveView, Mode=OneWay}"
+                                              HorizontalAlignment="Right" />
+                                </Grid>
+                                <Grid Margin="0,0,0,14">
+                                    <TextBlock Text="Live view rotation" Style="{StaticResource KioskBody}" />
+                                    <TextBlock Text="{Binding Admin.LiveViewRotation, StringFormat={}{0}°}" Style="{StaticResource KioskBody}"
+                                               Foreground="{StaticResource KioskMutedBrush}" HorizontalAlignment="Right" />
+                                </Grid>
+                                <Grid>
+                                    <TextBlock Text="Glam filter" Style="{StaticResource KioskBody}" />
+                                    <CheckBox Style="{StaticResource KioskSwitch}" IsChecked="{Binding Admin.GlamFilterEnabled, Mode=OneWay}"
+                                              HorizontalAlignment="Right" />
+                                </Grid>
+                            </StackPanel>
+                        </TabItem>
+
+                        <!-- Printer -->
+                        <TabItem Header="PRINTER">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,14">
+                                    <TextBlock Text="Windows printer" Style="{StaticResource KioskBody}" />
+                                    <TextBlock Text="{Binding Admin.SystemPrinter}" Style="{StaticResource KioskBody}"
+                                               Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Right" />
+                                </Grid>
+                                <Grid Margin="0,0,0,14">
+                                    <TextBlock Text="Layout" Style="{StaticResource KioskBody}" />
+                                    <TextBlock Text="{Binding Admin.PrintLayout}" Style="{StaticResource KioskBody}"
+                                               Foreground="{StaticResource KioskMutedBrush}" HorizontalAlignment="Right" />
+                                </Grid>
+                                <Grid Margin="0,0,0,14">
+                                    <TextBlock Text="Paper size" Style="{StaticResource KioskBody}" />
+                                    <TextBlock Text="{Binding Admin.PaperSize}" Style="{StaticResource KioskBody}"
+                                               Foreground="{StaticResource KioskMutedBrush}" HorizontalAlignment="Right" />
+                                </Grid>
+                                <Grid Margin="0,0,0,14">
+                                    <TextBlock Text="Copies per strip" Style="{StaticResource KioskBody}" />
+                                    <TextBlock Text="{Binding Admin.StripCopies}" Style="{StaticResource KioskBody}"
+                                               Foreground="{StaticResource KioskMutedBrush}" HorizontalAlignment="Right" />
+                                </Grid>
+                                <Grid Margin="0,0,0,14">
+                                    <TextBlock Text="Print automatically" Style="{StaticResource KioskBody}" />
+                                    <CheckBox Style="{StaticResource KioskSwitch}" IsChecked="{Binding Admin.PrintAutomatically, Mode=OneWay}"
+                                              HorizontalAlignment="Right" />
+                                </Grid>
+                                <Grid Margin="0,0,0,14">
+                                    <TextBlock Text="Sharpening" Style="{StaticResource KioskBody}" />
+                                    <TextBlock Text="{Binding Admin.PrintSharpening}" Style="{StaticResource KioskBody}"
+                                               Foreground="{StaticResource KioskMutedBrush}" HorizontalAlignment="Right" />
+                                </Grid>
+                                <Grid>
+                                    <TextBlock Text="Printing right now" Style="{StaticResource KioskBody}" />
+                                    <CheckBox Style="{StaticResource KioskSwitch}" IsChecked="{Binding IsPrinting, Mode=OneWay}"
+                                              HorizontalAlignment="Right" />
+                                </Grid>
+                            </StackPanel>
+                        </TabItem>
+
+                        <!-- Cloud upload sync -->
+                        <TabItem Header="CLOUD SYNC">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,14">
+                                    <TextBlock Text="Sync status" Style="{StaticResource KioskBody}" />
+                                    <TextBlock Text="{Binding Admin.CloudStatus}" Style="{StaticResource KioskBody}"
+                                               Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Right" />
+                                </Grid>
+                                <Grid Margin="0,0,0,14">
+                                    <TextBlock Text="Waiting to upload" Style="{StaticResource KioskBody}" />
+                                    <TextBlock Text="{Binding Admin.PendingUploadCount}" Style="{StaticResource KioskBody}"
+                                               Foreground="{StaticResource KioskMutedBrush}" HorizontalAlignment="Right" />
+                                </Grid>
+                                <StackPanel Margin="0,0,0,18"
+                                            Visibility="{Binding Admin.LastUploadUrl, Converter={StaticResource NullToVisibility}}">
+                                    <TextBlock Text="LAST UPLOAD" Style="{StaticResource KioskFieldLabel}" />
+                                    <TextBlock Text="{Binding Admin.LastUploadUrl}" Style="{StaticResource KioskCaption}"
+                                               FontSize="13" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                                <Grid Margin="0,0,0,14">
+                                    <TextBlock Text="Email sharing" Style="{StaticResource KioskBody}" />
+                                    <CheckBox Style="{StaticResource KioskSwitch}" IsChecked="{Binding Admin.EmailEnabled, Mode=OneWay}"
+                                              HorizontalAlignment="Right" />
+                                </Grid>
+                                <Grid Margin="0,0,0,14">
+                                    <TextBlock Text="SMS sharing" Style="{StaticResource KioskBody}" />
+                                    <CheckBox Style="{StaticResource KioskSwitch}" IsChecked="{Binding Admin.SmsEnabled, Mode=OneWay}"
+                                              HorizontalAlignment="Right" />
+                                </Grid>
+                                <Grid Margin="0,0,0,20">
+                                    <TextBlock Text="QR sharing" Style="{StaticResource KioskBody}" />
+                                    <CheckBox Style="{StaticResource KioskSwitch}" IsChecked="{Binding Admin.QrEnabled, Mode=OneWay}"
+                                              HorizontalAlignment="Right" />
+                                </Grid>
+                                <Button Style="{StaticResource KioskCompactButton}" Content="RETRY QUEUED UPLOADS"
+                                        HorizontalAlignment="Left" Command="{Binding Admin.RetryUploadsCommand}" />
+                            </StackPanel>
+                        </TabItem>
+
+                        <!-- Print counters -->
+                        <TabItem Header="PRINT COUNTS">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,14">
+                                    <TextBlock Text="Prints this session" Style="{StaticResource KioskBody}" />
+                                    <TextBlock Style="{StaticResource KioskBody}" Foreground="{StaticResource KioskAccentBrush}"
+                                               HorizontalAlignment="Right">
+                                        <Run Text="{Binding Admin.PrintsThisSession, Mode=OneWay}" />
+                                        <Run Text="/" />
+                                        <Run Text="{Binding Admin.PrintLimitPerSession, Mode=OneWay}" />
+                                    </TextBlock>
+                                </Grid>
+                                <Grid Margin="0,0,0,14">
+                                    <TextBlock Text="Prints this event" Style="{StaticResource KioskBody}" />
+                                    <TextBlock Style="{StaticResource KioskBody}" Foreground="{StaticResource KioskAccentBrush}"
+                                               HorizontalAlignment="Right">
+                                        <Run Text="{Binding Admin.PrintsThisEvent, Mode=OneWay}" />
+                                        <Run Text="/" />
+                                        <Run Text="{Binding Admin.PrintLimitPerEvent, Mode=OneWay}" />
+                                    </TextBlock>
+                                </Grid>
+                                <Grid Margin="0,0,0,14">
+                                    <TextBlock Text="Sessions since app start" Style="{StaticResource KioskBody}" />
+                                    <TextBlock Text="{Binding Admin.SessionsThisRun}" Style="{StaticResource KioskBody}"
+                                               Foreground="{StaticResource KioskMutedBrush}" HorizontalAlignment="Right" />
+                                </Grid>
+                                <Grid Margin="0,0,0,14">
+                                    <TextBlock Text="Errors since app start" Style="{StaticResource KioskBody}" />
+                                    <TextBlock Text="{Binding Admin.ErrorsThisRun}" Style="{StaticResource KioskBody}"
+                                               Foreground="{StaticResource KioskMutedBrush}" HorizontalAlignment="Right" />
+                                </Grid>
+                                <Grid>
+                                    <TextBlock Text="Running since" Style="{StaticResource KioskBody}" />
+                                    <TextBlock Text="{Binding Admin.RunStartedAt, StringFormat=g}" Style="{StaticResource KioskBody}"
+                                               Foreground="{StaticResource KioskMutedBrush}" HorizontalAlignment="Right" />
+                                </Grid>
+
+                                <TextBlock Text="Counters are for this app run. Lifetime totals live in the admin dashboard."
+                                           Style="{StaticResource KioskCaption}" FontSize="13" Margin="0,22,0,0" />
+                            </StackPanel>
+                        </TabItem>
+                    </TabControl>
+
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,24,0,0">
+                        <Button Style="{StaticResource KioskCompactButton}" Content="REFRESH"
+                                Command="{Binding Admin.RefreshCommand}" Margin="0,0,10,0" />
+                        <Button Style="{StaticResource KioskCompactButton}" Content="LAUNCH EVENT"
+                                Background="{StaticResource KioskAccentBrush}"
+                                Foreground="{StaticResource KioskOnAccentBrush}" BorderThickness="0"
+                                Command="{Binding LaunchEventCommand}"
+                                Visibility="{Binding IsBoothLocked, Converter={StaticResource BoolToVisibility}}" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

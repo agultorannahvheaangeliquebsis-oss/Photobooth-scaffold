@@ -2,17 +2,37 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Admin Dashboard"
-        Background="{StaticResource CanvasBrush}"
+        Background="{DynamicResource CanvasBrush}"
         WindowStartupLocation="CenterOwner"
-        Width="480"
-        Height="820">
+        Width="920"
+        Height="800"
+        MinWidth="760"
+        MinHeight="600">
     <Window.Resources>
+        <!-- Dark admin theme, scoped to this window only (shadows App.xaml's
+             light CanvasBrush/InkBrush/etc. via nearest-scope StaticResource
+             lookup; MainWindow's guest-facing screens are untouched). Same
+             structural patterns surveyed from dslrBooth's admin UI (dark
+             canvas, pill toggle switches, segmented radio chips, rounded
+             accent buttons, a two-layer nav: a dropdown mega-menu plus a
+             per-section wizard breadcrumb) but with this project's own
+             palette, not a copy of dslrBooth's exact colors/branding; see
+             BUILD_PLAN.md's "dslrBooth feature-parity plan" for the
+             reasoning. -->
+        <SolidColorBrush x:Key="CanvasBrush" Color="#17181A" />
+        <SolidColorBrush x:Key="InkBrush" Color="#F2F2F0" />
+        <SolidColorBrush x:Key="MutedBrush" Color="#9A9C9F" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#4FBFAE" />
+        <SolidColorBrush x:Key="LineBrush" Color="#2C2E31" />
+        <SolidColorBrush x:Key="FieldBrush" Color="#1F2023" />
+        <SolidColorBrush x:Key="OnAccentBrush" Color="#0B0C0D" />
+
         <Style x:Key="SectionHeader" TargetType="TextBlock">
             <Setter Property="FontFamily" Value="Segoe UI" />
             <Setter Property="FontSize" Value="16" />
             <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
-            <Setter Property="Margin" Value="0,20,0,8" />
+            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+            <Setter Property="Margin" Value="0,22,0,10" />
         </Style>
         <Style x:Key="Row" TargetType="TextBlock">
             <Setter Property="FontFamily" Value="Segoe UI" />
@@ -20,351 +40,789 @@
             <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
             <Setter Property="Margin" Value="0,2" />
         </Style>
+
+        <!-- Layer 1 dropdown-menu column heading (SETUP/PROCESS/etc.). -->
+        <Style x:Key="MenuColumnHeader" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+
+        <!-- Layer 1 dropdown-menu clickable section link. -->
+        <Style x:Key="MenuLink" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Layer 2 wizard breadcrumb Previous/Next link. -->
+        <Style x:Key="WizardLink" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <!-- Rounded, dark-field TextBox; matches the input styling seen
+             throughout dslrBooth's settings screens. -->
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="{StaticResource FieldBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="CaretBrush" Value="{StaticResource InkBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="5">
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsFocused" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Rounded accent pill button; every Button in this window picks
+             this up automatically (no x:Key, so it applies implicitly). -->
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource OnAccentBrush}" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="18">
+                            <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.85" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.7" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Flat "menu bar" button (Photobooth v) that toggles the Layer 1
+             dropdown: same Button type, just a borderless/flat look via a
+             local Style so the implicit pill Button style above isn't
+             touched. -->
+        <Style x:Key="MenuBarToggleButton" TargetType="ToggleButton">
+            <Setter Property="Background" Value="{StaticResource FieldBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+            <Setter Property="Padding" Value="14,8" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
+                            <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Toggle-switch CheckBox (track + thumb, label to the right):
+             the same "On/Off" pill pattern every toggle row in dslrBooth's
+             Settings screens uses, in place of the OS default checkbox.
+             Reused as-is for the Layer 2 wizard breadcrumb's on/off switch. -->
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <StackPanel Orientation="Horizontal">
+                            <Border x:Name="Track" Width="40" Height="22" CornerRadius="11"
+                                    Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+                                <Border x:Name="Thumb" Width="16" Height="16" CornerRadius="8"
+                                        Background="{StaticResource MutedBrush}" HorizontalAlignment="Left" Margin="2,0,0,0" />
+                            </Border>
+                            <ContentPresenter Margin="10,0,0,0" VerticalAlignment="Center" TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Track" Property="Background" Value="{StaticResource AccentBrush}" />
+                                <Setter TargetName="Track" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                <Setter TargetName="Thumb" Property="Background" Value="{StaticResource OnAccentBrush}" />
+                                <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right" />
+                                <Setter TargetName="Thumb" Property="Margin" Value="0,0,2,0" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Segmented pill chip RadioButton; matches the grouped mode/
+             layout selector chips dslrBooth uses (e.g. Photo/GIF/Boomerang/
+             Video, Ask/Auto, Low/Medium/High). -->
+        <Style TargetType="RadioButton">
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="Padding" Value="14,6" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="Bd" CornerRadius="14" Padding="{TemplateBinding Padding}"
+                                Background="Transparent" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentBrush}" />
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                <Setter Property="Foreground" Value="{StaticResource OnAccentBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Grid Margin="24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Text="ADMIN DASHBOARD" FontSize="13" FontWeight="SemiBold"
-                   Foreground="{StaticResource AccentBrush}" />
+        <!-- ================= Layer 1: dropdown menu bar ================= -->
+        <DockPanel Grid.Row="0">
+            <ToggleButton x:Name="MainMenuToggle" DockPanel.Dock="Left" Style="{StaticResource MenuBarToggleButton}"
+                          Content="Photobooth &#9662;" Click="MainMenuToggle_Click" />
+            <TextBlock Text="ADMIN DASHBOARD" FontSize="13" FontWeight="SemiBold"
+                       Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" Margin="16,0,0,0" />
+        </DockPanel>
 
-        <ScrollViewer Grid.Row="1" Margin="0,8,0,0">
+        <Border x:Name="MainMenuPanel" Grid.Row="1" Background="{StaticResource FieldBrush}"
+                BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8"
+                Padding="20,16" Margin="0,8,0,0" Visibility="Collapsed">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                    <TextBlock Text="SETUP" Style="{StaticResource MenuColumnHeader}" />
+                    <TextBlock Text="General" Style="{StaticResource MenuLink}" Tag="General" MouseLeftButtonDown="MenuLink_Click" />
+                    <TextBlock Text="Capture Settings" Style="{StaticResource MenuLink}" Tag="CaptureSettings" MouseLeftButtonDown="MenuLink_Click" />
+                    <TextBlock Text="Camera Settings" Style="{StaticResource MenuLink}" Tag="CameraSettings" MouseLeftButtonDown="MenuLink_Click" />
+                    <TextBlock Text="Virtual Attendant" Style="{StaticResource MenuLink}" Tag="VirtualAttendant" MouseLeftButtonDown="MenuLink_Click" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Margin="0,0,12,0">
+                    <TextBlock Text="PROCESS" Style="{StaticResource MenuColumnHeader}" />
+                    <TextBlock Text="Effects &amp; Stickers" Style="{StaticResource MenuLink}" Tag="EffectsStickers" MouseLeftButtonDown="MenuLink_Click" />
+                    <TextBlock Text="Green Screen" Style="{StaticResource MenuLink}" Tag="GreenScreen" MouseLeftButtonDown="MenuLink_Click" />
+                    <TextBlock Text="Survey" Style="{StaticResource MenuLink}" Tag="Survey" MouseLeftButtonDown="MenuLink_Click" />
+                    <TextBlock Text="Disclaimer" Style="{StaticResource MenuLink}" Tag="Disclaimer" MouseLeftButtonDown="MenuLink_Click" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="2" Margin="0,0,12,0">
+                    <TextBlock Text="SHARING ADD-ONS" Style="{StaticResource MenuColumnHeader}" />
+                    <TextBlock Text="Sharing Settings" Style="{StaticResource MenuLink}" Tag="SharingSettings" MouseLeftButtonDown="MenuLink_Click" />
+                    <TextBlock Text="Print Setup" Style="{StaticResource MenuLink}" Tag="PrintSetup" MouseLeftButtonDown="MenuLink_Click" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="3" Margin="0,0,12,0">
+                    <TextBlock Text="EVENT" Style="{StaticResource MenuColumnHeader}" />
+                    <TextBlock Text="Sharing Status" Style="{StaticResource MenuLink}" Tag="SharingStatus" MouseLeftButtonDown="MenuLink_Click" />
+                    <TextBlock Text="Export Event" Style="{StaticResource MenuLink}" Tag="ExportEvent" MouseLeftButtonDown="MenuLink_Click" />
+                    <TextBlock Text="Event folder" Style="{StaticResource MenuLink}" Tag="EventFolder" MouseLeftButtonDown="MenuLink_Click" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="4" Margin="0,0,12,0">
+                    <TextBlock Text="MORE" Style="{StaticResource MenuColumnHeader}" />
+                    <TextBlock Text="Remote Control" Style="{StaticResource MenuLink}" Tag="RemoteControl" MouseLeftButtonDown="MenuLink_Click" />
+                    <TextBlock Text="Show Lock Screen" Style="{StaticResource MenuLink}" Tag="ShowLockScreen" MouseLeftButtonDown="MenuLink_Click" />
+                    <TextBlock Text="Language" Style="{StaticResource MenuLink}" Tag="Language" MouseLeftButtonDown="MenuLink_Click" />
+                    <TextBlock Text="Help" Style="{StaticResource MenuLink}" Tag="Help" MouseLeftButtonDown="MenuLink_Click" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="5">
+                    <TextBlock Text="ACCOUNT" Style="{StaticResource MenuColumnHeader}" />
+                    <TextBlock Text="Subscription" Style="{StaticResource MenuLink}" Tag="Subscription" MouseLeftButtonDown="MenuLink_Click" />
+                    <TextBlock Text="About dslrBooth" Style="{StaticResource MenuLink}" Tag="About" MouseLeftButtonDown="MenuLink_Click" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ================= Section content (Layer 2 wizard lives inline
+             at the top of each section panel below) ================= -->
+        <ScrollViewer Grid.Row="2" Margin="0,8,0,0">
             <StackPanel>
-                <TextBlock Text="Sessions today" Style="{StaticResource SectionHeader}" />
-                <TextBlock x:Name="SessionsTodayText" Text="Loading..." Style="{StaticResource Row}" />
 
-                <TextBlock Text="Revenue by mode" Style="{StaticResource SectionHeader}" />
-                <ItemsControl x:Name="RevenueList">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Style="{StaticResource Row}"
-                                       Text="{Binding}" />
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <TextBlock x:Name="RevenueEmptyText" Text="No paid sessions yet." Style="{StaticResource Row}"
-                           Foreground="{StaticResource MutedBrush}" Visibility="Collapsed" />
+                <!-- ===== General ===== -->
+                <StackPanel x:Name="GeneralSectionPanel">
+                    <Grid Margin="0,4,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="" />
+                        <TextBlock Grid.Column="1" Text="General" FontSize="15" FontWeight="Bold"
+                                   Foreground="{StaticResource InkBrush}" HorizontalAlignment="Center" />
+                        <TextBlock Grid.Column="2" Text="Capture Settings &gt;" Style="{StaticResource WizardLink}"
+                                   HorizontalAlignment="Right" Tag="CaptureSettings" MouseLeftButtonDown="NextSection_Click" />
+                    </Grid>
 
-                <TextBlock Text="Guest feedback" Style="{StaticResource SectionHeader}" />
-                <TextBlock x:Name="FeedbackAverageText" Text="Loading..." Style="{StaticResource Row}" />
-                <ItemsControl x:Name="FeedbackCommentsList" Margin="0,6,0,0">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Style="{StaticResource Row}" TextWrapping="Wrap"
-                                       Text="{Binding}" Margin="0,2" />
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                    <TextBlock Text="Sessions today" Style="{StaticResource SectionHeader}" />
+                    <TextBlock x:Name="SessionsTodayText" Text="Loading..." Style="{StaticResource Row}" />
 
-                <TextBlock Text="Low inventory alerts" Style="{StaticResource SectionHeader}" />
-                <ItemsControl x:Name="InventoryList">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Style="{StaticResource Row}" Foreground="#B3261E"
-                                       Text="{Binding}" />
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <TextBlock x:Name="InventoryEmptyText" Text="Nothing running low." Style="{StaticResource Row}"
-                           Foreground="{StaticResource MutedBrush}" Visibility="Collapsed" />
+                    <TextBlock Text="Revenue by mode" Style="{StaticResource SectionHeader}" />
+                    <ItemsControl x:Name="RevenueList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Style="{StaticResource Row}"
+                                           Text="{Binding}" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock x:Name="RevenueEmptyText" Text="No paid sessions yet." Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" Visibility="Collapsed" />
 
-                <!-- Takes effect for the next guest session, not the app's
-                     next restart: BoothStateMachine reads these fresh at
-                     the start of every RunSessionAsync call. -->
-                <TextBlock Text="Booth settings" Style="{StaticResource SectionHeader}" />
-                <StackPanel Orientation="Horizontal" Margin="0,4">
-                    <TextBlock Text="Countdown (seconds):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
-                    <TextBox x:Name="CountdownSecondsBox" Width="60" />
-                </StackPanel>
-                <CheckBox x:Name="GlamFilterCheckBox" Content="Glam Booth mode (high-contrast B&amp;W filter)"
-                          Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
+                    <TextBlock Text="Guest feedback" Style="{StaticResource SectionHeader}" />
+                    <TextBlock x:Name="FeedbackAverageText" Text="Loading..." Style="{StaticResource Row}" />
+                    <ItemsControl x:Name="FeedbackCommentsList" Margin="0,6,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Style="{StaticResource Row}" TextWrapping="Wrap"
+                                           Text="{Binding}" Margin="0,2" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
 
-                <!-- Gates the startup Setup/Launch Event screen (see MainWindow's
-                     SetupView): an admin enters this PIN there before they can
-                     open settings or launch the event for guests. -->
-                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                    <TextBlock Text="Admin PIN (Setup screen):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
-                    <TextBox x:Name="AdminPinBox" Width="100" MaxLength="20" />
-                </StackPanel>
+                    <TextBlock Text="Low inventory alerts" Style="{StaticResource SectionHeader}" />
+                    <ItemsControl x:Name="InventoryList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Style="{StaticResource Row}" Foreground="#B3261E"
+                                           Text="{Binding}" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock x:Name="InventoryEmptyText" Text="Nothing running low." Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" Visibility="Collapsed" />
 
-                <TextBlock Text="Print template" Style="{StaticResource Row}" FontWeight="SemiBold" Margin="0,12,0,4" />
-                <StackPanel Orientation="Horizontal" Margin="0,2">
-                    <RadioButton x:Name="SingleLayoutRadio" GroupName="PrintLayout" Content="Single"
-                                 Foreground="{StaticResource InkBrush}" IsChecked="True" Margin="0,0,16,0" />
-                    <RadioButton x:Name="StripLayoutRadio" GroupName="PrintLayout" Content="Strip"
-                                 Foreground="{StaticResource InkBrush}" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="0,4">
-                    <TextBlock Text="Paper width (in):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
-                    <TextBox x:Name="PrintWidthBox" Width="60" Margin="0,0,16,0" />
-                    <TextBlock Text="height (in):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="70" />
-                    <TextBox x:Name="PrintHeightBox" Width="60" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="0,4">
-                    <TextBlock Text="Strip copies:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
-                    <TextBox x:Name="StripCopiesBox" Width="60" />
-                </StackPanel>
-                <TextBlock Text="Strip copies only applies when Strip is selected -- e.g. 2 photos stacked on a 2x6." Style="{StaticResource Row}"
-                           Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,2,0,0" />
-                <Button x:Name="EditPrintTemplateButton" Content="Edit print template..." Padding="8,4"
-                        HorizontalAlignment="Left" Margin="0,8,0,0" Click="EditPrintTemplateButton_Click" />
-                <!-- Visual Screen Editor (Phase 6), Welcome/Capture/Sharing overlay
-                     elements, same "own editor window, reload after Save" pattern as
-                     EditPrintTemplateButton above. -->
-                <Button x:Name="EditScreenLayoutButton" Content="Edit screen layout..." Padding="8,4"
-                        HorizontalAlignment="Left" Margin="0,8,0,0" Click="EditScreenLayoutButton_Click" />
+                    <!-- Takes effect for the next guest session, not the app's
+                         next restart: BoothStateMachine reads these fresh at
+                         the start of every RunSessionAsync call. -->
+                    <TextBlock Text="Booth settings" Style="{StaticResource SectionHeader}" />
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text="Countdown (seconds):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
+                        <TextBox x:Name="CountdownSecondsBox" Width="60" />
+                    </StackPanel>
+                    <CheckBox x:Name="GlamFilterCheckBox" Content="Glam Booth mode (high-contrast B&amp;W filter)"
+                              Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
 
-                <TextBlock x:Name="SettingsStatusText" Style="{StaticResource Row}"
-                           Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" />
-                <Button x:Name="SaveSettingsButton" Content="Save Settings" Padding="16,8"
-                        HorizontalAlignment="Left" Margin="0,8,0,0" Click="SaveSettingsButton_Click" />
+                    <!-- Gates the startup Setup/Launch Event screen (see MainWindow's
+                         SetupView): an admin enters this PIN there before they can
+                         open settings or launch the event for guests. -->
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <TextBlock Text="Admin PIN (Setup screen):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
+                        <TextBox x:Name="AdminPinBox" Width="100" MaxLength="20" />
+                    </StackPanel>
 
-                <!-- Colors/logo/event name applied by MainWindow at startup and
-                     every time it returns to Idle: takes effect for the next
-                     guest, but won't repaint mid-session. -->
-                <TextBlock Text="Theme" Style="{StaticResource SectionHeader}" />
-                <StackPanel Orientation="Horizontal" Margin="0,4">
-                    <TextBlock Text="Accent color (hex):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="150" />
-                    <TextBox x:Name="AccentColorBox" Width="90" Margin="0,0,8,0" TextChanged="ThemeColorBox_TextChanged" />
-                    <Border x:Name="AccentColorSwatch" Width="20" Height="20" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="0,4">
-                    <TextBlock Text="Canvas color (hex):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="150" />
-                    <TextBox x:Name="CanvasColorBox" Width="90" Margin="0,0,8,0" TextChanged="ThemeColorBox_TextChanged" />
-                    <Border x:Name="CanvasColorSwatch" Width="20" Height="20" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="0,4">
-                    <TextBlock Text="Ink color (hex):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="150" />
-                    <TextBox x:Name="InkColorBox" Width="90" Margin="0,0,8,0" TextChanged="ThemeColorBox_TextChanged" />
-                    <Border x:Name="InkColorSwatch" Width="20" Height="20" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="0,4">
-                    <TextBlock Text="Event/brand name:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="150" />
-                    <TextBox x:Name="EventNameBox" Width="220" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                    <Button x:Name="BrowseThemeLogoButton" Content="Browse for logo..." Padding="8,4" Click="BrowseThemeLogoButton_Click" />
-                </StackPanel>
-                <TextBlock x:Name="SelectedThemeLogoText" Text="No logo selected." Style="{StaticResource Row}"
-                           Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
-                <TextBlock x:Name="ThemeStatusText" Style="{StaticResource Row}"
-                           Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
-                <Button x:Name="SaveThemeButton" Content="Save Theme" Padding="16,8"
-                        HorizontalAlignment="Left" Margin="0,8,0,0" Click="SaveThemeButton_Click" />
+                    <TextBlock Text="Print template" Style="{StaticResource Row}" FontWeight="SemiBold" Margin="0,12,0,4" />
+                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                        <RadioButton x:Name="SingleLayoutRadio" GroupName="PrintLayout" Content="Single"
+                                     Foreground="{StaticResource InkBrush}" IsChecked="True" Margin="0,0,16,0" />
+                        <RadioButton x:Name="StripLayoutRadio" GroupName="PrintLayout" Content="Strip"
+                                     Foreground="{StaticResource InkBrush}" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text="Paper width (in):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
+                        <TextBox x:Name="PrintWidthBox" Width="60" Margin="0,0,16,0" />
+                        <TextBlock Text="height (in):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="70" />
+                        <TextBox x:Name="PrintHeightBox" Width="60" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text="Strip copies:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
+                        <TextBox x:Name="StripCopiesBox" Width="60" />
+                    </StackPanel>
+                    <TextBlock Text="Strip copies only applies when Strip is selected -- e.g. 2 photos stacked on a 2x6." Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,2,0,0" />
+                    <Button x:Name="EditPrintTemplateButton" Content="Edit print template..." Padding="8,4"
+                            HorizontalAlignment="Left" Margin="0,8,0,0" Click="EditPrintTemplateButton_Click" />
+                    <!-- Visual Screen Editor (Phase 6), Welcome/Capture/Sharing overlay
+                         elements, same "own editor window, reload after Save" pattern as
+                         EditPrintTemplateButton above. -->
+                    <Button x:Name="EditScreenLayoutButton" Content="Edit screen layout..." Padding="8,4"
+                            HorizontalAlignment="Left" Margin="0,8,0,0" Click="EditScreenLayoutButton_Click" />
 
-                <!-- Frames an admin adds here show up in the guest-facing
-                     FramePicker screen (see MainWindow's FramePickerView):
-                     takes effect for the next guest session, no restart. -->
-                <TextBlock Text="Frame library" Style="{StaticResource SectionHeader}" />
-                <ItemsControl x:Name="FramesList">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Grid Margin="0,4">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="{Binding Name}" Style="{StaticResource Row}" VerticalAlignment="Center" />
-                                <CheckBox Grid.Column="1" IsChecked="{Binding IsActive, Mode=OneWay}" Content="Active"
-                                          Tag="{Binding FrameId}" Margin="8,0" VerticalAlignment="Center" Click="FrameActiveCheckBox_Click" />
-                                <Button Grid.Column="2" Content="Delete" Padding="8,4" Tag="{Binding FrameId}" Click="DeleteFrameButton_Click" />
-                            </Grid>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <TextBlock x:Name="FramesEmptyText" Text="No frames added yet -- FramePicker won't show for guests until one exists."
-                           Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Visibility="Collapsed" />
+                    <TextBlock x:Name="SettingsStatusText" Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" />
+                    <Button x:Name="SaveSettingsButton" Content="Save Settings" Padding="16,8"
+                            HorizontalAlignment="Left" Margin="0,8,0,0" Click="SaveSettingsButton_Click" />
 
-                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                    <TextBlock Text="New frame name:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
-                    <TextBox x:Name="NewFrameNameBox" Width="140" Margin="0,0,8,0" />
-                    <Button x:Name="BrowseFrameImageButton" Content="Browse..." Padding="8,4" Click="BrowseFrameImageButton_Click" />
-                </StackPanel>
-                <TextBlock x:Name="SelectedFrameImageText" Text="No image selected." Style="{StaticResource Row}"
-                           Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
-                <Button x:Name="AddFrameButton" Content="Add Frame" Padding="16,8"
-                        HorizontalAlignment="Left" Margin="0,8,0,0" Click="AddFrameButton_Click" />
-                <TextBlock x:Name="FrameStatusText" Style="{StaticResource Row}"
-                           Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                    <!-- Colors/logo/event name applied by MainWindow at startup and
+                         every time it returns to Idle: takes effect for the next
+                         guest, but won't repaint mid-session. -->
+                    <TextBlock Text="Theme" Style="{StaticResource SectionHeader}" />
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text="Accent color (hex):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="150" />
+                        <TextBox x:Name="AccentColorBox" Width="90" Margin="0,0,8,0" TextChanged="ThemeColorBox_TextChanged" />
+                        <Border x:Name="AccentColorSwatch" Width="20" Height="20" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text="Canvas color (hex):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="150" />
+                        <TextBox x:Name="CanvasColorBox" Width="90" Margin="0,0,8,0" TextChanged="ThemeColorBox_TextChanged" />
+                        <Border x:Name="CanvasColorSwatch" Width="20" Height="20" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text="Ink color (hex):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="150" />
+                        <TextBox x:Name="InkColorBox" Width="90" Margin="0,0,8,0" TextChanged="ThemeColorBox_TextChanged" />
+                        <Border x:Name="InkColorSwatch" Width="20" Height="20" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text="Event/brand name:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="150" />
+                        <TextBox x:Name="EventNameBox" Width="220" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <Button x:Name="BrowseThemeLogoButton" Content="Browse for logo..." Padding="8,4" Click="BrowseThemeLogoButton_Click" />
+                    </StackPanel>
+                    <TextBlock x:Name="SelectedThemeLogoText" Text="No logo selected." Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
+                    <TextBlock x:Name="ThemeStatusText" Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                    <Button x:Name="SaveThemeButton" Content="Save Theme" Padding="16,8"
+                            HorizontalAlignment="Left" Margin="0,8,0,0" Click="SaveThemeButton_Click" />
 
-                <!-- Recordings from BoothStateMachine's Guestbook state: stored
-                     locally and reviewed here only, never uploaded/QR'd/printed
-                     like the photo is (see GuestbookVideo's schema comment). -->
-                <TextBlock Text="Guestbook messages" Style="{StaticResource SectionHeader}" />
-                <ItemsControl x:Name="GuestbookVideosList">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Grid Margin="0,4">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="{Binding Label}" Style="{StaticResource Row}" VerticalAlignment="Center" />
-                                <Button Grid.Column="1" Content="Open" Padding="8,4" Margin="8,0" Tag="{Binding FilePath}" Click="OpenGuestbookVideoButton_Click" />
-                                <Button Grid.Column="2" Content="Delete" Padding="8,4" Tag="{Binding GuestbookVideoId}" Click="DeleteGuestbookVideoButton_Click" />
-                            </Grid>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <TextBlock x:Name="GuestbookVideosEmptyText" Text="No guestbook messages recorded yet."
-                           Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}" Visibility="Collapsed" />
+                    <!-- Frames an admin adds here show up in the guest-facing
+                         FramePicker screen (see MainWindow's FramePickerView):
+                         takes effect for the next guest session, no restart. -->
+                    <TextBlock Text="Frame library" Style="{StaticResource SectionHeader}" />
+                    <ItemsControl x:Name="FramesList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding Name}" Style="{StaticResource Row}" VerticalAlignment="Center" />
+                                    <CheckBox Grid.Column="1" IsChecked="{Binding IsActive, Mode=OneWay}" Content="Active"
+                                              Tag="{Binding FrameId}" Margin="8,0" VerticalAlignment="Center" Click="FrameActiveCheckBox_Click" />
+                                    <Button Grid.Column="2" Content="Delete" Padding="8,4" Tag="{Binding FrameId}" Click="DeleteFrameButton_Click" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock x:Name="FramesEmptyText" Text="No frames added yet -- FramePicker won't show for guests until one exists."
+                               Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Visibility="Collapsed" />
 
-                <!-- dslrBooth feature-parity settings (BUILD_PLAN.md Phase 3), backed
-                     by Location's new columns via LocationRepository's
-                     UpdateDslrBoothParitySettingsAsync. Takes effect for the next
-                     guest session, same as the Booth settings section above. -->
-                <TextBlock Text="Capture Settings" Style="{StaticResource SectionHeader}" />
-                <TextBlock Text="Mode:" Style="{StaticResource Row}" />
-                <StackPanel Orientation="Horizontal" Margin="0,2">
-                    <RadioButton x:Name="CaptureModePhotoRadio" GroupName="CaptureMode" Content="Photo"
-                                 Foreground="{StaticResource InkBrush}" IsChecked="True" Margin="0,0,12,0" />
-                    <RadioButton x:Name="CaptureModeGifRadio" GroupName="CaptureMode" Content="GIF"
-                                 Foreground="{StaticResource InkBrush}" Margin="0,0,12,0" />
-                    <RadioButton x:Name="CaptureModeBoomerangRadio" GroupName="CaptureMode" Content="Boomerang"
-                                 Foreground="{StaticResource InkBrush}" Margin="0,0,12,0" />
-                    <RadioButton x:Name="CaptureModeVideoRadio" GroupName="CaptureMode" Content="Video"
-                                 Foreground="{StaticResource InkBrush}" />
-                </StackPanel>
-                <CheckBox x:Name="AlsoCreateGifCheckBox" Content="Also create a GIF alongside the main capture"
-                          Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
-                <StackPanel Orientation="Horizontal" Margin="0,4">
-                    <TextBlock Text="GIF/Boomerang frame count:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
-                    <TextBox x:Name="FrameCountBox" Width="60" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="0,4">
-                    <TextBlock Text="Frame delay (ms):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
-                    <TextBox x:Name="FrameDelayBox" Width="60" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="0,4">
-                    <TextBlock Text="Video duration (seconds):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
-                    <TextBox x:Name="VideoDurationBox" Width="60" />
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <TextBlock Text="New frame name:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
+                        <TextBox x:Name="NewFrameNameBox" Width="140" Margin="0,0,8,0" />
+                        <Button x:Name="BrowseFrameImageButton" Content="Browse..." Padding="8,4" Click="BrowseFrameImageButton_Click" />
+                    </StackPanel>
+                    <TextBlock x:Name="SelectedFrameImageText" Text="No image selected." Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
+                    <Button x:Name="AddFrameButton" Content="Add Frame" Padding="16,8"
+                            HorizontalAlignment="Left" Margin="0,8,0,0" Click="AddFrameButton_Click" />
+                    <TextBlock x:Name="FrameStatusText" Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
+
+                    <!-- Recordings from BoothStateMachine's Guestbook state: stored
+                         locally and reviewed here only, never uploaded/QR'd/printed
+                         like the photo is (see GuestbookVideo's schema comment). -->
+                    <TextBlock Text="Guestbook messages" Style="{StaticResource SectionHeader}" />
+                    <ItemsControl x:Name="GuestbookVideosList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding Label}" Style="{StaticResource Row}" VerticalAlignment="Center" />
+                                    <Button Grid.Column="1" Content="Open" Padding="8,4" Margin="8,0" Tag="{Binding FilePath}" Click="OpenGuestbookVideoButton_Click" />
+                                    <Button Grid.Column="2" Content="Delete" Padding="8,4" Tag="{Binding GuestbookVideoId}" Click="DeleteGuestbookVideoButton_Click" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock x:Name="GuestbookVideosEmptyText" Text="No guestbook messages recorded yet."
+                               Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}" Visibility="Collapsed" />
                 </StackPanel>
 
-                <TextBlock Text="Effects &amp; Stickers" Style="{StaticResource SectionHeader}" />
-                <CheckBox x:Name="BeautyFilterCheckBox" Content="Beauty filter enabled"
-                          Foreground="{StaticResource InkBrush}" Margin="0,4,0,0" />
-                <TextBlock Text="Filters mode:" Style="{StaticResource Row}" Margin="0,8,0,0" />
-                <StackPanel Orientation="Horizontal" Margin="0,2">
-                    <RadioButton x:Name="FiltersModeAskRadio" GroupName="FiltersMode" Content="Ask"
-                                 Foreground="{StaticResource InkBrush}" IsChecked="True" Margin="0,0,12,0" />
-                    <RadioButton x:Name="FiltersModeAutoRadio" GroupName="FiltersMode" Content="Auto"
-                                 Foreground="{StaticResource InkBrush}" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                    <Button x:Name="BrowseWatermarkButton" Content="Browse for watermark..." Padding="8,4" Click="BrowseWatermarkButton_Click" />
-                </StackPanel>
-                <TextBlock x:Name="SelectedWatermarkText" Text="No watermark selected." Style="{StaticResource Row}"
-                           Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
+                <!-- ===== Capture Settings ===== -->
+                <StackPanel x:Name="CaptureSettingsSectionPanel" Visibility="Collapsed">
+                    <Grid Margin="0,4,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="&lt; General" Style="{StaticResource WizardLink}"
+                                   HorizontalAlignment="Left" Tag="General" MouseLeftButtonDown="PreviousSection_Click" />
+                        <TextBlock Grid.Column="1" Text="Capture Settings" FontSize="15" FontWeight="Bold"
+                                   Foreground="{StaticResource InkBrush}" HorizontalAlignment="Center" />
+                        <TextBlock Grid.Column="2" Text="Camera Settings &gt;" Style="{StaticResource WizardLink}"
+                                   HorizontalAlignment="Right" Tag="CameraSettings" MouseLeftButtonDown="NextSection_Click" />
+                    </Grid>
 
-                <TextBlock Text="Green Screen" Style="{StaticResource SectionHeader}" />
-                <CheckBox x:Name="GreenScreenEnabledCheckBox" Content="Green screen enabled"
-                          Foreground="{StaticResource InkBrush}" Margin="0,4,0,0" />
-                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                    <Button x:Name="BrowseGreenScreenBackgroundButton" Content="Browse for background..." Padding="8,4" Click="BrowseGreenScreenBackgroundButton_Click" />
-                </StackPanel>
-                <TextBlock x:Name="SelectedGreenScreenBackgroundText" Text="No background selected." Style="{StaticResource Row}"
-                           Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
-
-                <!-- Question-builder + responses list added in Phase 6 (see
-                     BUILD_PLAN.md); SurveyEnabledCheckBox is the same on/off
-                     switch from Phase 1/3, saved via SaveParitySettingsButton
-                     alongside Capture/Effects/etc below. Questions/Responses are
-                     saved immediately on Add/Delete, same as the Frame library. -->
-                <TextBlock Text="Survey" Style="{StaticResource SectionHeader}" />
-                <CheckBox x:Name="SurveyEnabledCheckBox" Content="Post-session survey enabled"
-                          Foreground="{StaticResource InkBrush}" Margin="0,4,0,0" />
-
-                <TextBlock Text="Questions" Style="{StaticResource Row}" FontWeight="SemiBold" Margin="0,10,0,0" />
-                <ItemsControl x:Name="SurveyQuestionsList">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Grid Margin="0,4">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="{Binding Text}" Style="{StaticResource Row}" VerticalAlignment="Center" />
-                                <Button Grid.Column="1" Content="Delete" Padding="8,4" Tag="{Binding SurveyQuestionId}" Click="DeleteSurveyQuestionButton_Click" />
-                            </Grid>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <TextBlock x:Name="SurveyQuestionsEmptyText" Text="No questions added yet -- the Survey screen won't show for guests until one exists."
-                           Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Visibility="Collapsed" />
-                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                    <TextBlock Text="New question:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
-                    <TextBox x:Name="NewSurveyQuestionBox" Width="260" />
-                </StackPanel>
-                <Button x:Name="AddSurveyQuestionButton" Content="+ Question" Padding="16,8"
-                        HorizontalAlignment="Left" Margin="0,8,0,0" Click="AddSurveyQuestionButton_Click" />
-                <TextBlock x:Name="SurveyQuestionStatusText" Style="{StaticResource Row}"
-                           Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
-
-                <TextBlock Text="Responses" Style="{StaticResource Row}" FontWeight="SemiBold" Margin="0,14,0,0" />
-                <ItemsControl x:Name="SurveyResponsesList">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" Style="{StaticResource Row}" Margin="0,2" TextWrapping="Wrap" />
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <TextBlock x:Name="SurveyResponsesEmptyText" Text="No responses recorded yet."
-                           Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}" Visibility="Collapsed" />
-
-                <TextBlock Text="Disclaimer" Style="{StaticResource SectionHeader}" />
-                <StackPanel Orientation="Horizontal" Margin="0,4">
-                    <TextBlock Text="Header:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
-                    <TextBox x:Name="DisclaimerHeaderBox" Width="280" />
-                </StackPanel>
-                <TextBlock Text="Text:" Style="{StaticResource Row}" Margin="0,6,0,2" />
-                <TextBox x:Name="DisclaimerTextBox" AcceptsReturn="True" TextWrapping="Wrap"
-                         Height="80" VerticalScrollBarVisibility="Auto" />
-
-                <TextBlock Text="Sharing Settings" Style="{StaticResource SectionHeader}" />
-                <CheckBox x:Name="EmailEnabledCheckBox" Content="Email sharing enabled"
-                          Foreground="{StaticResource InkBrush}" Margin="0,4,0,0" />
-                <CheckBox x:Name="SmsEnabledCheckBox" Content="SMS sharing enabled"
-                          Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
-                <CheckBox x:Name="QrEnabledCheckBox" Content="QR sharing enabled"
-                          Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
-
-                <TextBlock Text="Print Setup extensions" Style="{StaticResource SectionHeader}" />
-                <CheckBox x:Name="PrintAutomaticallyCheckBox" Content="Print automatically"
-                          Foreground="{StaticResource InkBrush}" Margin="0,4,0,0" />
-                <CheckBox x:Name="ShowPrintButtonCheckBox" Content="Show print button to guests"
-                          Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
-                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                    <TextBlock Text="Print limit per event:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
-                    <TextBox x:Name="PrintLimitPerEventBox" Width="80" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="0,4">
-                    <TextBlock Text="Print limit per session:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
-                    <TextBox x:Name="PrintLimitPerSessionBox" Width="80" />
-                </StackPanel>
-                <TextBlock Text="Print sharpening:" Style="{StaticResource Row}" Margin="0,8,0,0" />
-                <StackPanel Orientation="Horizontal" Margin="0,2">
-                    <RadioButton x:Name="PrintSharpeningLowRadio" GroupName="PrintSharpening" Content="Low"
-                                 Foreground="{StaticResource InkBrush}" Margin="0,0,12,0" />
-                    <RadioButton x:Name="PrintSharpeningMediumRadio" GroupName="PrintSharpening" Content="Medium"
-                                 Foreground="{StaticResource InkBrush}" IsChecked="True" Margin="0,0,12,0" />
-                    <RadioButton x:Name="PrintSharpeningHighRadio" GroupName="PrintSharpening" Content="High"
-                                 Foreground="{StaticResource InkBrush}" />
+                    <TextBlock Text="Mode:" Style="{StaticResource Row}" />
+                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                        <RadioButton x:Name="CaptureModePhotoRadio" GroupName="CaptureMode" Content="Photo"
+                                     Foreground="{StaticResource InkBrush}" IsChecked="True" Margin="0,0,12,0" />
+                        <RadioButton x:Name="CaptureModeGifRadio" GroupName="CaptureMode" Content="GIF"
+                                     Foreground="{StaticResource InkBrush}" Margin="0,0,12,0" />
+                        <RadioButton x:Name="CaptureModeBoomerangRadio" GroupName="CaptureMode" Content="Boomerang"
+                                     Foreground="{StaticResource InkBrush}" Margin="0,0,12,0" />
+                        <RadioButton x:Name="CaptureModeVideoRadio" GroupName="CaptureMode" Content="Video"
+                                     Foreground="{StaticResource InkBrush}" />
+                    </StackPanel>
+                    <CheckBox x:Name="AlsoCreateGifCheckBox" Content="Also create a GIF alongside the main capture"
+                              Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text="GIF/Boomerang frame count:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
+                        <TextBox x:Name="FrameCountBox" Width="60" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text="Frame delay (ms):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
+                        <TextBox x:Name="FrameDelayBox" Width="60" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text="Video duration (seconds):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
+                        <TextBox x:Name="VideoDurationBox" Width="60" />
+                    </StackPanel>
                 </StackPanel>
 
-                <TextBlock x:Name="ParitySettingsStatusText" Style="{StaticResource Row}"
-                           Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
-                <Button x:Name="SaveParitySettingsButton" Content="Save Capture/Effects/Sharing Settings" Padding="16,8"
-                        HorizontalAlignment="Left" Margin="0,8,0,0" Click="SaveParitySettingsButton_Click" />
+                <!-- ===== Camera Settings (placeholder: no dedicated backing
+                     fields exist yet; kept in the wizard order so navigation
+                     matches dslrBooth's flow) ===== -->
+                <StackPanel x:Name="CameraSettingsSectionPanel" Visibility="Collapsed">
+                    <Grid Margin="0,4,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="&lt; Capture Settings" Style="{StaticResource WizardLink}"
+                                   HorizontalAlignment="Left" Tag="CaptureSettings" MouseLeftButtonDown="PreviousSection_Click" />
+                        <TextBlock Grid.Column="1" Text="Camera Settings" FontSize="15" FontWeight="Bold"
+                                   Foreground="{StaticResource InkBrush}" HorizontalAlignment="Center" />
+                        <TextBlock Grid.Column="2" Text="Virtual Attendant &gt;" Style="{StaticResource WizardLink}"
+                                   HorizontalAlignment="Right" Tag="VirtualAttendant" MouseLeftButtonDown="NextSection_Click" />
+                    </Grid>
+                    <TextBlock Text="Camera hardware selection/settings aren't part of this build yet."
+                               Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <!-- ===== Virtual Attendant (placeholder) ===== -->
+                <StackPanel x:Name="VirtualAttendantSectionPanel" Visibility="Collapsed">
+                    <Grid Margin="0,4,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="&lt; Camera Settings" Style="{StaticResource WizardLink}"
+                                   HorizontalAlignment="Left" Tag="CameraSettings" MouseLeftButtonDown="PreviousSection_Click" />
+                        <TextBlock Grid.Column="1" Text="Virtual Attendant" FontSize="15" FontWeight="Bold"
+                                   Foreground="{StaticResource InkBrush}" HorizontalAlignment="Center" />
+                        <TextBlock Grid.Column="2" Text="Effects &amp; Stickers &gt;" Style="{StaticResource WizardLink}"
+                                   HorizontalAlignment="Right" Tag="EffectsStickers" MouseLeftButtonDown="NextSection_Click" />
+                    </Grid>
+                    <TextBlock Text="Virtual attendant prompts/voice aren't part of this build yet."
+                               Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <!-- ===== Effects & Stickers ===== -->
+                <StackPanel x:Name="EffectsStickersSectionPanel" Visibility="Collapsed">
+                    <Grid Margin="0,4,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="&lt; Virtual Attendant" Style="{StaticResource WizardLink}"
+                                   HorizontalAlignment="Left" Tag="VirtualAttendant" MouseLeftButtonDown="PreviousSection_Click" />
+                        <TextBlock Grid.Column="1" Text="Effects &amp; Stickers" FontSize="15" FontWeight="Bold"
+                                   Foreground="{StaticResource InkBrush}" HorizontalAlignment="Center" />
+                        <TextBlock Grid.Column="2" Text="Green Screen &gt;" Style="{StaticResource WizardLink}"
+                                   HorizontalAlignment="Right" Tag="GreenScreen" MouseLeftButtonDown="NextSection_Click" />
+                    </Grid>
+
+                    <CheckBox x:Name="BeautyFilterCheckBox" Content="Beauty filter enabled"
+                              Foreground="{StaticResource InkBrush}" Margin="0,4,0,0" />
+                    <TextBlock Text="Filters mode:" Style="{StaticResource Row}" Margin="0,8,0,0" />
+                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                        <RadioButton x:Name="FiltersModeAskRadio" GroupName="FiltersMode" Content="Ask"
+                                     Foreground="{StaticResource InkBrush}" IsChecked="True" Margin="0,0,12,0" />
+                        <RadioButton x:Name="FiltersModeAutoRadio" GroupName="FiltersMode" Content="Auto"
+                                     Foreground="{StaticResource InkBrush}" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <Button x:Name="BrowseWatermarkButton" Content="Browse for watermark..." Padding="8,4" Click="BrowseWatermarkButton_Click" />
+                    </StackPanel>
+                    <TextBlock x:Name="SelectedWatermarkText" Text="No watermark selected." Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
+                </StackPanel>
+
+                <!-- ===== Green Screen ===== -->
+                <StackPanel x:Name="GreenScreenSectionPanel" Visibility="Collapsed">
+                    <Grid Margin="0,4,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="&lt; Effects &amp; Stickers" Style="{StaticResource WizardLink}"
+                                   HorizontalAlignment="Left" Tag="EffectsStickers" MouseLeftButtonDown="PreviousSection_Click" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center">
+                            <TextBlock Text="Green Screen" FontSize="15" FontWeight="Bold"
+                                       Foreground="{StaticResource InkBrush}" VerticalAlignment="Center" />
+                            <CheckBox x:Name="GreenScreenEnabledCheckBox" Content="" Margin="14,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <TextBlock Grid.Column="2" Text="Survey &gt;" Style="{StaticResource WizardLink}"
+                                   HorizontalAlignment="Right" Tag="Survey" MouseLeftButtonDown="NextSection_Click" />
+                    </Grid>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <Button x:Name="BrowseGreenScreenBackgroundButton" Content="Browse for background..." Padding="8,4" Click="BrowseGreenScreenBackgroundButton_Click" />
+                    </StackPanel>
+                    <TextBlock x:Name="SelectedGreenScreenBackgroundText" Text="No background selected." Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
+                </StackPanel>
+
+                <!-- ===== Survey ===== -->
+                <StackPanel x:Name="SurveySectionPanel" Visibility="Collapsed">
+                    <Grid Margin="0,4,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="&lt; Green Screen" Style="{StaticResource WizardLink}"
+                                   HorizontalAlignment="Left" Tag="GreenScreen" MouseLeftButtonDown="PreviousSection_Click" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center">
+                            <TextBlock Text="Survey" FontSize="15" FontWeight="Bold"
+                                       Foreground="{StaticResource InkBrush}" VerticalAlignment="Center" />
+                            <CheckBox x:Name="SurveyEnabledCheckBox" Content="" Margin="14,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <TextBlock Grid.Column="2" Text="Disclaimer &gt;" Style="{StaticResource WizardLink}"
+                                   HorizontalAlignment="Right" Tag="Disclaimer" MouseLeftButtonDown="NextSection_Click" />
+                    </Grid>
+
+                    <!-- Question-builder + responses list added in Phase 6 (see
+                         BUILD_PLAN.md); SurveyEnabledCheckBox (moved into the
+                         breadcrumb above) is the same on/off switch from Phase
+                         1/3, saved via SaveParitySettingsButton alongside
+                         Capture/Effects/etc. Questions/Responses are saved
+                         immediately on Add/Delete, same as the Frame library. -->
+                    <TextBlock Text="Questions" Style="{StaticResource Row}" FontWeight="SemiBold" Margin="0,10,0,0" />
+                    <ItemsControl x:Name="SurveyQuestionsList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding Text}" Style="{StaticResource Row}" VerticalAlignment="Center" />
+                                    <Button Grid.Column="1" Content="Delete" Padding="8,4" Tag="{Binding SurveyQuestionId}" Click="DeleteSurveyQuestionButton_Click" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock x:Name="SurveyQuestionsEmptyText" Text="No questions added yet -- the Survey screen won't show for guests until one exists."
+                               Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Visibility="Collapsed" />
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <TextBlock Text="New question:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
+                        <TextBox x:Name="NewSurveyQuestionBox" Width="260" />
+                    </StackPanel>
+                    <Button x:Name="AddSurveyQuestionButton" Content="+ Question" Padding="16,8"
+                            HorizontalAlignment="Left" Margin="0,8,0,0" Click="AddSurveyQuestionButton_Click" />
+                    <TextBlock x:Name="SurveyQuestionStatusText" Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
+
+                    <TextBlock Text="Responses" Style="{StaticResource Row}" FontWeight="SemiBold" Margin="0,14,0,0" />
+                    <ItemsControl x:Name="SurveyResponsesList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}" Style="{StaticResource Row}" Margin="0,2" TextWrapping="Wrap" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock x:Name="SurveyResponsesEmptyText" Text="No responses recorded yet."
+                               Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}" Visibility="Collapsed" />
+                </StackPanel>
+
+                <!-- ===== Disclaimer ===== -->
+                <StackPanel x:Name="DisclaimerSectionPanel" Visibility="Collapsed">
+                    <Grid Margin="0,4,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="&lt; Survey" Style="{StaticResource WizardLink}"
+                                   HorizontalAlignment="Left" Tag="Survey" MouseLeftButtonDown="PreviousSection_Click" />
+                        <TextBlock Grid.Column="1" Text="Disclaimer" FontSize="15" FontWeight="Bold"
+                                   Foreground="{StaticResource InkBrush}" HorizontalAlignment="Center" />
+                        <TextBlock Grid.Column="2" Text="Sharing Settings &gt;" Style="{StaticResource WizardLink}"
+                                   HorizontalAlignment="Right" Tag="SharingSettings" MouseLeftButtonDown="NextSection_Click" />
+                    </Grid>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text="Header:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
+                        <TextBox x:Name="DisclaimerHeaderBox" Width="280" />
+                    </StackPanel>
+                    <TextBlock Text="Text:" Style="{StaticResource Row}" Margin="0,6,0,2" />
+                    <TextBox x:Name="DisclaimerTextBox" AcceptsReturn="True" TextWrapping="Wrap"
+                             Height="80" VerticalScrollBarVisibility="Auto" />
+                </StackPanel>
+
+                <!-- ===== Sharing Settings ===== -->
+                <StackPanel x:Name="SharingSettingsSectionPanel" Visibility="Collapsed">
+                    <Grid Margin="0,4,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="&lt; Disclaimer" Style="{StaticResource WizardLink}"
+                                   HorizontalAlignment="Left" Tag="Disclaimer" MouseLeftButtonDown="PreviousSection_Click" />
+                        <TextBlock Grid.Column="1" Text="Sharing Settings" FontSize="15" FontWeight="Bold"
+                                   Foreground="{StaticResource InkBrush}" HorizontalAlignment="Center" />
+                        <TextBlock Grid.Column="2" Text="Print Setup &gt;" Style="{StaticResource WizardLink}"
+                                   HorizontalAlignment="Right" Tag="PrintSetup" MouseLeftButtonDown="NextSection_Click" />
+                    </Grid>
+
+                    <CheckBox x:Name="EmailEnabledCheckBox" Content="Email sharing enabled"
+                              Foreground="{StaticResource InkBrush}" Margin="0,4,0,0" />
+                    <CheckBox x:Name="SmsEnabledCheckBox" Content="SMS sharing enabled"
+                              Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
+                    <CheckBox x:Name="QrEnabledCheckBox" Content="QR sharing enabled"
+                              Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
+                </StackPanel>
+
+                <!-- ===== Print Setup (last section: Next becomes "Launch
+                     event", matching the existing Close behavior) ===== -->
+                <StackPanel x:Name="PrintSetupSectionPanel" Visibility="Collapsed">
+                    <Grid Margin="0,4,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="&lt; Sharing Settings" Style="{StaticResource WizardLink}"
+                                   HorizontalAlignment="Left" Tag="SharingSettings" MouseLeftButtonDown="PreviousSection_Click" />
+                        <TextBlock Grid.Column="1" Text="Print Setup" FontSize="15" FontWeight="Bold"
+                                   Foreground="{StaticResource InkBrush}" HorizontalAlignment="Center" />
+                        <TextBlock Grid.Column="2" Text="Launch event &gt;" Style="{StaticResource WizardLink}"
+                                   HorizontalAlignment="Right" Tag="" MouseLeftButtonDown="LaunchEvent_Click" />
+                    </Grid>
+
+                    <CheckBox x:Name="PrintAutomaticallyCheckBox" Content="Print automatically"
+                              Foreground="{StaticResource InkBrush}" Margin="0,4,0,0" />
+                    <CheckBox x:Name="ShowPrintButtonCheckBox" Content="Show print button to guests"
+                              Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <TextBlock Text="Print limit per event:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
+                        <TextBox x:Name="PrintLimitPerEventBox" Width="80" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text="Print limit per session:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
+                        <TextBox x:Name="PrintLimitPerSessionBox" Width="80" />
+                    </StackPanel>
+                    <TextBlock Text="Print sharpening:" Style="{StaticResource Row}" Margin="0,8,0,0" />
+                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                        <RadioButton x:Name="PrintSharpeningLowRadio" GroupName="PrintSharpening" Content="Low"
+                                     Foreground="{StaticResource InkBrush}" Margin="0,0,12,0" />
+                        <RadioButton x:Name="PrintSharpeningMediumRadio" GroupName="PrintSharpening" Content="Medium"
+                                     Foreground="{StaticResource InkBrush}" IsChecked="True" Margin="0,0,12,0" />
+                        <RadioButton x:Name="PrintSharpeningHighRadio" GroupName="PrintSharpening" Content="High"
+                                     Foreground="{StaticResource InkBrush}" />
+                    </StackPanel>
+
+                    <TextBlock x:Name="ParitySettingsStatusText" Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                    <Button x:Name="SaveParitySettingsButton" Content="Save Capture/Effects/Sharing Settings" Padding="16,8"
+                            HorizontalAlignment="Left" Margin="0,8,0,0" Click="SaveParitySettingsButton_Click" />
+                </StackPanel>
+
+                <!-- ===== Shared placeholder for menu-only items that aren't
+                     part of the wizard order (Sharing Status, Export Event,
+                     Event folder, Remote Control, Show Lock Screen, Language,
+                     Help, Subscription, About dslrBooth): none of these
+                     have backing functionality in this build yet. ===== -->
+                <StackPanel x:Name="PlaceholderSectionPanel" Visibility="Collapsed">
+                    <Grid Margin="0,4,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="&lt; General" Style="{StaticResource WizardLink}"
+                                   HorizontalAlignment="Left" Tag="General" MouseLeftButtonDown="PreviousSection_Click" />
+                        <TextBlock x:Name="PlaceholderTitleText" Grid.Column="1" Text="" FontSize="15" FontWeight="Bold"
+                                   Foreground="{StaticResource InkBrush}" HorizontalAlignment="Center" />
+                    </Grid>
+                    <TextBlock Text="Not available in this build yet." Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                </StackPanel>
+
             </StackPanel>
         </ScrollViewer>
 
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
             <Button x:Name="RefreshButton" Content="Refresh" Padding="16,8" Margin="0,0,8,0" Click="RefreshButton_Click" />
             <Button x:Name="CloseButton" Content="Close" Padding="16,8" Click="CloseButton_Click" />
         </StackPanel>

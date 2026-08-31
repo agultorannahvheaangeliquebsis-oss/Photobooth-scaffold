@@ -1,0 +1,233 @@
+using System.Diagnostics;
+using Photobooth.Core;
+using Photobooth.Data;
+using Photobooth.UI.ViewModels;
+
+namespace Photobooth.UI;
+
+/// <summary>
+/// Builds the real (non-mock) service graph a guest-facing window needs to
+/// run an actual booth -- DB init, the camera bridge process, and every
+/// <see cref="BoothServices"/> implementation. Extracted out of MainWindow's
+/// constructor so KioskWindow's real-services path (and MainWindow, until
+/// it's retired) can share one composition root instead of duplicating it.
+/// Deliberately does not wire any events (StateChanged, SelectionRequested,
+/// etc.) -- that stays the caller's job, same as KioskViewModel's own
+/// constructor already keeps event wiring separate from object construction.
+/// </summary>
+public static class BoothCompositionRoot
+{
+    /// <summary>Thrown when <see cref="DatabaseInitializer.InitializeAsync"/>
+    /// fails, so callers can show a DB-specific message distinct from a
+    /// generic service-construction failure (e.g. a missing CLOUDINARY_URL).</summary>
+    public sealed class DatabaseUnavailableException : Exception
+    {
+        public DatabaseUnavailableException(Exception inner)
+            : base(inner.Message, inner)
+        {
+        }
+    }
+
+    /// <summary>Everything a real booth window needs. The four concrete
+    /// <c>Ui*</c>/<c>Sql*</c> instances are surfaced alongside
+    /// <see cref="Services"/> (which only holds them behind their
+    /// interfaces) because callers need the concrete types to wire
+    /// <c>SelectionRequested</c>/<c>FeedbackRequested</c>/etc. and to call
+    /// their <c>Submit*</c> methods.</summary>
+    public sealed record RealBooth(
+        BoothServices Services,
+        ILiveViewService LiveView,
+        DatabaseInitializer.SeedIds SeedIds,
+        Process? CameraBridgeProcess,
+        UiFrameSelectionService FrameSelection,
+        UiFeedbackService Feedback,
+        UiGuestbookPromptService GuestbookPrompt,
+        SqlSurveyService Survey);
+
+    /// <summary>Blocking -- callers must invoke this off the UI thread's
+    /// synchronous continuation via <c>Task.Run(() =&gt; Build())...GetAwaiter().GetResult()</c>
+    /// style if called from a Dispatcher thread (same deadlock reasoning
+    /// MainWindow's original constructor comment already gave: awaited
+    /// continuations inside <see cref="DatabaseInitializer.InitializeAsync"/>
+    /// try to resume on the calling thread, which is blocked waiting on the
+    /// result). Throws <see cref="DatabaseUnavailableException"/> if DB
+    /// init fails, or a plain <see cref="Exception"/> if a service
+    /// constructor fails (e.g. missing CLOUDINARY_URL) -- callers own
+    /// showing a message and exiting on either.</summary>
+    public static RealBooth Build()
+    {
+        DatabaseInitializer.SeedIds seedIds;
+        try
+        {
+            seedIds = Task.Run(() => DatabaseInitializer.InitializeAsync()).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            throw new DatabaseUnavailableException(ex);
+        }
+
+        // Real, not mocked -- a frame pick / star rating+comment / guestbook
+        // ask-stop tap / survey answer is just button taps and text input,
+        // no external hardware or gateway to integrate, unlike
+        // Consent/Payment which stay mocked below.
+        var frameSelection = new UiFrameSelectionService();
+        var feedback = new UiFeedbackService();
+        var guestbookPrompt = new UiGuestbookPromptService();
+        var survey = new SqlSurveyService(seedIds.LocationId);
+
+        Process? cameraBridgeProcess = EnsureCameraBridgeRunning();
+
+        var sessionRepository = new SqlSessionRepository(seedIds.LocationId, seedIds.PrinterId);
+        var services = new BoothServices(
+            Camera: new PtpCameraService(),
+            Printer: new SpoolerPrinterService(),
+            CloudUpload: new CloudinaryCloudUploadService(),
+            Sessions: sessionRepository,
+            Payment: new MockQrPaymentService(),
+            UploadQueue: new FileSystemPendingUploadQueue(),
+            Consent: new MockConsentService(),
+            Email: new MockEmailDeliveryService(),
+            Branding: new GdiPhotoBrandingService(),
+            Filter: new GdiPhotoFilterService(),
+            Settings: new SqlBoothSettingsProvider(seedIds.LocationId),
+            FrameLibrary: new SqlFrameLibraryService(seedIds.LocationId),
+            FrameSelection: frameSelection,
+            FrameOverlay: new GdiFrameOverlayService(),
+            Feedback: feedback,
+            GuestbookPrompt: guestbookPrompt,
+            VideoGuestbook: new FfmpegVideoGuestbookService(),
+            GifComposer: new GdiGifComposerService(),
+            BoothVideo: new FfmpegBoothVideoService(),
+            AttendantCue: new SqlVirtualAttendantService(seedIds.LocationId),
+            Survey: survey);
+
+        return new RealBooth(
+            services,
+            new PtpLiveViewService(),
+            seedIds,
+            cameraBridgeProcess,
+            frameSelection,
+            feedback,
+            guestbookPrompt,
+            survey);
+    }
+
+    /// <summary>Builds a real <see cref="KioskViewModel"/> for a real booth --
+    /// the production counterpart to <see cref="KioskViewModel.CreateWithMockServices"/>.
+    /// Passes every concrete <c>Ui*</c>/<c>Sql*</c> instance from <see cref="RealBooth"/>
+    /// through to the ViewModel, since KioskWindow now has a screen for each of
+    /// FramePicker/Guestbook/Feedback/Survey. Returns the <see cref="RealBooth"/>
+    /// too, so the caller can register camera-bridge process cleanup.</summary>
+    public static (KioskViewModel ViewModel, RealBooth Booth) BuildKioskViewModel()
+    {
+        RealBooth booth = Build();
+        var viewModel = new KioskViewModel(
+            booth.Services,
+            booth.LiveView,
+            booth.SeedIds.LocationType,
+            booth.FrameSelection,
+            booth.Feedback,
+            booth.GuestbookPrompt,
+            booth.Survey);
+        return (viewModel, booth);
+    }
+
+    /// <summary>Launches Photobooth.CameraBridge.Host (the out-of-process pipe
+    /// server that drives the camera -- see PtpCameraService and the README's
+    /// "Camera: Nikon D3500" section) if it isn't already listening, so an
+    /// attendant/dev doesn't have to start it by hand before opening this app.
+    /// The bridge auto-detects whatever camera the device actually has (a
+    /// tethered D3500 if one's attached, otherwise a laptop webcam) -- set
+    /// PHOTOBOOTH_REQUIRE_DSLR=1 on real booth hardware to disable the webcam
+    /// fallback instead (see Program.cs in that project for why that matters).
+    /// Returns the started process (null if already running, not found, or
+    /// failed to start) -- the caller owns killing it on exit if non-null,
+    /// since only the process that launched it should tear it down.</summary>
+    private static Process? EnsureCameraBridgeRunning()
+    {
+        if (PtpCameraService.IsBridgeHostRunning())
+        {
+            return null;
+        }
+
+        string? exePath = ResolveCameraBridgeHostPath();
+        if (exePath is null)
+        {
+            // Not found -- PtpCameraService will surface a clear "is the bridge
+            // process running?" error on first capture instead of failing here.
+            return null;
+        }
+
+        var startInfo = new ProcessStartInfo(exePath)
+        {
+            WorkingDirectory = System.IO.Path.GetDirectoryName(exePath)!,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        if (Environment.GetEnvironmentVariable("PHOTOBOOTH_REQUIRE_DSLR") is "1" or "true")
+        {
+            startInfo.ArgumentList.Add("--require-dslr");
+        }
+
+        Process? process;
+        try
+        {
+            process = Process.Start(startInfo);
+        }
+        catch
+        {
+            // Swallow -- same reasoning as the exePath-not-found case above.
+            return null;
+        }
+
+        // The bridge doesn't start listening on its pipe until after it
+        // finishes scanning for a camera (DSLR pass, then a webcam fallback
+        // pass -- see Program.cs), which can take a few seconds. Without this
+        // wait, the window shows and is tappable before that finishes, so an
+        // attendant/guest who taps Start immediately hits "is the bridge
+        // process running?" even though the bridge comes up moments later --
+        // confirmed by reproducing that exact race against a real run. Block
+        // here, before the window is shown, same reasoning as the
+        // DatabaseInitializer wait above -- an extra few seconds once at
+        // startup beats a confusing false error on the guest's first tap.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
+        while (!PtpCameraService.IsBridgeHostRunning() && DateTime.UtcNow < deadline)
+        {
+            Thread.Sleep(250);
+        }
+
+        return process;
+    }
+
+    private static string? ResolveCameraBridgeHostPath()
+    {
+        string? overridePath = Environment.GetEnvironmentVariable("PHOTOBOOTH_CAMERA_BRIDGE_EXE");
+        if (overridePath is { Length: > 0 } && System.IO.File.Exists(overridePath))
+        {
+            return overridePath;
+        }
+
+        // Dev layout: walk up from this app's own build output to the solution
+        // root, then into the bridge host project's build output for the same
+        // configuration. Deployed installs should set
+        // PHOTOBOOTH_CAMERA_BRIDGE_EXE instead of relying on this.
+        var dir = new System.IO.DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
+        while (dir is not null && !System.IO.File.Exists(System.IO.Path.Combine(dir.FullName, "Photobooth.sln")))
+        {
+            dir = dir.Parent;
+        }
+        if (dir is null)
+        {
+            return null;
+        }
+
+#if DEBUG
+        const string configuration = "Debug";
+#else
+        const string configuration = "Release";
+#endif
+        var candidate = System.IO.Path.Combine(
+            dir.FullName, "Photobooth.CameraBridge.Host", "bin", configuration, "net48", "Photobooth.CameraBridge.Host.exe");
+        return System.IO.File.Exists(candidate) ? candidate : null;
+    }
+}

@@ -1,0 +1,497 @@
+<!-- Dark-mode kiosk control templates for KioskWindow. Kept in its own
+     ResourceDictionary (merged by KioskWindow, not App.xaml) so the existing
+     MainWindow/AdminWindow window-scoped palettes are untouched - every key
+     here is "Kiosk"-prefixed for the same reason.
+
+     Palette is deliberately the same one AdminWindow.xaml and MainWindow.xaml
+     already use (#17181A canvas / #4FBFAE accent), so this shell reads as the
+     same product rather than a second brand. Structure mirrors dslrBooth's
+     kiosk (full-bleed dark screens, oversized rounded touch targets, a
+     segmented mode picker, a side-by-side sharing screen); the colors and
+     copy are this project's own. -->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ============================ PALETTE ============================ -->
+    <SolidColorBrush x:Key="KioskCanvasBrush" Color="#17181A" />
+    <SolidColorBrush x:Key="KioskSurfaceBrush" Color="#1F2023" />
+    <SolidColorBrush x:Key="KioskFieldBrush" Color="#232528" />
+    <SolidColorBrush x:Key="KioskInkBrush" Color="#F2F2F0" />
+    <SolidColorBrush x:Key="KioskMutedBrush" Color="#9A9C9F" />
+    <SolidColorBrush x:Key="KioskAccentBrush" Color="#4FBFAE" />
+    <SolidColorBrush x:Key="KioskOnAccentBrush" Color="#0B0C0D" />
+    <SolidColorBrush x:Key="KioskLineBrush" Color="#2C2E31" />
+    <SolidColorBrush x:Key="KioskDangerBrush" Color="#E5484D" />
+    <!-- Scrim over the live camera feed on the countdown screen, and behind
+         the admin overlay. Two different opacities, hence two keys. -->
+    <SolidColorBrush x:Key="KioskScrimBrush" Color="#000000" Opacity="0.55" />
+    <SolidColorBrush x:Key="KioskOverlayScrimBrush" Color="#000000" Opacity="0.78" />
+
+    <FontFamily x:Key="KioskFont">Segoe UI, Roboto, Arial</FontFamily>
+
+    <!-- ========================== TYPOGRAPHY ========================== -->
+    <Style x:Key="KioskDisplayText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource KioskFont}" />
+        <Setter Property="FontSize" Value="200" />
+        <Setter Property="FontWeight" Value="Light" />
+        <Setter Property="Foreground" Value="{StaticResource KioskInkBrush}" />
+        <Setter Property="TextAlignment" Value="Center" />
+    </Style>
+    <Style x:Key="KioskH1" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource KioskFont}" />
+        <Setter Property="FontSize" Value="56" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{StaticResource KioskInkBrush}" />
+        <Setter Property="TextAlignment" Value="Center" />
+    </Style>
+    <Style x:Key="KioskH2" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource KioskFont}" />
+        <Setter Property="FontSize" Value="34" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{StaticResource KioskInkBrush}" />
+    </Style>
+    <!-- 24pt+ per the touch-first prompt sizing. -->
+    <Style x:Key="KioskPrompt" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource KioskFont}" />
+        <Setter Property="FontSize" Value="26" />
+        <Setter Property="Foreground" Value="{StaticResource KioskMutedBrush}" />
+        <Setter Property="TextAlignment" Value="Center" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style x:Key="KioskBody" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource KioskFont}" />
+        <Setter Property="FontSize" Value="18" />
+        <Setter Property="Foreground" Value="{StaticResource KioskInkBrush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style x:Key="KioskCaption" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource KioskFont}" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="Foreground" Value="{StaticResource KioskMutedBrush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style x:Key="KioskFieldLabel" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource KioskFont}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{StaticResource KioskMutedBrush}" />
+        <Setter Property="Margin" Value="2,0,0,6" />
+    </Style>
+
+    <!-- ======================== SCREEN CONTAINER ======================== -->
+    <!-- Every state screen in KioskWindow's switcher Grid uses this: when its
+         Visibility binding flips to Visible the screen fades up rather than
+         popping in. Opacity only (no shared TranslateTransform) on purpose -
+         a Freezable in a Style setter is shared by every element using the
+         style, so animating one would animate all of them. -->
+    <Style x:Key="KioskScreenRoot" TargetType="FrameworkElement">
+        <Style.Triggers>
+            <Trigger Property="Visibility" Value="Visible">
+                <Trigger.EnterActions>
+                    <BeginStoryboard>
+                        <Storyboard>
+                            <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                             From="0" To="1" Duration="0:0:0.28">
+                                <DoubleAnimation.EasingFunction>
+                                    <CubicEase EasingMode="EaseOut" />
+                                </DoubleAnimation.EasingFunction>
+                            </DoubleAnimation>
+                        </Storyboard>
+                    </BeginStoryboard>
+                </Trigger.EnterActions>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- ========================= TOUCH BUTTONS ========================= -->
+    <!-- MinHeight 72 (well past the 60px floor), 12px radius, 24pt label.
+         The press feedback is a scale-down on a RenderTransform declared
+         inside the template, so each button instance gets its own. -->
+    <Style x:Key="KioskTouchButtonBase" TargetType="Button">
+        <Setter Property="FontFamily" Value="{StaticResource KioskFont}" />
+        <Setter Property="FontSize" Value="24" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="MinHeight" Value="72" />
+        <Setter Property="MinWidth" Value="180" />
+        <Setter Property="Padding" Value="36,16" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="12"
+                            RenderTransformOrigin="0.5,0.5">
+                        <Border.RenderTransform>
+                            <ScaleTransform x:Name="Scale" ScaleX="1" ScaleY="1" />
+                        </Border.RenderTransform>
+                        <ContentPresenter Margin="{TemplateBinding Padding}"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                          TextElement.Foreground="{TemplateBinding Foreground}"
+                                          TextElement.FontSize="{TemplateBinding FontSize}"
+                                          TextElement.FontWeight="{TemplateBinding FontWeight}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.88" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Trigger.EnterActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="Scale" Storyboard.TargetProperty="ScaleX"
+                                                         To="0.96" Duration="0:0:0.08" />
+                                        <DoubleAnimation Storyboard.TargetName="Scale" Storyboard.TargetProperty="ScaleY"
+                                                         To="0.96" Duration="0:0:0.08" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="Scale" Storyboard.TargetProperty="ScaleX"
+                                                         To="1" Duration="0:0:0.12" />
+                                        <DoubleAnimation Storyboard.TargetName="Scale" Storyboard.TargetProperty="ScaleY"
+                                                         To="1" Duration="0:0:0.12" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.ExitActions>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.35" />
+                            <Setter Property="Cursor" Value="No" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="KioskPrimaryButton" TargetType="Button" BasedOn="{StaticResource KioskTouchButtonBase}">
+        <Setter Property="Background" Value="{StaticResource KioskAccentBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource KioskOnAccentBrush}" />
+    </Style>
+
+    <Style x:Key="KioskSecondaryButton" TargetType="Button" BasedOn="{StaticResource KioskTouchButtonBase}">
+        <Setter Property="Background" Value="{StaticResource KioskSurfaceBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource KioskInkBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource KioskLineBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+    </Style>
+
+    <Style x:Key="KioskGhostButton" TargetType="Button" BasedOn="{StaticResource KioskTouchButtonBase}">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{StaticResource KioskMutedBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource KioskLineBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="FontSize" Value="20" />
+    </Style>
+
+    <!-- Compact variant for the admin overlay, where a 72px row height would
+         waste most of the panel. Still comfortably touch-sized. -->
+    <Style x:Key="KioskCompactButton" TargetType="Button" BasedOn="{StaticResource KioskTouchButtonBase}">
+        <Setter Property="Background" Value="{StaticResource KioskSurfaceBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource KioskInkBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource KioskLineBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="MinHeight" Value="48" />
+        <Setter Property="MinWidth" Value="120" />
+        <Setter Property="FontSize" Value="15" />
+        <Setter Property="Padding" Value="20,10" />
+    </Style>
+
+    <!-- Idle-screen capture-mode tile (Photo / GIF / Boomerang / Video).
+         Selection is expressed through Tag ("selected") rather than a
+         ToggleButton, so the ViewModel can drive all four from one enum
+         property via EnumToBooleanConverter instead of four separate bools. -->
+    <Style x:Key="KioskModeTile" TargetType="Button">
+        <Setter Property="FontFamily" Value="{StaticResource KioskFont}" />
+        <Setter Property="Width" Value="210" />
+        <Setter Property="Height" Value="170" />
+        <Setter Property="Margin" Value="10" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Foreground" Value="{StaticResource KioskInkBrush}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd"
+                            Background="{StaticResource KioskSurfaceBrush}"
+                            BorderBrush="{StaticResource KioskLineBrush}"
+                            BorderThickness="2"
+                            CornerRadius="12"
+                            RenderTransformOrigin="0.5,0.5">
+                        <Border.RenderTransform>
+                            <ScaleTransform x:Name="Scale" ScaleX="1" ScaleY="1" />
+                        </Border.RenderTransform>
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource KioskMutedBrush}" />
+                        </Trigger>
+                        <Trigger Property="Tag" Value="selected">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource KioskAccentBrush}" />
+                            <Setter TargetName="Bd" Property="Background" Value="#12332F" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Trigger.EnterActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="Scale" Storyboard.TargetProperty="ScaleX" To="0.95" Duration="0:0:0.08" />
+                                        <DoubleAnimation Storyboard.TargetName="Scale" Storyboard.TargetProperty="ScaleY" To="0.95" Duration="0:0:0.08" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="Scale" Storyboard.TargetProperty="ScaleX" To="1" Duration="0:0:0.12" />
+                                        <DoubleAnimation Storyboard.TargetName="Scale" Storyboard.TargetProperty="ScaleY" To="1" Duration="0:0:0.12" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </Trigger.ExitActions>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ============================ FIELDS ============================ -->
+    <!-- Watermark comes from Tag, shown only while Text is empty - avoids a
+         second control or an attached property just for placeholder copy. -->
+    <Style x:Key="KioskTextBox" TargetType="TextBox">
+        <Setter Property="FontFamily" Value="{StaticResource KioskFont}" />
+        <Setter Property="FontSize" Value="20" />
+        <Setter Property="MinHeight" Value="60" />
+        <Setter Property="Padding" Value="16,0" />
+        <Setter Property="Background" Value="{StaticResource KioskFieldBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource KioskInkBrush}" />
+        <Setter Property="CaretBrush" Value="{StaticResource KioskAccentBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource KioskLineBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TextBox">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="10">
+                        <Grid>
+                            <TextBlock x:Name="Watermark"
+                                       Text="{TemplateBinding Tag}"
+                                       Margin="{TemplateBinding Padding}"
+                                       VerticalAlignment="Center"
+                                       FontSize="{TemplateBinding FontSize}"
+                                       Foreground="{StaticResource KioskMutedBrush}"
+                                       IsHitTestVisible="False"
+                                       Visibility="Collapsed" />
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="Text" Value="">
+                            <Setter TargetName="Watermark" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                        <Trigger Property="IsFocused" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource KioskAccentBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="KioskPasswordBox" TargetType="PasswordBox">
+        <Setter Property="FontFamily" Value="{StaticResource KioskFont}" />
+        <Setter Property="FontSize" Value="28" />
+        <Setter Property="MinHeight" Value="64" />
+        <Setter Property="Padding" Value="16,0" />
+        <Setter Property="Background" Value="{StaticResource KioskFieldBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource KioskInkBrush}" />
+        <Setter Property="CaretBrush" Value="{StaticResource KioskAccentBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource KioskLineBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="PasswordBox">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="10">
+                        <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsFocused" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource KioskAccentBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ============================= CARD ============================= -->
+    <Style x:Key="KioskCard" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource KioskSurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource KioskLineBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="12" />
+        <Setter Property="Padding" Value="24" />
+    </Style>
+
+    <!-- ============================= TABS ============================= -->
+    <Style x:Key="KioskTabItem" TargetType="TabItem">
+        <Setter Property="FontFamily" Value="{StaticResource KioskFont}" />
+        <Setter Property="FontSize" Value="15" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TabItem">
+                    <Border x:Name="Bd" Background="Transparent" CornerRadius="8" Padding="20,12" Margin="0,0,6,0">
+                        <ContentPresenter x:Name="Label" ContentSource="Header"
+                                          TextElement.Foreground="{StaticResource KioskMutedBrush}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource KioskFieldBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource KioskAccentBrush}" />
+                            <Setter TargetName="Label" Property="TextElement.Foreground" Value="{StaticResource KioskOnAccentBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="KioskTabControl" TargetType="TabControl">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TabControl">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <TabPanel Grid.Row="0" IsItemsHost="True" Margin="0,0,0,18" />
+                        <Border Grid.Row="1" Background="Transparent">
+                            <ContentPresenter ContentSource="SelectedContent" />
+                        </Border>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ========================== PILL SWITCH ========================== -->
+    <!-- Read-only status indicator, not an input: the admin overlay shows the
+         current setting, and AdminWindow remains the place settings are
+         edited/saved. Hence IsHitTestVisible=False. -->
+    <Style x:Key="KioskSwitch" TargetType="CheckBox">
+        <Setter Property="IsHitTestVisible" Value="False" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <Border x:Name="Track" Width="46" Height="26" CornerRadius="13"
+                            Background="{StaticResource KioskFieldBrush}"
+                            BorderBrush="{StaticResource KioskLineBrush}" BorderThickness="1">
+                        <Ellipse x:Name="Knob" Width="18" Height="18" Fill="{StaticResource KioskMutedBrush}"
+                                 HorizontalAlignment="Left" Margin="3,0,0,0" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Track" Property="Background" Value="{StaticResource KioskAccentBrush}" />
+                            <Setter TargetName="Track" Property="BorderBrush" Value="{StaticResource KioskAccentBrush}" />
+                            <Setter TargetName="Knob" Property="Fill" Value="{StaticResource KioskOnAccentBrush}" />
+                            <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right" />
+                            <Setter TargetName="Knob" Property="Margin" Value="0,0,3,0" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ========================= BUSY SPINNER ========================= -->
+    <!-- A dashed ring rotating forever - no image asset, no third-party
+         control. Used on the Processing screen and while a print spools. -->
+    <Style x:Key="KioskSpinner" TargetType="Ellipse">
+        <Setter Property="Width" Value="86" />
+        <Setter Property="Height" Value="86" />
+        <Setter Property="Stroke" Value="{StaticResource KioskAccentBrush}" />
+        <Setter Property="StrokeThickness" Value="6" />
+        <Setter Property="StrokeDashArray" Value="9 4" />
+        <Setter Property="StrokeDashCap" Value="Round" />
+        <Setter Property="RenderTransformOrigin" Value="0.5,0.5" />
+        <!-- RenderTransform is deliberately NOT set here: WPF freezes Freezable
+             values in a sealed Style's setters, and animating a frozen
+             RotateTransform throws at runtime. The spinning Ellipse declares its
+             own RotateTransform inline (see KioskWindow's Processing screen);
+             this style only supplies the animation that drives it. -->
+        <Style.Triggers>
+            <!-- IsVisible rather than Loaded: the Processing screen stays in
+                 the visual tree the whole session, so a Loaded trigger would
+                 fire once at startup and then spin invisibly forever. -->
+            <Trigger Property="IsVisible" Value="True">
+                <Trigger.EnterActions>
+                    <BeginStoryboard x:Name="SpinStory">
+                        <Storyboard>
+                            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                             From="0" To="360" Duration="0:0:1.4" RepeatBehavior="Forever" />
+                        </Storyboard>
+                    </BeginStoryboard>
+                </Trigger.EnterActions>
+                <Trigger.ExitActions>
+                    <StopStoryboard BeginStoryboardName="SpinStory" />
+                </Trigger.ExitActions>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- ===================== DONE / DWELL TIMER BAR ===================== -->
+    <Style x:Key="KioskTimerBar" TargetType="ProgressBar">
+        <Setter Property="Height" Value="8" />
+        <Setter Property="Minimum" Value="0" />
+        <Setter Property="Foreground" Value="{StaticResource KioskAccentBrush}" />
+        <Setter Property="Background" Value="{StaticResource KioskFieldBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ProgressBar">
+                    <Border Background="{TemplateBinding Background}" CornerRadius="4" ClipToBounds="True">
+                        <Grid>
+                            <Rectangle x:Name="PART_Track" />
+                            <Rectangle x:Name="PART_Indicator" Fill="{TemplateBinding Foreground}"
+                                       HorizontalAlignment="Left" RadiusX="4" RadiusY="4" />
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ======================= PRINT COUNT BADGE ======================= -->
+    <Style x:Key="KioskBadge" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource KioskOnAccentBrush}" />
+        <Setter Property="CornerRadius" Value="11" />
+        <Setter Property="Padding" Value="10,2" />
+        <Setter Property="MinWidth" Value="34" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Margin" Value="14,0,0,0" />
+    </Style>
+
+</ResourceDictionary>

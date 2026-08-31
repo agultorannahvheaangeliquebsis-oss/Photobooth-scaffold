@@ -1,6 +1,204 @@
 # One-Week Build Plan
 
-Status as of 2026-08-30.
+Status as of 2026-08-30. **See "Week 2 Build Plan" below (added
+2026-08-31) for the current plan and an up-to-date status summary** — this
+file grew past a week of work logged in commit order, so the top-level
+status line above is stale; everything from here down to "Week 2 Build
+Plan" is the Week 1 historical log, kept for the engineering detail (real
+bugs found, what was verified against what) but not the place to look for
+"what's the plan now."
+
+## Week 2 Build Plan (added 2026-08-31)
+
+### Status summary — what's actually true right now
+
+Week 1's plan (Days 1–6 below) is done, plus an unplanned "dslrBooth
+feature-parity" pass (6 phases, all checked off) and two dark-theme visual
+restyles (`AdminWindow`, `MainWindow`). 141 tests passing, 0 failed, no
+regressions. Almost everything dslrBooth-parity that can be built in
+software against mocks/LocalDB/Cloudinary already has been — the real gaps
+left are hardware verification, one architectural loose end, and a
+specific, short list of features nothing in this codebase has attempted
+yet.
+
+**Real and verified against a running app this session:** the WPF UI
+(`MainWindow` + `AdminWindow`, both dark-themed), LocalDB persistence,
+Cloudinary upload (a real `res.cloudinary.com` URL came back, not a
+fake one), QR generation, the print-template compositor rendering the
+actual 4x6/strip geometry the printer would use.
+
+**Built and wired in, never run against real hardware:** the Nikon D3500
+(only tested against a laptop webcam stand-in — the real PTP `Transfer()`
+path is a different code branch and is unverified), the physical printer
+(spooling confirmed, actual paper output never confirmed — no printer
+attached), the video guestbook's real mic capture.
+
+**Still mock-only by design, real integration is future work:**
+`IConsentService`, `IPaymentService` (a mock card reader proves the seam
+generalizes, but there's no real gateway). **Doesn't exist at all yet:**
+an SMS delivery interface — `KioskWindow`'s share screen has a phone
+field and a Send button that's honest about doing nothing, rather than a
+mock that would look functional.
+
+**One architectural loose end, found and left open this session:** there
+are now two guest-facing windows. `MainWindow` is full-featured (real
+hardware paths, consent/frame-picker/guestbook/feedback/survey screens)
+but still uses its original light-adjacent screen structure underneath
+the restyle. `KioskWindow` (added this session, uncommitted) is a clean
+five-screen dslrBooth-style mirror — Idle/Countdown/Capture/Processing/
+Review — but only wired to mock services, and has no UI for consent,
+frame picking, the guestbook, feedback, or the survey; those `BoothState`s
+all collapse into its Processing screen. Neither replaces the other.
+Nothing about this is locked in (the kiosk work isn't committed), but it
+needs a decision before more work lands on either one.
+
+**Two admin-facing windows never got the dark restyle:**
+`PrintTemplateEditorWindow` and `ScreenTemplateEditorWindow` are still on
+`App.xaml`'s original light palette with stock WPF chrome — found by
+actually opening them this session. Both are functionally complete (live
+preview, layers, align-to-canvas) and just visually stuck between two
+generations of the UI.
+
+**Known real gaps, not hardware-related:** no idle-timeout on any
+guest-interactive state (Consent/Payment/FramePicker/Feedback/Survey all
+wait forever — a guest walking away blocks the booth for the next guest,
+the one gap in this file with real operational impact); no admin UI for
+the Virtual Attendant clip pool (rows have to be inserted directly).
+
+**Corrected from the stale "Future roadmap" section further down this
+file:** Glam Booth mode (`GlamFilterEnabled`, `GdiPhotoFilterService`) and
+per-event theme/screen customization (`BoothTheme`, `ScreenSettings`) are
+both actually done — that section still marks them `[ ]` because it was
+written before the dslrBooth-parity pass built them. Its checkboxes for
+green screen, 360°, hashtag printing, live camera parameter control, and
+remote booth control are still accurate — none of those exist.
+
+### Day 1 — Resolve the two-window fork
+
+- [ ] Decide: converge `KioskWindow` and `MainWindow` into one, or keep
+      both for different deployment modes (e.g. `KioskWindow` for a
+      touch-only vendo booth, `MainWindow` where an attendant works the
+      keyboard). This is a product call, not a technical one — flag it
+      back before building further on either window if it isn't obvious
+      from how the booth is actually meant to run events.
+- [ ] If converging: port `KioskWindow`'s five-screen visual language
+      (the fade/flash/countdown-scale animations, the touch-sized control
+      templates in `Themes/KioskDark.xaml`) into `MainWindow`'s existing
+      state-bound views, OR port `MainWindow`'s missing screens (Consent,
+      FramePicker, Guestbook, Feedback, Survey) into `KioskWindow` and
+      retire `MainWindow`. Either direction, extract the ~150-line
+      composition root currently duplicated in `MainWindow`'s constructor
+      (DB seeding, camera-bridge launch, service wiring) into something
+      both windows — or the one that survives — can share cleanly.
+- [ ] Restyle `PrintTemplateEditorWindow` and `ScreenTemplateEditorWindow`
+      to the same dark palette/control templates the other two windows
+      now use (`Themes/KioskDark.xaml` or the `AdminWindow`/`MainWindow`
+      resource dictionaries, whichever the Day 1 convergence call leaves
+      as canonical).
+- Verify: `dotnet build` clean, `dotnet test` no regressions, both editor
+  windows opened and screenshotted on an interactive desktop.
+
+### Day 2 — Real hardware verification
+
+- [ ] Nikon D3500: connect it, run a real session through
+      `PtpCameraService` → the actual PTP `Transfer()` path (not the
+      webcam's raw-bytes fallback branch in `HandleCapture()`). This is
+      the single most-repeated "not yet verified" line in the Week 1 log.
+- [ ] Physical printer: connect one, confirm `SpoolerPrinterService`
+      produces actual paper output at the configured size/layout, not
+      just a spooled job.
+- [ ] Video guestbook: confirm real mic capture through
+      `FfmpegVideoGuestbookService` end to end (a recorded file with
+      actual audio, not just "ffmpeg didn't throw").
+- [ ] Whatever hardware isn't available yet slips to Day 7 buffer, same
+      handling the Week 1 plan used for the same reason.
+
+### Day 3 — Close the remaining real software gaps
+
+- [ ] Shared idle-timeout for guest-interactive states (Consent, Payment,
+      FramePicker, Feedback, Survey) — a guest walking away shouldn't
+      block the next one. One mechanism, not five copies.
+- [ ] Admin UI for the Virtual Attendant clip pool (upload/reorder/
+      assign-to-stage) — the one dslrBooth-parity phase that shipped
+      without the admin screen its own scope text implied.
+- [ ] `ISmsDeliveryService` interface + mock, wired into whichever guest
+      window Day 1 settled on, replacing the "not connected yet" message.
+      Real SMS gateway integration is out of scope for this week (same
+      "mock now, real gateway later" status `IPaymentService` already
+      has) — this closes the interface gap, not the hardware/vendor one.
+- Verify: `dotnet test`, then an interactive-desktop pass exercising each
+  fixed gap directly (walk away mid-Consent and confirm it recovers;
+  open the new Virtual Attendant admin screen; trigger the SMS mock).
+
+### Days 4–5 — New feature: green screen / chroma key
+
+The most tractable genuinely-missing dslrBooth feature — same
+interface-plus-mock-plus-GDI+ pattern this codebase already uses for
+`IPhotoFilterService`/`GdiPhotoFilterService` and
+`IFrameOverlayService`/`GdiFrameOverlayService`, just with a chroma-key
+compositor instead of a static overlay. `GreenScreenSettings` already
+exists in `BoothSettings` (Phase 1 of the dslrBooth-parity pass added the
+schema/settings columns) with nothing reading them yet — this is what
+finally wires them up.
+
+- [ ] `IGreenScreenService` (interface + mock, same seam as every other
+      hardware-adjacent concern in `Photobooth.Core`).
+- [ ] Real implementation: chroma-key composite of the captured frame
+      over `GreenScreenSettings.BackgroundImagePath`, applied in
+      `BoothStateMachine`'s capture step alongside the existing glam
+      filter/branding pipeline, gated on `GreenScreenSettings.Enabled`.
+- [ ] Background picker in `AdminWindow`'s existing Green Screen section
+      (already has the toggle scaffolded from the dslrBooth-parity pass).
+- [ ] Live-view preview: apply the same chroma key to the countdown
+      screen's live feed if the perf budget allows (~130ms/frame webcam
+      baseline from Week 1's live-view work) — real-time preview is what
+      makes this read as "green screen" rather than "just another photo
+      filter"; if the budget doesn't allow it, ship post-capture-only and
+      say so rather than silently dropping the live-preview half.
+- Verify: mock-first (unit tests, same pattern as `GdiFrameOverlayServiceTests`),
+  then a real session with an actual green backdrop if one's available,
+  screenshotted.
+
+### Day 6 — New feature: scoped-down remote/attendant control
+
+Full "companion mobile app" is too much for a day and pulls in a mobile
+build nobody's asked for yet. Scoped down to what the roadmap item is
+actually for at a booth: an attendant remotely triggering/monitoring a
+session without walking up to the kiosk. Reuses the exact IPC pattern
+`Photobooth.CameraBridge.Host`/`.Client` already proved out (a
+local process exposing a small protocol over a pipe or loopback HTTP
+listener), rather than inventing a new transport.
+
+- [ ] `IRemoteControlService` (interface + mock): expose
+      `BoothStateMachine`'s existing `StateChanged`/current-state surface
+      read-only, plus one write action to start (or reset) the guest
+      queue, deliberately not the full guest-facing action set.
+- [ ] Minimal real implementation: a loopback-only HTTP listener (no
+      external network exposure — same "this machine only" trust
+      boundary the camera bridge already assumes) an attendant's browser
+      on the same machine/LAN can hit.
+- [ ] Explicitly deferred, not attempted this week (flagged, not
+      silently dropped, same convention this file already uses for other
+      roadmap items): hashtag/social printing (needs real Instagram/
+      Twitter API credentials and rate-limit handling — a vendor
+      integration, not a day of GDI+ work) and 360° booth support (needs
+      rotating physical hardware nothing in this project has).
+- Verify: mock-first unit tests, then a real loopback session — start a
+  guest session from the attendant endpoint, confirm the kiosk screen
+  responds.
+
+### Day 7 — Buffer + full verification pass
+
+- Absorbs whatever slipped from Days 2 (hardware) or 4–6 first, same
+  "hardware is the least predictable dependency" reasoning Week 1's
+  buffer day used.
+- Otherwise: full interactive-desktop pass across both/the-surviving
+  guest window, `AdminWindow`, both editor windows, and the two new
+  features — screenshot everything, same verification discipline as the
+  rest of this file.
+- Update this file's status summary and README to match reality, and fix
+  any other stale checkboxes the way this section fixed the Glam Booth
+  Mode one.
 
 ## Done
 
@@ -1393,6 +1591,97 @@ Status as of 2026-08-30.
   elements in the right place also needs the real printer, same gap
   `SpoolerPrinterService` already had before this feature existed.
 
+## Known limitations (tracked, not yet fixed)
+
+- **GIF palette correctness**: `GdiGifComposerService` only keeps the first
+  frame's color table as the shared palette; other frames' LZW data still
+  indexes whatever palette GDI+ chose for that frame individually. Fine for
+  the real use case (near-identical back-to-back frames of a barely-moving
+  guest) but not spec-guaranteed for high-color-variance frames. A correct
+  fix means re-quantizing every frame to one shared palette first.
+- **No timeout/auto-skip on guest-interactive states**: Consent, Payment,
+  FramePicker, Feedback, and Survey all wait indefinitely for a guest
+  response with no fallback. A guest who walks away mid-prompt blocks the
+  booth for the next guest. Every other interactive gate in the project has
+  this same gap; worth a shared idle-timeout mechanism once hardware testing
+  time frees up, since this is the one gap with real operational impact.
+- **No admin UI for the Virtual Attendant clip pool**: `VirtualAttendantClip`
+  rows must be inserted directly (no upload/reorder/assign-to-stage screen)
+  — the Phase 6 scope text didn't ask for one, unlike Survey's explicit
+  admin UI bullet, but it's a real gap for actually using the feature.
+
+**Verified 2026-08-31 — clean-slate migration test.** Dropped the existing
+`Photobooth` LocalDB database entirely and re-ran
+`DatabaseInitializer.InitializeAsync()` against a truly empty instance (a
+different path than every prior SQL verification in this file, which all
+ran against an already-seeded database exercising the `ALTER TABLE` top-up
+migrations instead of the `schema.sql`-from-scratch path). Confirmed via a
+throwaway script (not checked in): all 16 tables
+(`Booking`/`Consent`/`Feedback`/`Frame`/`GuestbookVideo`/`InventoryLog`/
+`Location`/`Payment`/`Print`/`Printer`/`PrintTemplateElement`/
+`ScreenTemplateElement`/`Session`/`SurveyQuestion`/`SurveyResponse`/
+`VirtualAttendantClip`) were created directly from `schema.sql` with no
+errors, and seeding produced `LocationId=1, PrinterId=1, LocationType=event`
+as expected. This closes the "can the whole migration chain even survive a
+truly fresh database" unknown that had been accumulating as more `EnsureX`
+top-up migrations got added — on a fresh DB none of them run at all (the
+`schema.sql` branch returns early), so this only proves `schema.sql` itself
+is self-consistent, not that every top-up migration is idempotent in
+combination; those were already separately spot-checked against
+already-seeded databases throughout this file.
+
+## Interactive-desktop UI verification (2026-08-31)
+
+For the first time, an interactive desktop was actually available to run
+`Photobooth.UI.exe` on and click through — every prior "not yet verified,
+same interactive-desktop gap" note in this file up to this point was from
+environments that genuinely could not create a visible window (confirmed:
+even a plain `notepad.exe` produced no window there). Verified via a real
+run, screenshots taken through Win32 `PrintWindow` against the window
+handle directly (doesn't require focus or move the mouse, so it doesn't
+interfere with whoever's using the machine) while you drove the actual
+taps:
+
+- **Booth Setup / admin PIN unlock** screen -- renders correctly (title,
+  subtitle, PIN box, Unlock button), a screen not previously described
+  anywhere else in this file. Entering the correct PIN advances to a
+  "Ready to launch" state with `Open Settings`/`Launch Event` buttons.
+- **Idle** -- shows themed copy ("Make a moment of it." / "Your photo is
+  waiting." / "Tap to Start"), not the generic placeholder text described
+  earlier in this file, confirming `ScreenSettings`/the Screen Editor's
+  overlay is live.
+- A full guest session ran from `Tap to Start` through Consent/Countdown/
+  Capture/Reviewing/FramePicker/Payment/Printing/Complete on its own
+  (using the real webcam via the auto-launched camera bridge, per the
+  "Auto-detect and auto-launch" commit) before being observed again at
+  **Guestbook** ("Leave a message" / "Want to record a video greeting for
+  the hosts?", Yes/No buttons) with the QR panel correctly showing "Scan
+  to download" -- confirms the session reached Complete with a real
+  uploaded photo.
+- **Feedback** -- stars, comment box, Submit/Skip all render and respond.
+- Session returned cleanly to **Idle** afterward -- confirms the state
+  machine loops back correctly rather than getting stuck.
+
+**Real bug found:** `FeedbackView`'s heading ("How was your experience?")
+is clipped at the window's right edge instead of wrapping -- guests would
+see the text cut off mid-word. Needs `TextWrapping="Wrap"` (or a
+narrower/centered container) in `MainWindow.xaml`'s `FeedbackView`. Not
+fixed yet, just found and documented here -- same "found via actually
+running it" pattern that caught the `[Print]` keyword bug and the
+aspect-ratio bug earlier in this file.
+
+**Still not seen in this pass:** Consent, Countdown (with live view),
+Capturing, Reviewing, FramePicker, and Payment screens flew by
+automatically before they could be screenshotted (the mock/default paths
+for Consent and Payment in event mode don't pause for a real tap, and
+nothing was watching yet when Countdown/Capturing/Reviewing/FramePicker's
+turn came up in the one session observed). `AdminWindow`'s newer sections
+(Capture Settings, Effects & Stickers, Green Screen, Survey builder,
+Disclaimer, Sharing Settings, Print Setup extensions, Theme, Frame
+library, Guestbook messages list) and both visual editors
+(`PrintTemplateEditorWindow`, `ScreenTemplateEditorWindow`) also still
+haven't been clicked through. Worth another pass.
+
 ## Remaining
 
 **Day 7 — Buffer**
@@ -1414,7 +1703,12 @@ and unscheduled until there's a week to plan around it.
       sequences, full HD/4K video.
 - [ ] 360-degree booth support: rotating multi-angle video loops with
       speed ramping and custom soundtracks.
-- [ ] Glam Booth mode: automated skin smoothing, high-contrast B&W filter.
+- [x] Glam Booth mode: high-contrast B&W filter. Done -- see
+      `GlamFilterEnabled`/`GdiPhotoFilterService.ApplyGlamFilterAsync` in
+      the dslrBooth feature-parity plan below (this checkbox was stale;
+      fixed 2026-08-31, see Week 2 Build Plan above). Automated skin
+      smoothing specifically is still unbuilt -- the filter is B&W
+      contrast only, not a beautify pass.
 - [~] Video guestbook: recorded personalized messages/greetings from guests.
       Full mock-verified build done -- see the Done section above
       (`IVideoGuestbookService`/`FfmpegVideoGuestbookService`,
@@ -1428,11 +1722,13 @@ and unscheduled until there's a week to plan around it.
       dedicated drag-and-drop visual editor for arbitrary logo/text
       placement, are both done -- see `PrintTemplate`/`PrintTemplateElement`/
       `PrintCompositor`/`PrintTemplateEditorWindow` in the Done section above.
-- [~] Screen & UI customization: start screen, buttons, backgrounds,
-      themes per event brand. Colors, an event logo, and the event/brand
-      name are admin-editable now -- see `BoothTheme` in the Done section
-      above. Per-screen backgrounds and start-screen/button customization
-      beyond color are still unbuilt.
+- [x] Screen & UI customization: start screen, buttons, backgrounds,
+      themes per event brand. Colors/logo/event name (`BoothTheme`) plus
+      per-screen text/image/shape overlay placement on Welcome/Capture/
+      Sharing (`ScreenTemplateElement`/`ScreenTemplateEditorWindow`, see
+      Phase 6 in the dslrBooth feature-parity plan below) are both done
+      -- this checkbox was stale, marking only the color/logo half; fixed
+      2026-08-31, see Week 2 Build Plan above.
 - [ ] Green screen / chroma key: real-time background replacement with
       custom digital backdrops.
 - [ ] Virtual attendant / mirror booth: guided video/audio prompts
@@ -1966,3 +2262,133 @@ wiring across `PrintTemplateEditorWindow`, `ScreenTemplateEditorWindow`,
 and `MainWindow`'s screen-specific rendering) -- those remain open gaps
 for whoever next runs this app on a real touchscreen, not a re-opened
 part of this build plan's own checklist.
+
+## dslrBooth-style visual restyle -- AdminWindow (2026-08-31)
+
+You asked whether the UI could "copy dslrBooth or LumaBooth" -- clarified
+that literally cloning a commercial competitor's branding/wordmark/exact
+design isn't something to build, but matching their *structural* visual
+language (dark theme, pill toggle switches, segmented radio chips,
+rounded accent buttons, sectioned panels) with this project's own colors
+is exactly what Phase 3's functional work above was still missing: it
+added all the new settings sections but kept the pre-existing light
+`SectionHeader`/`Row` styling, so the actual visual match to the
+screenshots you shared was never done. Scoped to `AdminWindow` first, per
+your answer (guest-facing `MainWindow` screens are a separate follow-up).
+
+- [x] `AdminWindow.xaml`'s `Window.Resources` now locally overrides the
+      five shared brush keys (`CanvasBrush`/`InkBrush`/`MutedBrush`/
+      `AccentBrush`/`LineBrush`) with a dark palette, plus two new keys
+      (`FieldBrush`, `OnAccentBrush`). Scoped to this window only -- WPF's
+      nearest-scope `StaticResource` lookup means these shadow App.xaml's
+      light values just for `AdminWindow`'s visual tree, so `MainWindow`
+      and every other window stay on the original light theme, untouched.
+- [x] Added implicit (no `x:Key`, so automatically applied to every
+      instance) `ControlTemplate`-based styles for `TextBox`, `Button`,
+      `CheckBox`, and `RadioButton`:
+  - `TextBox`: rounded dark field, accent-colored border on focus.
+  - `Button`: rounded accent pill (every `Button` in the window picked
+        this up with zero per-button changes needed).
+  - `CheckBox`: a real track+thumb toggle switch (matches dslrBooth's
+        "On/Off" pill pattern) in place of the OS default checkbox square,
+        with the existing `Content` text rendered to its right.
+  - `RadioButton`: a segmented pill/chip look (accent-filled when
+        checked) for the existing `CaptureMode`/`FiltersMode`/
+        `PrintSharpening`/`PrintLayout` radio groups, matching dslrBooth's
+        grouped mode-selector chips.
+- `SectionHeader` style's `Foreground` changed from `InkBrush` to
+      `AccentBrush` so section titles read as a branded accent color
+      against the dark canvas, closer to how dslrBooth's own section
+      headers stand out.
+- Deliberately a pure resource/style-only change: zero `x:Name` elements,
+      event handlers, or layout structure touched, so every existing
+      `AdminWindow.xaml.cs` binding keeps working unchanged -- this was a
+      reskin, not a rebuild. Explicitly not done (flagged as follow-up
+      polish, not attempted here to keep the change reviewable): a
+      primary/secondary button visual distinction (dslrBooth's own
+      "Browse"/"Configure" secondary buttons vs. solid "Save"/"Launch"
+      primary ones) -- every button in `AdminWindow` is currently the same
+      accent-pill style, which reads as more visually uniform than
+      dslrBooth's own hierarchy.
+- Verified via `dotnet build`: the XAML markup compiler pass succeeded
+      (confirmed by the build progressing past XAML compilation to the
+      exe-copy step, which only runs after markup validation passes) --
+      hit and fixed one real XAML bug on the way: `<!-- ... -- ... -->`
+      style comments (this codebase's usual prose convention of `--` as a
+      dash, used throughout its C#/Markdown comments) are invalid XML --
+      XML comments can't contain a literal `--` anywhere in their body.
+      Fixed by rewording the five new XAML comments to avoid `--`, without
+      changing their meaning. The final `Photobooth.UI.exe` copy step
+      itself failed only because the app was already running (PID 28600,
+      file lock) -- not a build error, left that process alone rather
+      than kill what might be your active session.
+- Verified via `dotnet test`: **141 passed, 0 failed**, no regressions
+      (a pure XAML/resource change, so no new test coverage needed or
+      added).
+- **Not yet verified:** the restyled window has not been seen rendered on
+      an interactive desktop, same recurring gap as every WPF screen in
+      this project -- close and relaunch `Photobooth.UI.exe` (the running
+      instance above predates this change) and open the admin dashboard
+      to see the new dark theme/toggle switches/pill buttons live.
+- **Follow-up done same day, before the admin look was confirmed rendered:**
+      you said "continue" rather than waiting to review the admin screen
+      first, so the guest-facing `MainWindow` restyle went ahead too.
+
+## dslrBooth-style visual restyle -- MainWindow (2026-08-31)
+
+- [x] `MainWindow.xaml`'s `Window.Resources` gets the identical dark
+      palette override AdminWindow.xaml uses (same five shadowed brush
+      keys plus `FieldBrush`/`OnAccentBrush`) -- one consistent dark brand
+      identity across both windows now, rather than two different looks.
+- [x] Implicit `Button` style added, same rounded-pill approach as
+      AdminWindow's, but this version also template-binds `BorderBrush`/
+      `BorderThickness` (AdminWindow's didn't need to -- none of its
+      buttons use an outline/"ghost" look). Without that, `MainWindow`'s
+      existing "OPEN SETTINGS"/"NO THANKS"/"SKIP" buttons (which are
+      `Background="Transparent"` plus a visible `BorderBrush`, by design)
+      would have rendered as invisible buttons -- caught before it became
+      a real regression by reading through the whole file's existing
+      button markup before writing the template, not by trial and error.
+- [x] Implicit `TextBox` and `PasswordBox` styles added (same rounded
+      dark-field look as AdminWindow's `TextBox` style) -- covers the
+      Feedback comment box, the Setup screen's admin PIN entry, and the
+      Survey answer boxes that `ShowSurveyQuestions` creates dynamically
+      in code-behind (implicit styles resolve for elements added to the
+      tree at runtime too, not just ones declared in XAML, so those pick
+      up the new look with zero code-behind changes).
+- [x] All 6 hardcoded `Foreground="White"` button labels (UNLOCK, LAUNCH
+      EVENT, YES/RECORD, STOP, both SUBMITs) switched to `OnAccentBrush`
+      (near-black) for real contrast against the new bright teal accent --
+      white-on-teal was noticeably weaker contrast than white-on-the-old-
+      dark-teal (`#365C58`) the accent used to be. The "TAP TO START" hero
+      button on `IdleView` got the same treatment plus a corner radius
+      bump (4 -> 28) to match the new pill aesthetic everywhere else.
+- Deliberately left untouched: the three explicit `Background="White"`
+      panels (`ReviewingView`'s photo preview, `PaymentQrBorder`,
+      `QrPanel`) -- these are meant to read as a physical photo/print/QR
+      card against the dark chrome, a convention real photobooth software
+      already uses, not an oversight. Also left untouched: the
+      `ProgressBar` on `PrintingView` (its indeterminate animation lives
+      inside a built-in template with its own Storyboard/visual states;
+      hand-rolling a replacement risked breaking the animation for a
+      cosmetic win not worth that risk) -- flagged as a known minor
+      cosmetic gap, not fixed.
+- Same "pure resource/style change" scope as the AdminWindow restyle:
+      zero `x:Name` elements, event handlers, or layout structure touched,
+      so every existing `MainWindow.xaml.cs` binding (all the state-driven
+      view-switching logic) keeps working unchanged.
+- Verified via `dotnet build Photobooth.sln`: clean, 0 warnings, 0
+      errors, all 7 projects (the exe wasn't locked this time, so this
+      build ran the actual `Photobooth.UI.exe` copy step too, unlike the
+      AdminWindow entry above). Hit and fixed the same `--`-in-XML-comment
+      mistake as before (three of this file's five new comments used the
+      "--" prose convention); fixed by rewording, same as last time.
+- Not re-run: `dotnet test` -- unnecessary here, same reasoning as the
+      AdminWindow entry (a pure XAML/resource change touches nothing
+      `Photobooth.Core`/`Photobooth.Data`'s test suite exercises).
+- **Not yet verified:** neither restyled window has been seen rendered on
+      an interactive desktop yet, same recurring gap as every WPF screen
+      in this project. Close and relaunch `Photobooth.UI.exe` (the
+      instance from earlier in this session predates both restyles) to
+      see the new dark theme, pill buttons/chips, and toggle switches live
+      across both the guest-facing screens and the admin dashboard.

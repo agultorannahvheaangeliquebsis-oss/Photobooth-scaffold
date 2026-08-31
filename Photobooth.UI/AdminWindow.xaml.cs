@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using Photobooth.Core;
@@ -50,11 +51,115 @@ public partial class AdminWindow : Window
     {
         InitializeComponent();
         Loaded += async (_, _) => await LoadAsync();
+        Loaded += (_, _) => ShowSection("General");
     }
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e) => await LoadAsync();
 
     private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
+
+    // ---- Two-layer admin navigation (Layer 1 dropdown mega-menu + Layer 2
+    // per-section wizard breadcrumb), replicated from dslrBooth's admin UI --
+    // see BUILD_PLAN.md. All section content still lives in one ScrollViewer;
+    // ShowSection just flips which StackPanel is Visible so every existing
+    // control/handler below keeps working untouched. ----
+
+    /// <summary>Friendly titles for the dropdown-menu-only entries that have
+    /// no dedicated section panel/backing functionality yet -- they route to
+    /// the shared PlaceholderSectionPanel instead.</summary>
+    private static readonly Dictionary<string, string> PlaceholderTitles = new()
+    {
+        ["SharingStatus"] = "Sharing Status",
+        ["ExportEvent"] = "Export Event",
+        ["EventFolder"] = "Event folder",
+        ["RemoteControl"] = "Remote Control",
+        ["ShowLockScreen"] = "Show Lock Screen",
+        ["Language"] = "Language",
+        ["Help"] = "Help",
+        ["Subscription"] = "Subscription",
+        ["About"] = "About dslrBooth",
+    };
+
+    private Dictionary<string, FrameworkElement>? _sectionPanels;
+
+    private Dictionary<string, FrameworkElement> SectionPanels => _sectionPanels ??= new()
+    {
+        ["General"] = GeneralSectionPanel,
+        ["CaptureSettings"] = CaptureSettingsSectionPanel,
+        ["CameraSettings"] = CameraSettingsSectionPanel,
+        ["VirtualAttendant"] = VirtualAttendantSectionPanel,
+        ["EffectsStickers"] = EffectsStickersSectionPanel,
+        ["GreenScreen"] = GreenScreenSectionPanel,
+        ["Survey"] = SurveySectionPanel,
+        ["Disclaimer"] = DisclaimerSectionPanel,
+        ["SharingSettings"] = SharingSettingsSectionPanel,
+        ["PrintSetup"] = PrintSetupSectionPanel,
+    };
+
+    /// <summary>Shows the named section (a wizard section key, or one of
+    /// PlaceholderTitles' keys) and hides every other section panel. Also
+    /// closes the Layer 1 dropdown menu, same "pick a destination, menu goes
+    /// away" behavior dslrBooth's own mega-menu has.</summary>
+    private void ShowSection(string key)
+    {
+        MainMenuPanel.Visibility = Visibility.Collapsed;
+        MainMenuToggle.IsChecked = false;
+
+        foreach (FrameworkElement panel in SectionPanels.Values)
+        {
+            panel.Visibility = Visibility.Collapsed;
+        }
+        PlaceholderSectionPanel.Visibility = Visibility.Collapsed;
+
+        if (SectionPanels.TryGetValue(key, out FrameworkElement? sectionPanel))
+        {
+            sectionPanel.Visibility = Visibility.Visible;
+        }
+        else if (PlaceholderTitles.TryGetValue(key, out string? title))
+        {
+            PlaceholderTitleText.Text = title;
+            PlaceholderSectionPanel.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            GeneralSectionPanel.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void MainMenuToggle_Click(object sender, RoutedEventArgs e)
+    {
+        MainMenuPanel.Visibility = MainMenuToggle.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void MenuLink_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string key })
+        {
+            ShowSection(key);
+        }
+    }
+
+    private void PreviousSection_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string key })
+        {
+            ShowSection(key);
+        }
+    }
+
+    private void NextSection_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string key })
+        {
+            ShowSection(key);
+        }
+    }
+
+    /// <summary>Print Setup is the last wizard section -- its "Next" reads
+    /// "Launch event" and, same as dslrBooth's own flow, just closes this
+    /// dashboard back to the guest-facing Setup/Launch Event screen (see
+    /// CloseButton_Click).</summary>
+    private void LaunchEvent_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) => Close();
 
     private async void SaveSettingsButton_Click(object sender, RoutedEventArgs e)
     {
