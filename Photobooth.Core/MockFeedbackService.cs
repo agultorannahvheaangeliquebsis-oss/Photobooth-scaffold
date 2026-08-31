@@ -15,12 +15,18 @@ public class MockFeedbackService : IFeedbackService
     /// as MockCameraService.FailNextCapture.</summary>
     public bool SkipNext { get; set; } = false;
 
+    /// <summary>How long CollectAsync simulates the guest taking. Settable (not a
+    /// hardcoded constant) so a test can push it past BoothStateMachine's shared
+    /// guest idle timeout to exercise the "walked away" path deterministically,
+    /// without needing a dedicated never-responds flag.</summary>
+    public TimeSpan SimulatedDelay { get; set; } = TimeSpan.FromMilliseconds(300);
+
     public async Task<FeedbackResult> CollectAsync(CancellationToken ct = default)
     {
         // Real guests take a moment to tap a star and maybe type a comment;
         // simulate that so the UI's Feedback state has something realistic
         // to sit in.
-        await Task.Delay(300, ct);
+        await Task.Delay(SimulatedDelay, ct);
 
         if (SkipNext)
         {

@@ -48,4 +48,17 @@ public class VirtualAttendantClipRepository
         command.Parameters.AddWithValue("@ClipId", clipId);
         await command.ExecuteNonQueryAsync(ct);
     }
+
+    /// <summary>Sets one clip's SortOrder directly -- used by AdminWindow's Up/Down
+    /// reorder buttons, which swap two adjacent-within-the-same-stage clips'
+    /// SortOrder values (two calls to this) rather than renumbering the whole
+    /// pool, so a reorder can never disturb clips in a different stage.</summary>
+    public async Task UpdateSortOrderAsync(int clipId, int sortOrder, CancellationToken ct = default)
+    {
+        using var connection = await SqlConnectionFactory.OpenAsync(ct);
+        using var command = new SqlCommand("UPDATE VirtualAttendantClip SET SortOrder = @SortOrder WHERE ClipId = @ClipId;", connection);
+        command.Parameters.AddWithValue("@SortOrder", sortOrder);
+        command.Parameters.AddWithValue("@ClipId", clipId);
+        await command.ExecuteNonQueryAsync(ct);
+    }
 }

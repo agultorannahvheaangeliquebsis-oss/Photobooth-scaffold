@@ -1106,4 +1106,120 @@ public class BoothStateMachineTests
         Assert.Contains(BoothState.Survey, states);
         Assert.Empty(survey.RecordedResponses);
     }
+
+    // ---- Guest idle timeout (BUILD_PLAN.md Day 3) -------------------------
+    // Every Mock*Service above simulates a realistic guest response delay
+    // (300ms-2500ms, see each mock's own comment) rather than resolving
+    // instantly. Passing a guestIdleTimeout shorter than that delay (instead
+    // of adding a dedicated "never responds" hook to five different mocks)
+    // deterministically exercises WithGuestIdleTimeoutAsync's timeout branch:
+    // the guest's actual response still arrives later, but the state machine
+    // has already moved on by the time it does.
+
+    [Fact]
+    public async Task RunSessionAsync_GuestWalksAwayDuringConsent_TimesOutAndAbandonsSession()
+    {
+        var camera = new MockCameraService();
+        var printer = new MockPrinterService();
+        var cloudUpload = new MockCloudUploadService();
+        var paymentService = new MockQrPaymentService();
+        var sessions = new MockSessionRepository();
+        var uploadQueue = new MockPendingUploadQueue();
+        var consent = new MockConsentService(); // 500ms simulated delay
+        var email = new MockEmailDeliveryService();
+        var branding = new MockPhotoBrandingService();
+        var filter = new MockPhotoFilterService();
+        var settings = new MockBoothSettingsProvider();
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
+        var machine = new BoothStateMachine(services, mode: "event", guestIdleTimeout: TimeSpan.FromMilliseconds(50));
+
+        var states = new List<BoothState>();
+        machine.StateChanged += state => states.Add(state);
+
+        await machine.RunSessionAsync();
+
+        // Same outcome as an explicit decline (MockConsentService.DeclineNext)
+        // -- no countdown/capture/print, marked Abandoned not Error, since a
+        // guest who never responds isn't a booth malfunction.
+        Assert.Equal(new[] { BoothState.Consent, BoothState.Idle }, states);
+        var createdSession = Assert.Single(sessions.CreatedSessions);
+        Assert.Equal(createdSession.SessionId, Assert.Single(sessions.AbandonedSessionIds));
+        Assert.Empty(sessions.FailedSessionIds);
+        Assert.Empty(sessions.RecordedPrints);
+        Assert.Empty(sessions.RecordedPayments);
+    }
+
+    [Fact]
+    public async Task RunSessionAsync_GuestWalksAwayDuringVendoPayment_TimesOutAndFailsSession()
+    {
+        var camera = new MockCameraService();
+        var printer = new MockPrinterService();
+        var cloudUpload = new MockCloudUploadService();
+        var paymentService = new MockQrPaymentService(); // 2500ms simulated delay
+        var sessions = new MockSessionRepository();
+        var uploadQueue = new MockPendingUploadQueue();
+        var consent = new MockConsentService();
+        var email = new MockEmailDeliveryService();
+        var branding = new MockPhotoBrandingService();
+        var filter = new MockPhotoFilterService();
+        var settings = new MockBoothSettingsProvider();
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
+        // Between Consent's own 500ms simulated delay (must resolve normally --
+        // this test is about Payment, not Consent) and the QR mock's 2500ms
+        // simulated delay (must NOT resolve in time -- that's the timeout being
+        // tested), so Consent passes through untouched and only Payment times out.
+        var machine = new BoothStateMachine(services, mode: "vendo", guestIdleTimeout: TimeSpan.FromMilliseconds(800));
+
+        string? error = null;
+        machine.ErrorOccurred += message => error = message;
+
+        await machine.RunSessionAsync();
+
+        // Same outcome as an explicit decline (MockCardReaderPaymentService.DeclineNext)
+        // -- a guest who never confirms payment shouldn't tie up the booth (or
+        // get a free digital copy) any more than one who explicitly declined.
+        Assert.Equal(BoothState.Idle, machine.CurrentState);
+        Assert.NotNull(error);
+        var createdSession = Assert.Single(sessions.CreatedSessions);
+        Assert.Equal(createdSession.SessionId, Assert.Single(sessions.FailedSessionIds));
+        Assert.Empty(sessions.RecordedPrints);
+        Assert.Empty(sessions.RecordedPayments);
+        Assert.Empty(email.SentEmails);
+    }
+
+    [Fact]
+    public async Task RunSessionAsync_GuestWalksAwayDuringFeedback_TimesOutAndRecordsNoFeedbackButSessionCompletes()
+    {
+        var camera = new MockCameraService();
+        var printer = new MockPrinterService();
+        var cloudUpload = new MockCloudUploadService();
+        var paymentService = new MockQrPaymentService();
+        var sessions = new MockSessionRepository();
+        var uploadQueue = new MockPendingUploadQueue();
+        var consent = new MockConsentService();
+        var email = new MockEmailDeliveryService();
+        var branding = new MockPhotoBrandingService();
+        var filter = new MockPhotoFilterService();
+        var settings = new MockBoothSettingsProvider();
+        // Bumped well past the guestIdleTimeout below -- Consent's own fixed 500ms
+        // delay is longer than Feedback's normal 300ms one, so a single shared
+        // timeout can't sit strictly between them without also pushing Feedback's
+        // own delay up first (otherwise a timeout short enough to catch Feedback
+        // would catch Consent too, and long enough to spare Consent would never
+        // catch Feedback).
+        var feedback = new MockFeedbackService { SimulatedDelay = TimeSpan.FromSeconds(5) };
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), feedback, new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
+        var machine = new BoothStateMachine(services, mode: "event", guestIdleTimeout: TimeSpan.FromMilliseconds(700));
+
+        await machine.RunSessionAsync();
+
+        // Unlike Consent/Payment, a stalled Feedback shouldn't fail or abandon
+        // the session -- the photo's already captured, paid for, and printed
+        // by this point (same reasoning the existing SkipNext path already
+        // established), so the session should still complete normally.
+        Assert.Equal(BoothState.Idle, machine.CurrentState);
+        var createdSession = Assert.Single(sessions.CreatedSessions);
+        Assert.Equal(createdSession.SessionId, Assert.Single(sessions.CompletedSessionIds));
+        Assert.Empty(sessions.RecordedFeedback);
+    }
 }

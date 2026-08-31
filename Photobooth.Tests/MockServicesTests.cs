@@ -223,6 +223,22 @@ public class MockEmailDeliveryServiceTests
     }
 }
 
+public class MockSmsDeliveryServiceTests
+{
+    [Fact]
+    public async Task SendPhotoLinkAsync_RecordsThePhoneAndUrl()
+    {
+        var sms = new MockSmsDeliveryService();
+        var url = new Uri("https://res.cloudinary.com/example/photo.jpg");
+
+        await sms.SendPhotoLinkAsync("+15551234567", url);
+
+        var sent = Assert.Single(sms.SentMessages);
+        Assert.Equal("+15551234567", sent.ToPhone);
+        Assert.Equal(url, sent.PhotoUrl);
+    }
+}
+
 public class MockFrameLibraryServiceTests
 {
     [Fact]

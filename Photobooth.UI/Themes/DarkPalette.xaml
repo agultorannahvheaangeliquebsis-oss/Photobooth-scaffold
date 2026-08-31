@@ -1,0 +1,29 @@
+<!-- Dark palette for the two admin-facing editor windows
+     (PrintTemplateEditorWindow, ScreenTemplateEditorWindow) that were still on
+     App.xaml's original light palette after AdminWindow/KioskWindow moved to
+     dark. Deliberately redefines the *same* unprefixed keys App.xaml's
+     Application.Resources already declares (CanvasBrush/InkBrush/MutedBrush/
+     AccentBrush/LineBrush) with dark values, merged into each editor's own
+     Window.Resources. StaticResource resolves the nearest scope first, so
+     this shadows the app-level light brushes exactly the way MainWindow's own
+     Window.Resources used to, with zero binding-key changes needed in either
+     editor's XAML.
+
+     Values match KioskDark.xaml's palette (KioskCanvasBrush/KioskInkBrush/
+     etc.) so this reads as the same product, not a third color scheme,
+     duplicated here rather than merging KioskDark.xaml itself, since that
+     dictionary's touch-sized control templates (KioskTouchButtonBase and
+     friends) are tuned for a full-screen touch kiosk, not a mouse-driven
+     desktop editor with dense forms. TODO: if a shared token dictionary is
+     ever worth the refactor, this and KioskDark.xaml's palette section are
+     the two places to de-duplicate. -->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <SolidColorBrush x:Key="CanvasBrush" Color="#17181A" />
+    <SolidColorBrush x:Key="InkBrush" Color="#F2F2F0" />
+    <SolidColorBrush x:Key="MutedBrush" Color="#9A9C9F" />
+    <SolidColorBrush x:Key="AccentBrush" Color="#4FBFAE" />
+    <SolidColorBrush x:Key="LineBrush" Color="#2C2E31" />
+
+</ResourceDictionary>

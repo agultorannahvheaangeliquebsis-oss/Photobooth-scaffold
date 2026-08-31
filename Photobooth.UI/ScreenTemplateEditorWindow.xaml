@@ -7,19 +7,25 @@
         Width="900"
         Height="640">
     <Window.Resources>
-        <Style x:Key="EditorSectionHeader" TargetType="TextBlock">
-            <Setter Property="FontFamily" Value="Segoe UI" />
-            <Setter Property="FontSize" Value="14" />
-            <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
-            <Setter Property="Margin" Value="0,16,0,6" />
-        </Style>
-        <Style x:Key="EditorLabel" TargetType="TextBlock">
-            <Setter Property="FontFamily" Value="Segoe UI" />
-            <Setter Property="FontSize" Value="13" />
-            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
-            <Setter Property="Margin" Value="0,4,0,2" />
-        </Style>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/DarkPalette.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <Style x:Key="EditorSectionHeader" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+                <Setter Property="Margin" Value="0,16,0,6" />
+            </Style>
+            <Style x:Key="EditorLabel" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+                <Setter Property="Margin" Value="0,4,0,2" />
+            </Style>
+        </ResourceDictionary>
     </Window.Resources>
 
     <Grid Margin="20">

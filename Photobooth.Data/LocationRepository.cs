@@ -7,7 +7,8 @@ public record LocationRecord(
     int LocationId, string Name, string Type, string? Address, int CountdownSeconds, bool GlamFilterEnabled,
     PrintTemplate PrintTemplate, BoothTheme Theme, string AdminPin,
     CaptureSettings Capture, ScreenSettings Screen, EffectsSettings Effects, GreenScreenSettings GreenScreen,
-    SurveySettings Survey, DisclaimerSettings Disclaimer, PrintOptions PrintOptions, SharingSettings Sharing);
+    SurveySettings Survey, DisclaimerSettings Disclaimer, PrintOptions PrintOptions, SharingSettings Sharing,
+    VirtualAttendantSettings VirtualAttendant);
 
 public class LocationRepository
 {
@@ -39,7 +40,9 @@ public class LocationRepository
                    SurveyEnabled,
                    DisclaimerHeader, DisclaimerText,
                    PrintAutomatically, ShowPrintButton, PrintLimitPerEvent, PrintLimitPerSession, PrintSharpening,
-                   EmailEnabled, SmsEnabled, QrEnabled
+                   EmailEnabled, SmsEnabled, QrEnabled,
+                   AttendantEnabled, AttendantStyle, AttendantRandomizeConsent, AttendantRandomizeCountdown,
+                   AttendantRandomizeCapturing, AttendantRandomizeReviewing, AttendantRandomizePrinting, AttendantRandomizeComplete
             FROM Location ORDER BY LocationId;
             """,
             connection);
@@ -74,7 +77,10 @@ public class LocationRepository
                 new SurveySettings(reader.GetBoolean(30)),
                 new DisclaimerSettings(reader.GetString(31), reader.GetString(32)),
                 new PrintOptions(reader.GetBoolean(33), reader.GetBoolean(34), reader.GetInt32(35), reader.GetInt32(36), reader.GetString(37)),
-                new SharingSettings(reader.GetBoolean(38), reader.GetBoolean(39), reader.GetBoolean(40))));
+                new SharingSettings(reader.GetBoolean(38), reader.GetBoolean(39), reader.GetBoolean(40)),
+                new VirtualAttendantSettings(
+                    reader.GetBoolean(41), reader.GetString(42), reader.GetBoolean(43), reader.GetBoolean(44),
+                    reader.GetBoolean(45), reader.GetBoolean(46), reader.GetBoolean(47), reader.GetBoolean(48))));
         }
         return results;
     }
@@ -190,6 +196,38 @@ public class LocationRepository
         command.Parameters.AddWithValue("@EmailEnabled", sharing.EmailEnabled);
         command.Parameters.AddWithValue("@SmsEnabled", sharing.SmsEnabled);
         command.Parameters.AddWithValue("@QrEnabled", sharing.QrEnabled);
+        command.Parameters.AddWithValue("@LocationId", locationId);
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>Updates the Virtual Attendant on/off switch, style, and per-stage
+    /// randomize flags (see AdminWindow's Virtual Attendant section). Kept separate
+    /// from UpdateDslrBoothParitySettingsAsync so saving one doesn't force the
+    /// other's fields to also validate, same reasoning UpdateThemeAsync already
+    /// gives. Read fresh by SqlVirtualAttendantService on every GetCueAsync call,
+    /// so a change here takes effect for the very next state transition, not just
+    /// the next session.</summary>
+    public async Task UpdateVirtualAttendantSettingsAsync(int locationId, VirtualAttendantSettings settings, CancellationToken ct = default)
+    {
+        using var connection = await SqlConnectionFactory.OpenAsync(ct);
+        using var command = new SqlCommand(
+            """
+            UPDATE Location SET
+                AttendantEnabled = @AttendantEnabled, AttendantStyle = @AttendantStyle,
+                AttendantRandomizeConsent = @AttendantRandomizeConsent, AttendantRandomizeCountdown = @AttendantRandomizeCountdown,
+                AttendantRandomizeCapturing = @AttendantRandomizeCapturing, AttendantRandomizeReviewing = @AttendantRandomizeReviewing,
+                AttendantRandomizePrinting = @AttendantRandomizePrinting, AttendantRandomizeComplete = @AttendantRandomizeComplete
+            WHERE LocationId = @LocationId;
+            """,
+            connection);
+        command.Parameters.AddWithValue("@AttendantEnabled", settings.Enabled);
+        command.Parameters.AddWithValue("@AttendantStyle", settings.Style);
+        command.Parameters.AddWithValue("@AttendantRandomizeConsent", settings.RandomizeConsent);
+        command.Parameters.AddWithValue("@AttendantRandomizeCountdown", settings.RandomizeCountdown);
+        command.Parameters.AddWithValue("@AttendantRandomizeCapturing", settings.RandomizeCapturing);
+        command.Parameters.AddWithValue("@AttendantRandomizeReviewing", settings.RandomizeReviewing);
+        command.Parameters.AddWithValue("@AttendantRandomizePrinting", settings.RandomizePrinting);
+        command.Parameters.AddWithValue("@AttendantRandomizeComplete", settings.RandomizeComplete);
         command.Parameters.AddWithValue("@LocationId", locationId);
         await command.ExecuteNonQueryAsync(ct);
     }

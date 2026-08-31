@@ -564,7 +564,7 @@
                                Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
                 </StackPanel>
 
-                <!-- ===== Virtual Attendant (placeholder) ===== -->
+                <!-- ===== Virtual Attendant ===== -->
                 <StackPanel x:Name="VirtualAttendantSectionPanel" Visibility="Collapsed">
                     <Grid Margin="0,4,0,12">
                         <Grid.ColumnDefinitions>
@@ -574,13 +574,82 @@
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="&lt; Camera Settings" Style="{StaticResource WizardLink}"
                                    HorizontalAlignment="Left" Tag="CameraSettings" MouseLeftButtonDown="PreviousSection_Click" />
-                        <TextBlock Grid.Column="1" Text="Virtual Attendant" FontSize="15" FontWeight="Bold"
-                                   Foreground="{StaticResource InkBrush}" HorizontalAlignment="Center" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center">
+                            <TextBlock Text="Virtual Attendant" FontSize="15" FontWeight="Bold"
+                                       Foreground="{StaticResource InkBrush}" VerticalAlignment="Center" />
+                            <CheckBox x:Name="AttendantEnabledCheckBox" Content="" Margin="14,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
                         <TextBlock Grid.Column="2" Text="Effects &amp; Stickers &gt;" Style="{StaticResource WizardLink}"
                                    HorizontalAlignment="Right" Tag="EffectsStickers" MouseLeftButtonDown="NextSection_Click" />
                     </Grid>
-                    <TextBlock Text="Virtual attendant prompts/voice aren't part of this build yet."
-                               Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+
+                    <TextBlock Text="Voice/style:" Style="{StaticResource Row}" Margin="0,4,0,0" />
+                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                        <RadioButton x:Name="AttendantStyleFriendlyRadio" GroupName="AttendantStyle" Content="Friendly"
+                                     Foreground="{StaticResource InkBrush}" IsChecked="True" Margin="0,0,12,0" />
+                        <RadioButton x:Name="AttendantStyleFormalRadio" GroupName="AttendantStyle" Content="Formal"
+                                     Foreground="{StaticResource InkBrush}" />
+                    </StackPanel>
+
+                    <TextBlock Text="Randomize clip pick, per stage:" Style="{StaticResource Row}" Margin="0,10,0,0" />
+                    <CheckBox x:Name="AttendantRandomizeConsentCheckBox" Content="Consent" Foreground="{StaticResource InkBrush}" Margin="0,4,0,0" />
+                    <CheckBox x:Name="AttendantRandomizeCountdownCheckBox" Content="Countdown" Foreground="{StaticResource InkBrush}" Margin="0,4,0,0" />
+                    <CheckBox x:Name="AttendantRandomizeCapturingCheckBox" Content="Capturing" Foreground="{StaticResource InkBrush}" Margin="0,4,0,0" />
+                    <CheckBox x:Name="AttendantRandomizeReviewingCheckBox" Content="Reviewing" Foreground="{StaticResource InkBrush}" Margin="0,4,0,0" />
+                    <CheckBox x:Name="AttendantRandomizePrintingCheckBox" Content="Printing" Foreground="{StaticResource InkBrush}" Margin="0,4,0,0" />
+                    <CheckBox x:Name="AttendantRandomizeCompleteCheckBox" Content="Complete" Foreground="{StaticResource InkBrush}" Margin="0,4,0,0" />
+
+                    <TextBlock x:Name="AttendantSettingsStatusText" Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                    <Button x:Name="SaveAttendantSettingsButton" Content="Save Virtual Attendant Settings" Padding="16,8"
+                            HorizontalAlignment="Left" Margin="0,8,0,0" Click="SaveAttendantSettingsButton_Click" />
+
+                    <!-- Clip pool: the audio/video cues BoothStateMachine plays alongside
+                         whatever screen is already showing for a given stage (see
+                         IVirtualAttendantService). One pool per stage, played in
+                         SortOrder unless that stage's Randomize box above is checked. -->
+                    <TextBlock Text="Clip pool" Style="{StaticResource SectionHeader}" />
+                    <ItemsControl x:Name="AttendantClipsList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="100" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding Stage}" Style="{StaticResource Row}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="{Binding FileName}" Style="{StaticResource Row}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                    <Button Grid.Column="2" Content="^" Padding="8,4" Margin="4,0" Tag="{Binding ClipId}" Click="MoveAttendantClipUpButton_Click" />
+                                    <Button Grid.Column="3" Content="v" Padding="8,4" Margin="4,0" Tag="{Binding ClipId}" Click="MoveAttendantClipDownButton_Click" />
+                                    <Button Grid.Column="4" Content="Delete" Padding="8,4" Tag="{Binding ClipId}" Click="DeleteAttendantClipButton_Click" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock x:Name="AttendantClipsEmptyText" Text="No clips added yet -- the Virtual Attendant stays silent until one exists for a stage."
+                               Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Visibility="Collapsed" />
+
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <TextBlock Text="Stage:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="60" />
+                        <ComboBox x:Name="AttendantClipStageCombo" Width="140" SelectedIndex="0" Margin="0,0,8,0">
+                            <ComboBoxItem Content="Consent" Tag="Consent" />
+                            <ComboBoxItem Content="Countdown" Tag="Countdown" />
+                            <ComboBoxItem Content="Capturing" Tag="Capturing" />
+                            <ComboBoxItem Content="Reviewing" Tag="Reviewing" />
+                            <ComboBoxItem Content="Printing" Tag="Printing" />
+                            <ComboBoxItem Content="Complete" Tag="Complete" />
+                        </ComboBox>
+                        <Button x:Name="BrowseAttendantClipButton" Content="Browse..." Padding="8,4" Click="BrowseAttendantClipButton_Click" />
+                    </StackPanel>
+                    <TextBlock x:Name="SelectedAttendantClipText" Text="No clip selected." Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
+                    <Button x:Name="AddAttendantClipButton" Content="Add Clip" Padding="16,8"
+                            HorizontalAlignment="Left" Margin="0,8,0,0" Click="AddAttendantClipButton_Click" />
+                    <TextBlock x:Name="AttendantClipStatusText" Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
                 </StackPanel>
 
                 <!-- ===== Effects & Stickers ===== -->

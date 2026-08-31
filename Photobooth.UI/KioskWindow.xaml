@@ -31,6 +31,7 @@
             <conv:NullToVisibilityConverter x:Key="NullToVisibility" />
             <conv:NullToVisibilityConverter x:Key="InverseNullToVisibility" Invert="True" />
             <conv:RatingToStarConverter x:Key="RatingStar" />
+            <conv:PathToImageSourceConverter x:Key="PathToImageSource" />
         </ResourceDictionary>
     </Window.Resources>
 
@@ -295,7 +296,7 @@
                                     Command="{Binding DataContext.SelectFrameCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                     CommandParameter="{Binding}">
                                 <StackPanel>
-                                    <Image Width="150" Height="90" Stretch="Uniform" Source="{Binding ImagePath}" />
+                                    <Image Width="150" Height="90" Stretch="Uniform" Source="{Binding ImagePath, Converter={StaticResource PathToImageSource}}" />
                                     <TextBlock Text="{Binding Name}" FontFamily="{StaticResource KioskFont}" FontSize="16"
                                                FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}"
                                                HorizontalAlignment="Center" Margin="0,10,0,0" />
@@ -362,7 +363,7 @@
                 <TextBlock Text="How was your experience?" Style="{StaticResource KioskH1}" />
 
                 <!-- Five stars sharing one SelectedFeedbackRating int via
-                     RatingToStarConverter -- each button's own rank is its
+                     RatingToStarConverter; each button's own rank is its
                      ConverterParameter/CommandParameter. -->
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,32,0,0">
                     <Button Style="{StaticResource KioskGhostButton}" CommandParameter="1" Command="{Binding SelectFeedbackStarCommand}"
@@ -564,6 +565,32 @@
                            FontSize="18" TextAlignment="Center" Margin="0,20,0,0" />
             </StackPanel>
         </Grid>
+
+        <!-- ================ VISUAL SCREEN EDITOR OVERLAYS ================
+             Admin-authored text/image/rectangle overlays (see
+             ScreenTemplateElementRepository), one per guest-facing screen,
+             positioned/populated live in code-behind (RenderScreenOverlay)
+             from ScreenTemplateElement percent-of-canvas bounds, ported from
+             MainWindow's WelcomeOverlayCanvas/CaptureOverlayCanvas/
+             SharingOverlayCanvas (same Welcome-to-Idle, Capture-to-Countdown,
+             Sharing-to-Review mapping). IsHitTestVisible="False" so a placed
+             element never steals a guest's tap from the real controls
+             underneath (e.g. the Idle screen's touch-to-start target). -->
+        <Canvas x:Name="WelcomeOverlayCanvas" IsHitTestVisible="False"
+                Visibility="{Binding Visibility, ElementName=IdleScreen}" />
+        <Canvas x:Name="CaptureOverlayCanvas" IsHitTestVisible="False"
+                Visibility="{Binding Visibility, ElementName=CountdownScreen}" />
+        <Canvas x:Name="SharingOverlayCanvas" IsHitTestVisible="False"
+                Visibility="{Binding Visibility, ElementName=ReviewScreen}" />
+
+        <!-- Virtual Attendant cue (see BoothStateMachine.AttendantCueChanged
+             via KioskViewModel.AttendantCueRequested), plays alongside
+             whatever screen is already showing, so it lives outside the
+             state-bound screens above rather than inside any one of them.
+             LoadedBehavior/UnloadedBehavior=Manual: driven purely by
+             PlayAttendantCue, not autoplay-on-source-set. -->
+        <MediaElement x:Name="AttendantMediaElement" Width="0" Height="0" Volume="1"
+                      LoadedBehavior="Manual" UnloadedBehavior="Manual" />
 
         <!-- ====================== CHROME: BRAND BAR ====================== -->
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,40,0,0"
@@ -851,6 +878,8 @@
                     <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,24,0,0">
                         <Button Style="{StaticResource KioskCompactButton}" Content="REFRESH"
                                 Command="{Binding Admin.RefreshCommand}" Margin="0,0,10,0" />
+                        <Button Style="{StaticResource KioskCompactButton}" Content="OPEN FULL SETTINGS"
+                                Command="{Binding Admin.OpenFullSettingsCommand}" Margin="0,0,10,0" />
                         <Button Style="{StaticResource KioskCompactButton}" Content="LAUNCH EVENT"
                                 Background="{StaticResource KioskAccentBrush}"
                                 Foreground="{StaticResource KioskOnAccentBrush}" BorderThickness="0"

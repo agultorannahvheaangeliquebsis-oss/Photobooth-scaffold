@@ -19,12 +19,18 @@ namespace Photobooth.UI;
 /// display string, unlike RevenueList/InventoryList's plain-string rows).</summary>
 public record GuestbookVideoRow(int GuestbookVideoId, string FilePath, string Label);
 
+/// <summary>Flattened view of a VirtualAttendantClipRecord for AttendantClipsList's
+/// bindings -- same reasoning as GuestbookVideoRow above (WPF bindings can't call
+/// Path.GetFileName directly).</summary>
+public record AttendantClipRow(int ClipId, string Stage, string FileName);
+
 public partial class AdminWindow : Window
 {
     private readonly AdminDashboardRepository _repository = new();
     private readonly LocationRepository _locations = new();
     private readonly FrameRepository _frames = new();
     private readonly SurveyRepository _survey = new();
+    private readonly VirtualAttendantClipRepository _attendantClips = new();
 
     // "One booth machine has one location" -- same assumption
     // DatabaseInitializer's own seeding already makes -- so Settings and the
@@ -41,6 +47,7 @@ public partial class AdminWindow : Window
     private string? _existingWatermarkPath;
     private string? _pendingGreenScreenBackgroundPath;
     private string? _existingGreenScreenBackgroundPath;
+    private string? _pendingAttendantClipPath;
 
     // ScreenSettings has no editable UI in this phase (see BUILD_PLAN.md Phase 5,
     // guest-facing screens) -- loaded and passed straight back through on save so
@@ -411,6 +418,17 @@ public partial class AdminWindow : Window
 
                 SurveyEnabledCheckBox.IsChecked = locations[0].Survey.Enabled;
 
+                VirtualAttendantSettings attendant = locations[0].VirtualAttendant;
+                AttendantEnabledCheckBox.IsChecked = attendant.Enabled;
+                AttendantStyleFriendlyRadio.IsChecked = attendant.Style != "Formal";
+                AttendantStyleFormalRadio.IsChecked = attendant.Style == "Formal";
+                AttendantRandomizeConsentCheckBox.IsChecked = attendant.RandomizeConsent;
+                AttendantRandomizeCountdownCheckBox.IsChecked = attendant.RandomizeCountdown;
+                AttendantRandomizeCapturingCheckBox.IsChecked = attendant.RandomizeCapturing;
+                AttendantRandomizeReviewingCheckBox.IsChecked = attendant.RandomizeReviewing;
+                AttendantRandomizePrintingCheckBox.IsChecked = attendant.RandomizePrinting;
+                AttendantRandomizeCompleteCheckBox.IsChecked = attendant.RandomizeComplete;
+
                 DisclaimerSettings disclaimer = locations[0].Disclaimer;
                 DisclaimerHeaderBox.Text = disclaimer.Header;
                 DisclaimerTextBox.Text = disclaimer.Text;
@@ -433,6 +451,7 @@ public partial class AdminWindow : Window
                 await LoadGuestbookVideosAsync();
                 await LoadSurveyQuestionsAsync();
                 await LoadSurveyResponsesAsync();
+                await LoadAttendantClipsAsync();
             }
         }
         catch (Exception ex)
@@ -733,5 +752,158 @@ public partial class AdminWindow : Window
         {
             SaveParitySettingsButton.IsEnabled = true;
         }
+    }
+
+    private async void SaveAttendantSettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        string style = AttendantStyleFormalRadio.IsChecked == true ? "Formal" : "Friendly";
+        var settings = new VirtualAttendantSettings(
+            AttendantEnabledCheckBox.IsChecked == true,
+            style,
+            AttendantRandomizeConsentCheckBox.IsChecked == true,
+            AttendantRandomizeCountdownCheckBox.IsChecked == true,
+            AttendantRandomizeCapturingCheckBox.IsChecked == true,
+            AttendantRandomizeReviewingCheckBox.IsChecked == true,
+            AttendantRandomizePrintingCheckBox.IsChecked == true,
+            AttendantRandomizeCompleteCheckBox.IsChecked == true);
+
+        SaveAttendantSettingsButton.IsEnabled = false;
+        try
+        {
+            await _locations.UpdateVirtualAttendantSettingsAsync(_locationId, settings);
+            AttendantSettingsStatusText.Text = "Saved -- takes effect for the very next state transition.";
+            AttendantSettingsStatusText.Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush");
+        }
+        catch (Exception ex)
+        {
+            AttendantSettingsStatusText.Text = $"Couldn't save: {ex.Message}";
+            AttendantSettingsStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+        }
+        finally
+        {
+            SaveAttendantSettingsButton.IsEnabled = true;
+        }
+    }
+
+    private async Task LoadAttendantClipsAsync()
+    {
+        var clips = await _attendantClips.GetAllByLocationAsync(_locationId);
+        AttendantClipsList.ItemsSource = clips
+            .Select(c => new AttendantClipRow(c.ClipId, c.Stage, System.IO.Path.GetFileName(c.FilePath)))
+            .ToList();
+        AttendantClipsEmptyText.Visibility = clips.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void BrowseAttendantClipButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Filter = "Audio/video files (*.mp3;*.wav;*.mp4;*.wmv)|*.mp3;*.wav;*.mp4;*.wmv",
+            Title = "Choose a Virtual Attendant clip",
+        };
+        if (dialog.ShowDialog() == true)
+        {
+            _pendingAttendantClipPath = dialog.FileName;
+            SelectedAttendantClipText.Text = System.IO.Path.GetFileName(dialog.FileName);
+        }
+    }
+
+    /// <summary>Copies the chosen clip into a local Assets/AttendantClips folder (same
+    /// "own local copy" reasoning AddFrameButton_Click already established) and inserts
+    /// the VirtualAttendantClip row at the end of that stage's existing pool.</summary>
+    private async void AddAttendantClipButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_pendingAttendantClipPath is null || AttendantClipStageCombo.SelectedItem is not ComboBoxItem { Tag: string stageName })
+        {
+            AttendantClipStatusText.Text = "Choose a stage and a clip file first.";
+            AttendantClipStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+            return;
+        }
+
+        AddAttendantClipButton.IsEnabled = false;
+        try
+        {
+            string clipsDirectory = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "AttendantClips");
+            System.IO.Directory.CreateDirectory(clipsDirectory);
+            string storedFileName = $"{Guid.NewGuid():N}{System.IO.Path.GetExtension(_pendingAttendantClipPath)}";
+            string storedPath = System.IO.Path.Combine(clipsDirectory, storedFileName);
+            System.IO.File.Copy(_pendingAttendantClipPath, storedPath, overwrite: true);
+
+            var stage = Enum.Parse<BoothState>(stageName);
+            var existingInStage = (await _attendantClips.GetAllByLocationAsync(_locationId))
+                .Where(c => c.Stage == stageName)
+                .ToList();
+            await _attendantClips.InsertAsync(_locationId, stage, storedPath, sortOrder: existingInStage.Count);
+
+            _pendingAttendantClipPath = null;
+            SelectedAttendantClipText.Text = "No clip selected.";
+            AttendantClipStatusText.Text = "Clip added -- available for the next guest.";
+            AttendantClipStatusText.Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush");
+            await LoadAttendantClipsAsync();
+        }
+        catch (Exception ex)
+        {
+            AttendantClipStatusText.Text = $"Couldn't add clip: {ex.Message}";
+            AttendantClipStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+        }
+        finally
+        {
+            AddAttendantClipButton.IsEnabled = true;
+        }
+    }
+
+    private async void DeleteAttendantClipButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: int clipId })
+        {
+            await _attendantClips.DeleteAsync(clipId);
+            await LoadAttendantClipsAsync();
+        }
+    }
+
+    private async void MoveAttendantClipUpButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: int clipId })
+        {
+            await MoveAttendantClipAsync(clipId, up: true);
+        }
+    }
+
+    private async void MoveAttendantClipDownButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: int clipId })
+        {
+            await MoveAttendantClipAsync(clipId, up: false);
+        }
+    }
+
+    /// <summary>Swaps the given clip's SortOrder with whichever clip is adjacent to it
+    /// within the same stage (two UpdateSortOrderAsync calls), rather than renumbering
+    /// the whole pool -- a no-op if it's already first/last in its stage.</summary>
+    private async Task MoveAttendantClipAsync(int clipId, bool up)
+    {
+        List<VirtualAttendantClipRecord> allClips = await _attendantClips.GetAllByLocationAsync(_locationId);
+        VirtualAttendantClipRecord? current = allClips.FirstOrDefault(c => c.ClipId == clipId);
+        if (current is null)
+        {
+            return;
+        }
+
+        List<VirtualAttendantClipRecord> sameStage = allClips
+            .Where(c => c.Stage == current.Stage)
+            .OrderBy(c => c.SortOrder)
+            .ThenBy(c => c.ClipId)
+            .ToList();
+        int index = sameStage.FindIndex(c => c.ClipId == clipId);
+        int swapIndex = up ? index - 1 : index + 1;
+        if (swapIndex < 0 || swapIndex >= sameStage.Count)
+        {
+            return;
+        }
+
+        VirtualAttendantClipRecord swapWith = sameStage[swapIndex];
+        await _attendantClips.UpdateSortOrderAsync(current.ClipId, swapWith.SortOrder);
+        await _attendantClips.UpdateSortOrderAsync(swapWith.ClipId, current.SortOrder);
+        await LoadAttendantClipsAsync();
     }
 }

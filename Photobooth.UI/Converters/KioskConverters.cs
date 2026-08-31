@@ -83,6 +83,43 @@ public class BoolToVisibilityConverter : IValueConverter
 }
 
 /// <summary>
+/// Converts a plain file-path string (e.g. FrameOption.ImagePath) into an
+/// ImageSource. WPF's default string-&gt;ImageSource conversion expects a URI,
+/// not a bare Windows path, so binding an Image.Source directly to a path
+/// string fails silently -- this does the same BitmapImage/Uri dance
+/// MainWindow's code-behind used to do by hand. Missing/unreadable files
+/// convert to null (Image just shows nothing) rather than throwing.
+/// </summary>
+public class PathToImageSourceConverter : IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is not string path || string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.UriSource = new Uri(Path.GetFullPath(path));
+            image.EndInit();
+            image.Freeze();
+            return image;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException("One-way only.");
+}
+
+/// <summary>
 /// Renders one star of the Feedback screen's 1-5 rating row: filled (&#9733;) if
 /// the bound rating is at least this star's rank (given via ConverterParameter,
 /// "1".."5"), outline (&#9734;) otherwise -- lets five plain buttons share one

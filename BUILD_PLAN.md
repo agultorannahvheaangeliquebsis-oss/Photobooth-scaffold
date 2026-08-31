@@ -35,10 +35,12 @@ attached), the video guestbook's real mic capture.
 
 **Still mock-only by design, real integration is future work:**
 `IConsentService`, `IPaymentService` (a mock card reader proves the seam
-generalizes, but there's no real gateway). **Doesn't exist at all yet:**
-an SMS delivery interface — `KioskWindow`'s share screen has a phone
-field and a Send button that's honest about doing nothing, rather than a
-mock that would look functional.
+generalizes, but there's no real gateway).
+**Update — resolved on Day 3 (see below):** the "doesn't exist at all
+yet" SMS gap described here (as of Day 1) is closed — `ISmsDeliveryService`
++ `MockSmsDeliveryService` now exist, and `KioskWindow`'s share screen
+actually sends through it, same "mock now, real gateway later" status
+`IPaymentService`/`IConsentService` above already have.
 
 **One architectural loose end, found and left open this session:** there
 are now two guest-facing windows. `MainWindow` is full-featured (real
@@ -51,6 +53,8 @@ frame picking, the guestbook, feedback, or the survey; those `BoothState`s
 all collapse into its Processing screen. Neither replaces the other.
 Nothing about this is locked in (the kiosk work isn't committed), but it
 needs a decision before more work lands on either one.
+**Update — resolved on Day 1 (see below):** converged into `KioskWindow`,
+`MainWindow` deleted.
 
 **Two admin-facing windows never got the dark restyle:**
 `PrintTemplateEditorWindow` and `ScreenTemplateEditorWindow` are still on
@@ -58,12 +62,20 @@ needs a decision before more work lands on either one.
 actually opening them this session. Both are functionally complete (live
 preview, layers, align-to-canvas) and just visually stuck between two
 generations of the UI.
+**Update — resolved on Day 1 (see below):** both restyled via a new
+`Themes/DarkPalette.xaml`.
 
-**Known real gaps, not hardware-related:** no idle-timeout on any
-guest-interactive state (Consent/Payment/FramePicker/Feedback/Survey all
-wait forever — a guest walking away blocks the booth for the next guest,
-the one gap in this file with real operational impact); no admin UI for
-the Virtual Attendant clip pool (rows have to be inserted directly).
+**Update — resolved on Day 3 (see below):** the guest idle-timeout and
+Virtual Attendant admin UI gaps described in the paragraph below are both
+closed now. Kept here for history, same as the two-window-fork and
+editor-restyle paragraphs above.
+
+**Known real gaps, not hardware-related (as of Day 1, see the Day 3
+update just above):** no idle-timeout on any guest-interactive state
+(Consent/Payment/FramePicker/Feedback/Survey all wait forever — a guest
+walking away blocks the booth for the next guest, the one gap in this
+file with real operational impact); no admin UI for the Virtual Attendant
+clip pool (rows have to be inserted directly).
 
 **Corrected from the stale "Future roadmap" section further down this
 file:** Glam Booth mode (`GlamFilterEnabled`, `GdiPhotoFilterService`) and
@@ -73,55 +85,129 @@ written before the dslrBooth-parity pass built them. Its checkboxes for
 green screen, 360°, hashtag printing, live camera parameter control, and
 remote booth control are still accurate — none of those exist.
 
-### Day 1 — Resolve the two-window fork
+### Hardware testing status — D3500 deferred indefinitely (updated 2026-08-31)
 
-- [ ] Decide: converge `KioskWindow` and `MainWindow` into one, or keep
-      both for different deployment modes (e.g. `KioskWindow` for a
-      touch-only vendo booth, `MainWindow` where an attendant works the
-      keyboard). This is a product call, not a technical one — flag it
-      back before building further on either window if it isn't obvious
-      from how the booth is actually meant to run events.
-- [ ] If converging: port `KioskWindow`'s five-screen visual language
-      (the fade/flash/countdown-scale animations, the touch-sized control
-      templates in `Themes/KioskDark.xaml`) into `MainWindow`'s existing
-      state-bound views, OR port `MainWindow`'s missing screens (Consent,
-      FramePicker, Guestbook, Feedback, Survey) into `KioskWindow` and
-      retire `MainWindow`. Either direction, extract the ~150-line
-      composition root currently duplicated in `MainWindow`'s constructor
-      (DB seeding, camera-bridge launch, service wiring) into something
-      both windows — or the one that survives — can share cleanly.
-- [ ] Restyle `PrintTemplateEditorWindow` and `ScreenTemplateEditorWindow`
-      to the same dark palette/control templates the other two windows
-      now use (`Themes/KioskDark.xaml` or the `AdminWindow`/`MainWindow`
-      resource dictionaries, whichever the Day 1 convergence call leaves
-      as canonical).
-- Verify: `dotnet build` clean, `dotnet test` no regressions, both editor
-  windows opened and screenshotted on an interactive desktop.
+Physical Nikon D3500 verification (Day 2 below) is **deferred, not
+scheduled** — no date to pick back up. This is a deliberate call, not a
+slip: it un-blocks every day of feature/UI work that follows from waiting
+on hardware nobody has attached yet.
+
+- All upcoming feature work, UI state transitions, and live-preview work
+  should be built and verified against the **webcam fallback path**
+  (`--allow-webcam` on `Photobooth.CameraBridge.Host`, the same stand-in
+  every session in this log has already used) rather than treated as
+  blocked on the D3500. Don't hold a day's checklist open waiting for the
+  camera — mark hardware-specific sub-items as deferred the way Day 2's
+  own items already are, and move on.
+- The abstraction this relies on already exists and doesn't need new
+  work: `ICameraService` / `ILiveViewService` (`Photobooth.Core`) are the
+  only seam any capture or live-view code should touch.
+  `PtpCameraService` / `PtpLiveViewService` are the concrete
+  implementations, and the bridge host underneath them already does a
+  DSLR-then-webcam detection fallback — that's what "hardware-agnostic"
+  already means in this codebase, not something to newly abstract.
+  `PHOTOBOOTH_REQUIRE_DSLR=1` still exists for real booth hardware later;
+  nothing in this deferral removes it.
+- Webcam frame grabs are the ground-truth image source for UI rendering,
+  template compositing, and cloud uploads until the D3500 is back in
+  scope — every verification step in this file that says "screenshotted"
+  or "confirmed real capture" should be read as "confirmed against the
+  webcam fallback," same as every prior session in this log already did
+  in practice, just now stated as the accepted baseline rather than a
+  gap.
+- Out of scope for this deferral: the physical printer and the video
+  guestbook's real mic capture (the other two Day 2 items) — those are
+  separate hardware dependencies, not touched by this decision, and stay
+  as their own open items.
+- Re-scope when: real D3500 hardware becomes available to test against.
+  Nothing else in this plan should be gated on that happening first.
+
+### Day 1 — Resolve the two-window fork — done 2026-08-31
+
+- [x] Decide: converge `KioskWindow` and `MainWindow` into one, or keep
+      both for different deployment modes. **Decided: converge into
+      `KioskWindow`, retire `MainWindow`** — user call, made explicitly
+      rather than assumed, per this section's own flag.
+- [x] Ported `MainWindow`'s missing screens into `KioskWindow`: FramePicker
+      (dynamic frame-thumbnail grid), Payment (its own screen — QR +
+      instructions, not folded into a generic spinner, since a vendo guest
+      needs to actually see the QR to pay), Guestbook (ask/recording
+      sub-panels), Feedback (5-star rating + comment), Survey (dynamic
+      question/answer rows). Consent stayed folded into the Processing
+      screen with a better status string — it's still mock-only/
+      auto-accepting, so there's nothing for a guest to interact with yet.
+      Extracted the composition root into `Photobooth.UI/BoothCompositionRoot.cs`
+      (DB init, camera-bridge launch, real `BoothServices` construction),
+      shared by `KioskWindow`'s real-services path
+      (`BoothCompositionRoot.BuildKioskViewModel`); `App.xaml.cs` now builds
+      it directly in `OnStartup` instead of a declarative `StartupUri`, with
+      the same startup-failure MessageBox/exit handling `MainWindow`'s
+      constructor used to have. Also ported the two things that weren't
+      screens: the Phase-6 screen-template overlay canvases and the Virtual
+      Attendant `MediaElement` cue, both kept in `KioskWindow`'s code-behind
+      (not the ViewModel) for the same reason `MainWindow` never tried to
+      abstract them either. Added an "OPEN FULL SETTINGS" action to the
+      existing PIN-gated admin overlay so `AdminWindow` (frame library,
+      survey questions, both editor windows) is still reachable now that
+      `MainWindow`'s F12/Setup-screen entry points are gone. `MainWindow.xaml`/
+      `.xaml.cs` deleted.
+- [x] Restyled `PrintTemplateEditorWindow` and `ScreenTemplateEditorWindow`
+      to a dark palette via a new `Themes/DarkPalette.xaml` — redefines the
+      same unprefixed brush keys (`CanvasBrush`/`InkBrush`/etc.) both
+      editors already reference, so neither editor's XAML needed a
+      binding-key change, just a merged-dictionary reference.
+- Verify: `dotnet build` clean, `dotnet test` — **141 passed, 0 failed**
+  (existing suite, unaffected) plus a new `Photobooth.UI.Tests` project
+  (`net8.0-windows`/`UseWPF`, since the existing suite is plain `net8.0` and
+  can't reference WPF types) — **43 passed, 0 failed**, covering
+  `KioskViewModel.MapScreen`'s full `BoothState`→`KioskScreen` table (made
+  `internal` + `InternalsVisibleTo`), every converter including the two new
+  ones this pass added (`RatingToStarConverter`, `PathToImageSourceConverter`),
+  and `CaptureModeOverrideSettingsProvider`. **Not verified: both editor
+  windows opened and screenshotted** — this dev environment has no
+  interactive desktop (confirmed repeatedly elsewhere in this file), so
+  that visual pass is still the user's own to do, same as the hardware
+  gaps tracked below.
 
 ### Day 2 — Real hardware verification
 
-- [ ] Nikon D3500: connect it, run a real session through
-      `PtpCameraService` → the actual PTP `Transfer()` path (not the
-      webcam's raw-bytes fallback branch in `HandleCapture()`). This is
-      the single most-repeated "not yet verified" line in the Week 1 log.
+**Skipped this session (2026-09-01), by explicit user choice, not a slip:**
+this dev environment has no interactive desktop and no printer/mic
+attached (same wall documented throughout this file), so none of Day 2's
+three items could actually be exercised from here. Rather than leave the
+day half-open, went straight to Day 3's software gaps, which don't need
+either. All three items below are exactly as open as they were before this
+session — nothing here was touched.
+
+- [ ] **Deferred indefinitely, not scheduled** (see "Hardware testing
+      status" above, 2026-08-31): Nikon D3500 — connect it, run a real
+      session through `PtpCameraService` → the actual PTP `Transfer()`
+      path (not the webcam's raw-bytes fallback branch in
+      `HandleCapture()`). This was the single most-repeated "not yet
+      verified" line in the Week 1 log; it stays open, but nothing else
+      in this plan waits on it anymore. All camera/live-view work
+      continues against the webcam fallback as ground truth.
 - [ ] Physical printer: connect one, confirm `SpoolerPrinterService`
       produces actual paper output at the configured size/layout, not
-      just a spooled job.
+      just a spooled job. (Unaffected by the D3500 deferral — separate
+      hardware dependency.)
 - [ ] Video guestbook: confirm real mic capture through
       `FfmpegVideoGuestbookService` end to end (a recorded file with
-      actual audio, not just "ffmpeg didn't throw").
+      actual audio, not just "ffmpeg didn't throw"). (Also unaffected —
+      separate hardware dependency.)
 - [ ] Whatever hardware isn't available yet slips to Day 7 buffer, same
-      handling the Week 1 plan used for the same reason.
+      handling the Week 1 plan used for the same reason. The D3500 item
+      specifically has no target date to slip back to — see above.
 
-### Day 3 — Close the remaining real software gaps
+### Day 3 — Close the remaining real software gaps — done 2026-09-01
 
-- [ ] Shared idle-timeout for guest-interactive states (Consent, Payment,
+- [x] Shared idle-timeout for guest-interactive states (Consent, Payment,
       FramePicker, Feedback, Survey) — a guest walking away shouldn't
       block the next one. One mechanism, not five copies.
-- [ ] Admin UI for the Virtual Attendant clip pool (upload/reorder/
+- [x] Admin UI for the Virtual Attendant clip pool (upload/reorder/
       assign-to-stage) — the one dslrBooth-parity phase that shipped
       without the admin screen its own scope text implied.
-- [ ] `ISmsDeliveryService` interface + mock, wired into whichever guest
+- [x] `ISmsDeliveryService` interface + mock, wired into whichever guest
       window Day 1 settled on, replacing the "not connected yet" message.
       Real SMS gateway integration is out of scope for this week (same
       "mock now, real gateway later" status `IPaymentService` already
@@ -129,6 +215,125 @@ remote booth control are still accurate — none of those exist.
 - Verify: `dotnet test`, then an interactive-desktop pass exercising each
   fixed gap directly (walk away mid-Consent and confirm it recovers;
   open the new Virtual Attendant admin screen; trigger the SMS mock).
+  **Update:** `dotnet test` done — see the writeup below. The
+  interactive-desktop pass is not: same no-interactive-desktop wall this
+  dev environment has hit everywhere else in this file (AdminWindow/
+  PaymentView rendering, both editor windows, etc.) — still the user's own
+  pass to do, same as those.
+
+**Shared guest idle-timeout.** `BoothStateMachine` gained a private
+`WithGuestIdleTimeoutAsync<T>` helper that races a guest-interactive call
+against one shared `TimeSpan _guestIdleTimeout` (default 45s, overridable
+via a new optional `BoothStateMachine` constructor parameter) using
+`Task.WhenAny`. On a genuine timeout it returns a caller-supplied
+`fallback` value instead of the real result — the same value each call
+site already treats as "guest skipped/declined" (e.g. a declined
+`ConsentResult`, a null `FrameOption?`, a failed `PaymentResult`, an empty
+`FeedbackResult`/`SurveyAnswer` list), so a guest who never responds now
+behaves exactly like one who explicitly skipped, not like a booth error.
+Wrapped around all five call sites Consent/Payment/FramePicker/Feedback/
+Survey — one mechanism, not five timers. Cancellation is handled
+correctly (not swallowed into a false "timeout"): the helper awaits its
+own delay task after `WhenAny` resolves, so a genuinely cancelled
+`CancellationToken` rethrows instead of silently returning `fallback`.
+The abandoned guest task past a real timeout is left to finish on its own
+with its eventual fault observed-and-discarded via `ContinueWith`, so it
+can't surface as an unobserved task exception later.
+- Verified via `Photobooth.Tests`: 3 new tests exercise the mechanism at
+  three different call sites and outcomes — Consent timing out abandons
+  the session exactly like an explicit decline (no print/payment,
+  `AbandonedSessionIds`); a vendo Payment timing out fails the session
+  exactly like an explicit decline (`Error` state, `FailedSessionIds`, no
+  email); a Feedback timeout records no feedback row but still completes
+  the session normally (`CompletedSessionIds`), unlike Consent/Payment.
+  Each test sets a short `guestIdleTimeout` (700-800ms) against the
+  relevant mock's existing simulated response delay rather than adding a
+  dedicated "never responds" flag to five different mocks. **Real bug
+  caught while writing these**: since Consent runs first in every session
+  and its mock has a fixed 500ms simulated delay, an initial pass using a
+  single very short timeout (50ms) for a Payment/Feedback test also
+  timed out Consent itself before the target state was ever reached,
+  producing a false failure. Fixed by giving `MockFeedbackService` a
+  settable `SimulatedDelay` (default unchanged at 300ms) and choosing
+  per-test timeout values that sit strictly between "long enough for
+  every earlier guest-interactive state's own mock delay" and "shorter
+  than the one state actually being tested" — not something a single
+  global constant across all five states can satisfy by itself, since
+  Consent's fixed delay (500ms) is longer than Feedback's default one
+  (300ms). `dotnet test` — **145 passed, 0 failed** (up from 141 at the
+  end of Day 1, +3 for this, +1 for the SMS mock below).
+
+**`ISmsDeliveryService`.** Added to `Photobooth.Core` with
+`SendPhotoLinkAsync(toPhone, photoUrl, ct)`, same shape and seam as
+`IEmailDeliveryService`. `MockSmsDeliveryService` records what it "sent"
+for tests, same pattern as `MockEmailDeliveryService`. Added as an
+**init-only property on `BoothServices`** (`Sms`, defaulting to
+`new MockSmsDeliveryService()`), not a 22nd required positional
+constructor parameter — `BoothServices`' own doc comment already
+establishes this exact tradeoff for exactly this reason (avoiding a
+signature change at every existing construction site), and
+`BoothStateMachineTests` alone has 30+ positional `new BoothServices(...)`
+calls that don't care about SMS at all. `KioskViewModel.SendSmsCommand`
+changed from a `RelayCommand` to an `AsyncRelayCommand` (matching
+`SendEmailCommand`'s shape) and `SendSms()` became `SendSmsAsync()`,
+calling `_services.Sms.SendPhotoLinkAsync` the same way
+`SendEmailAsync()` already calls the email service — replacing the old
+method that only ever set a "not connected yet" status string. Both real
+(`BoothCompositionRoot`) and mock (`KioskViewModel.CreateWithMockServices`)
+composition roots wire `Sms = new MockSmsDeliveryService()` explicitly for
+clarity, even though the property already defaults to it. No real SMS
+gateway (Twilio/Semaphore/etc.) — same "mock now, real vendor later"
+status `IPaymentService`/`IConsentService` already have; this closes the
+interface gap the sharing screen's phone field and Send button had, not
+the vendor one.
+- Verified via `Photobooth.Tests`: `MockSmsDeliveryServiceTests` confirms
+  `SendPhotoLinkAsync` records the phone number and URL, same shape as
+  the existing `MockEmailDeliveryServiceTests`.
+- **Not yet verified: the actual KioskWindow sharing screen sending an SMS
+  and showing "Sent to ..."** — same interactive-desktop gap as
+  everywhere else in this file. The XAML binding itself needed no change
+  (`Command="{Binding SendSmsCommand}"` is command-type-agnostic).
+
+**Admin UI for the Virtual Attendant clip pool.** The backend
+(`IVirtualAttendantService`, `SqlVirtualAttendantService`,
+`VirtualAttendantClipRepository`, the `VirtualAttendantClip` table) was
+already fully built from the dslrBooth-parity pass — only the admin
+screen was missing, and `AdminWindow`'s Virtual Attendant section was
+still a literal placeholder ("Virtual attendant prompts/voice aren't part
+of this build yet.") that had never actually been wired up. Also found
+along the way: `LocationRepository.GetAllAsync`/`LocationRecord` didn't
+select or expose the `Attendant*` columns at all, despite the schema and
+`SqlVirtualAttendantService` already reading/writing them directly — the
+admin dashboard had no way to see or change Virtual Attendant settings
+even in principle before this.
+- `LocationRecord` gained a `VirtualAttendantSettings VirtualAttendant`
+  field; `GetAllAsync`'s SELECT and reader mapping now include the eight
+  `Attendant*` columns. New `LocationRepository.UpdateVirtualAttendantSettingsAsync`
+  (separate save method, same "one section's save doesn't force another
+  section's fields to validate" reasoning `UpdateThemeAsync` already
+  established).
+- New `VirtualAttendantClipRepository.UpdateSortOrderAsync(clipId,
+  sortOrder)` for reordering — `AdminWindow`'s Up/Down buttons swap two
+  adjacent-within-the-same-stage clips' SortOrder (two calls) rather than
+  renumbering the whole pool, so a reorder can never disturb a different
+  stage's clips.
+- `AdminWindow`'s Virtual Attendant section now has: an Enabled toggle in
+  the section header (same inline-checkbox pattern Green Screen/Survey
+  already use), a Friendly/Formal style picker, six per-stage Randomize
+  checkboxes (Consent/Countdown/Capturing/Reviewing/Printing/Complete —
+  the same "small, fixed set" `VirtualAttendantSettings` itself documents,
+  not the full 14-value `BoothState` the clip table's CHECK constraint
+  technically allows), and a clip pool list (stage, filename, Up/Down/
+  Delete) with an add-clip form (stage picker + file browse, same "copy
+  into a local Assets folder" pattern `AddFrameButton_Click` already
+  established, here `Assets/AttendantClips`). Settings save via their own
+  button (`SaveAttendantSettingsButton`, same one-button-per-section
+  precedent as `SaveThemeButton`/`SaveSettingsButton`); clip add/reorder/
+  delete take effect immediately, same as the Frame library section.
+- Verified via `dotnet build`: clean. **Not yet verified: opening the
+  section and actually browsing/reordering/deleting a clip in the running
+  app** — same interactive-desktop gap as the rest of `AdminWindow`
+  (Day 1 already flagged both editor windows for the identical reason).
 
 ### Days 4–5 — New feature: green screen / chroma key
 
@@ -189,13 +394,15 @@ listener), rather than inventing a new transport.
 
 ### Day 7 — Buffer + full verification pass
 
-- Absorbs whatever slipped from Days 2 (hardware) or 4–6 first, same
-  "hardware is the least predictable dependency" reasoning Week 1's
-  buffer day used.
+- Absorbs whatever slipped from Day 2's printer/mic items or Days 4–6
+  first, same "hardware is the least predictable dependency" reasoning
+  Week 1's buffer day used. The D3500 item does **not** absorb into this
+  day — it's deferred indefinitely (see "Hardware testing status"
+  above), not a Day 7 candidate.
 - Otherwise: full interactive-desktop pass across both/the-surviving
   guest window, `AdminWindow`, both editor windows, and the two new
-  features — screenshot everything, same verification discipline as the
-  rest of this file.
+  features — screenshot everything against the webcam fallback, same
+  verification discipline as the rest of this file.
 - Update this file's status summary and README to match reality, and fix
   any other stale checkboxes the way this section fixed the Glam Booth
   Mode one.

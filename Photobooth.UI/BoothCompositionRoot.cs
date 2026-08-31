@@ -99,7 +99,10 @@ public static class BoothCompositionRoot
             GifComposer: new GdiGifComposerService(),
             BoothVideo: new FfmpegBoothVideoService(),
             AttendantCue: new SqlVirtualAttendantService(seedIds.LocationId),
-            Survey: survey);
+            Survey: survey)
+        {
+            Sms = new MockSmsDeliveryService(),
+        };
 
         return new RealBooth(
             services,
@@ -128,7 +131,8 @@ public static class BoothCompositionRoot
             booth.FrameSelection,
             booth.Feedback,
             booth.GuestbookPrompt,
-            booth.Survey);
+            booth.Survey,
+            booth.SeedIds.LocationId);
         return (viewModel, booth);
     }
 

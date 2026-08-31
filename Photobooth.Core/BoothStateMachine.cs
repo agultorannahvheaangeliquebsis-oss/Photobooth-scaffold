@@ -18,6 +18,14 @@ public class BoothStateMachine
     private readonly BoothServices _services;
     private readonly string _mode;
 
+    /// <summary>How long a guest-interactive state (Consent, Payment, FramePicker,
+    /// Feedback, Survey) waits for the guest before treating them as having walked
+    /// away -- see WithGuestIdleTimeoutAsync. One shared mechanism/timeout for all
+    /// five states, not five separate timers (see BUILD_PLAN.md's Day 3): a guest
+    /// who never taps anything would otherwise block the booth for the next one
+    /// forever, since none of those states had any timeout at all before this.</summary>
+    private readonly TimeSpan _guestIdleTimeout;
+
     public BoothState CurrentState { get; private set; } = BoothState.Setup;
     public string? LastCapturedImagePath { get; private set; }
     public Uri? LastPhotoUrl { get; private set; }
@@ -48,10 +56,44 @@ public class BoothStateMachine
     public event Action<AttendantClip>? AttendantCueChanged;
 
     /// <param name="mode">'event' or 'vendo', matching the booth's Location.Type -- fixed for the life of this state machine since one booth machine serves one location. Event-mode sessions skip straight through as a free_event Payment row; vendo-mode sessions run the Payment state before Printing.</param>
-    public BoothStateMachine(BoothServices services, string mode = "event")
+    /// <param name="guestIdleTimeout">Overrides <see cref="_guestIdleTimeout"/> -- defaults
+    /// to 45 seconds, long enough for a real guest to read a disclaimer or tap a star
+    /// rating, but exposed here (not a hardcoded constant) so tests can use a timeout
+    /// shorter than a Mock service's own simulated response delay to exercise the
+    /// "walked away" path deterministically, without needing a dedicated never-responds
+    /// hook on every affected mock.</param>
+    public BoothStateMachine(BoothServices services, string mode = "event", TimeSpan? guestIdleTimeout = null)
     {
         _services = services;
         _mode = mode;
+        _guestIdleTimeout = guestIdleTimeout ?? TimeSpan.FromSeconds(45);
+    }
+
+    /// <summary>
+    /// Races a guest-interactive call against the shared idle timeout. On a genuine
+    /// timeout, returns <paramref name="fallback"/> -- interpreted by each call site
+    /// exactly the same way it already treats a guest's explicit skip/decline (e.g.
+    /// MockConsentService.DeclineNext, MockFeedbackService.SkipNext), so a guest who
+    /// never responds behaves like one who responded empty, not like an error. If
+    /// <paramref name="ct"/> is cancelled instead, the cancellation is rethrown rather
+    /// than swallowed into a fallback -- Task.Delay completes as Cancelled (not
+    /// RanToCompletion) in that case, so awaiting it here surfaces the real exception.
+    /// The abandoned guestTask (past a genuine timeout) is left to finish on its own;
+    /// any eventual fault is observed and discarded so it can't surface as an
+    /// unobserved task exception later.
+    /// </summary>
+    private async Task<T> WithGuestIdleTimeoutAsync<T>(Task<T> guestTask, T fallback, CancellationToken ct)
+    {
+        Task delayTask = Task.Delay(_guestIdleTimeout, ct);
+        Task winner = await Task.WhenAny(guestTask, delayTask);
+        if (winner == guestTask)
+        {
+            return await guestTask;
+        }
+
+        await delayTask; // throws if ct was cancelled instead of the timeout genuinely elapsing
+        _ = guestTask.ContinueWith(t => t.Exception, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+        return fallback;
     }
 
     private void SetState(BoothState state)
@@ -124,7 +166,8 @@ public class BoothStateMachine
             sessionId = await _services.Sessions.CreateAsync(_mode, ct);
 
             SetState(BoothState.Consent);
-            ConsentResult consent = await _services.Consent.CollectAsync(ct);
+            ConsentResult consent = await WithGuestIdleTimeoutAsync(
+                _services.Consent.CollectAsync(ct), new ConsentResult(false, false, null), ct);
             LastConsent = consent;
             await _services.Sessions.RecordConsentAsync(
                 sessionId.Value, consent.DisclaimerAccepted, consent.EmailOptIn, consent.Email, ct);
@@ -228,7 +271,8 @@ public class BoothStateMachine
             if (frames.Count > 0)
             {
                 SetState(BoothState.FramePicker);
-                LastSelectedFrame = await _services.FrameSelection.SelectFrameAsync(frames, ct);
+                LastSelectedFrame = await WithGuestIdleTimeoutAsync(
+                    _services.FrameSelection.SelectFrameAsync(frames, ct), (FrameOption?)null, ct);
                 if (LastSelectedFrame is not null)
                 {
                     LastCapturedImagePath = await _services.FrameOverlay.ApplyFrameAsync(
@@ -251,7 +295,9 @@ public class BoothStateMachine
                 PaymentInstructions = prompt.Instructions;
                 PaymentQrPng = prompt.QrCodePng;
                 SetState(BoothState.Payment);
-                PaymentResult result = await _services.Payment.WaitForConfirmationAsync(reference, VendoPricePerPrint, ct);
+                PaymentResult result = await WithGuestIdleTimeoutAsync(
+                    _services.Payment.WaitForConfirmationAsync(reference, VendoPricePerPrint, ct),
+                    new PaymentResult(false, "timeout", null), ct);
                 if (!result.Success)
                 {
                     throw new InvalidOperationException("Payment was not completed.");
@@ -328,7 +374,8 @@ public class BoothStateMachine
             try
             {
                 SetState(BoothState.Feedback);
-                FeedbackResult feedback = await _services.Feedback.CollectAsync(ct);
+                FeedbackResult feedback = await WithGuestIdleTimeoutAsync(
+                    _services.Feedback.CollectAsync(ct), new FeedbackResult(null, null), ct);
                 if (!feedback.IsEmpty)
                 {
                     await _services.Sessions.RecordFeedbackAsync(sessionId.Value, feedback.Rating, feedback.Comment, ct);
@@ -353,7 +400,8 @@ public class BoothStateMachine
                     if (questions.Count > 0)
                     {
                         SetState(BoothState.Survey);
-                        IReadOnlyList<SurveyAnswer> answers = await _services.Survey.CollectAnswersAsync(questions, ct);
+                        IReadOnlyList<SurveyAnswer> answers = await WithGuestIdleTimeoutAsync(
+                            _services.Survey.CollectAnswersAsync(questions, ct), (IReadOnlyList<SurveyAnswer>)Array.Empty<SurveyAnswer>(), ct);
                         if (answers.Count > 0)
                         {
                             await _services.Survey.RecordResponsesAsync(sessionId.Value, answers, ct);

@@ -59,6 +59,15 @@ public class KioskViewModel : ObservableObject, IDisposable
     private readonly UiGuestbookPromptService? _guestbookPrompt;
     private readonly SqlSurveyService? _survey;
 
+    // Phase-6 screen-template overlays: null _locationId (mock/designer mode)
+    // skips the SQL read entirely, since ScreenTemplateElementRepository has
+    // no Mock* counterpart and CreateWithMockServices promises no LocalDB
+    // dependency -- see ReloadSettingsAsync.
+    private readonly int? _locationId;
+    private readonly ScreenTemplateElementRepository _screenElements = new();
+    private ILookup<ScreenTemplateScreen, ScreenTemplateElement> _screenElementsByScreen =
+        Array.Empty<ScreenTemplateElement>().ToLookup(e => e.Screen);
+
     private readonly DispatcherTimer _liveViewTimer;
     private readonly DispatcherTimer _flashTimer;
     private readonly DispatcherTimer _shareTimer;
@@ -75,10 +84,12 @@ public class KioskViewModel : ObservableObject, IDisposable
         UiFrameSelectionService? frameSelection = null,
         UiFeedbackService? feedback = null,
         UiGuestbookPromptService? guestbookPrompt = null,
-        SqlSurveyService? survey = null)
+        SqlSurveyService? survey = null,
+        int? locationId = null)
     {
         _dispatcher = Dispatcher.CurrentDispatcher;
         _liveView = liveView;
+        _locationId = locationId;
 
         // Every settings read the state machine performs goes through the
         // override first, so a guest's mode tile reaches the session without a
@@ -94,7 +105,7 @@ public class KioskViewModel : ObservableObject, IDisposable
         LaunchEventCommand = new RelayCommand(() => _stateMachine.LaunchEvent(), () => CurrentBoothState == BoothState.Setup);
         PrintCommand = new AsyncRelayCommand(PrintAsync, () => CanPrint);
         SendEmailCommand = new AsyncRelayCommand(SendEmailAsync, () => CanSendEmail);
-        SendSmsCommand = new RelayCommand(SendSms, () => CanSendSms);
+        SendSmsCommand = new AsyncRelayCommand(SendSmsAsync, () => CanSendSms);
         DoneCommand = new RelayCommand(FinishSharing);
         OpenAdminCommand = new RelayCommand(Admin.Open);
         SelectFrameCommand = new RelayCommand(SelectFrame);
@@ -109,6 +120,7 @@ public class KioskViewModel : ObservableObject, IDisposable
 
         PrintCommand.ExceptionHandler = ex => ShareStatus = $"Print failed: {ex.Message}";
         SendEmailCommand.ExceptionHandler = ex => ShareStatus = $"Email failed: {ex.Message}";
+        SendSmsCommand.ExceptionHandler = ex => ShareStatus = $"SMS failed: {ex.Message}";
 
         _liveViewTimer = new DispatcherTimer { Interval = LiveViewInterval };
         _liveViewTimer.Tick += async (_, _) => await PollLiveViewFrameAsync();
@@ -131,6 +143,7 @@ public class KioskViewModel : ObservableObject, IDisposable
             Admin.ErrorsThisRun++;
         });
         _stateMachine.PhotoUploaded += url => OnUi(() => ApplyUploadedPhoto(url));
+        _stateMachine.AttendantCueChanged += clip => OnUi(() => AttendantCueRequested?.Invoke(clip));
 
         _frameSelection = frameSelection;
         if (_frameSelection is not null)
@@ -202,10 +215,35 @@ public class KioskViewModel : ObservableObject, IDisposable
             GifComposer: new MockGifComposerService(),
             BoothVideo: new MockBoothVideoService(),
             AttendantCue: new MockVirtualAttendantService(),
-            Survey: new MockSurveyService()),
+            Survey: new MockSurveyService())
+        {
+            Sms = new MockSmsDeliveryService(),
+        },
         new MockLiveViewService());
 
     public KioskAdminViewModel Admin { get; }
+
+    /// <summary>Raised after screen-template overlay elements (admin-authored
+    /// text/image/rectangle overlays -- see <see cref="ScreenTemplateElementRepository"/>)
+    /// are (re)loaded, at the same Idle-only "next guest, no restart" cadence
+    /// as the rest of <see cref="ReloadSettingsAsync"/>. KioskWindow's code-behind
+    /// subscribes to repaint its overlay Canvases -- kept out of this ViewModel
+    /// since overlay rendering is FrameworkElement-construction glue, same
+    /// reasoning MainWindow kept RenderScreenOverlay in code-behind.</summary>
+    public event Action? ScreenOverlaysChanged;
+
+    /// <summary>Raised when BoothStateMachine reports a Virtual Attendant clip
+    /// to play. KioskWindow's code-behind subscribes to drive its MediaElement
+    /// -- kept out of this ViewModel for the same reason as
+    /// <see cref="ScreenOverlaysChanged"/>: MediaElement.Play() is a
+    /// control-specific call with no clean ViewModel abstraction, same as
+    /// MainWindow's own PlayAttendantCue never tried to abstract it either.</summary>
+    public event Action<AttendantClip>? AttendantCueRequested;
+
+    /// <summary>The admin-placed overlay elements for one guest-facing screen,
+    /// for KioskWindow's code-behind to render into that screen's Canvas.</summary>
+    public IReadOnlyList<ScreenTemplateElement> GetOverlayElements(ScreenTemplateScreen screen) =>
+        _screenElementsByScreen[screen].ToList();
 
     // ======================================================= screen state ==
 
@@ -650,7 +688,7 @@ public class KioskViewModel : ObservableObject, IDisposable
     public RelayCommand LaunchEventCommand { get; }
     public AsyncRelayCommand PrintCommand { get; }
     public AsyncRelayCommand SendEmailCommand { get; }
-    public RelayCommand SendSmsCommand { get; }
+    public AsyncRelayCommand SendSmsCommand { get; }
     public RelayCommand DoneCommand { get; }
     public RelayCommand OpenAdminCommand { get; }
 
@@ -755,16 +793,19 @@ public class KioskViewModel : ObservableObject, IDisposable
         ShareEmail = string.Empty;
     }
 
-    /// <summary>
-    /// SMS delivery has no service behind it yet: Photobooth.Core has
-    /// IEmailDeliveryService but no SMS equivalent, and inventing a mock one
-    /// here would make the button look functional to an attendant when nothing
-    /// would actually be sent. The field and button exist (and stay hidden
-    /// unless SharingSettings.SmsEnabled is on) so the screen is ready for an
-    /// ISmsDeliveryService seam; until then this says so plainly.
-    /// </summary>
-    private void SendSms() =>
-        ShareStatus = "SMS delivery isn't connected on this booth yet -- use email or the QR code.";
+    private async Task SendSmsAsync()
+    {
+        if (_stateMachine.LastPhotoUrl is not Uri url)
+        {
+            ShareStatus = "Your photo is still uploading -- try again in a moment.";
+            return;
+        }
+
+        string phone = SharePhone.Trim();
+        await _services.Sms.SendPhotoLinkAsync(phone, url);
+        ShareStatus = $"Sent to {phone}.";
+        SharePhone = string.Empty;
+    }
 
     private void FinishSharing()
     {
@@ -871,7 +912,10 @@ public class KioskViewModel : ObservableObject, IDisposable
     /// spooled, and the upload has usually landed, so the QR, email and reprint
     /// controls all have something to act on.
     /// </summary>
-    private static KioskScreen MapScreen(BoothState state) => state switch
+    /// <summary>Internal rather than private so Photobooth.UI.Tests can assert
+    /// the full mapping table directly (see InternalsVisibleTo below) without
+    /// standing up a whole BoothStateMachine just to exercise a pure switch.</summary>
+    internal static KioskScreen MapScreen(BoothState state) => state switch
     {
         BoothState.Setup or BoothState.Idle => KioskScreen.Idle,
         BoothState.Countdown => KioskScreen.Countdown,
@@ -932,6 +976,24 @@ public class KioskViewModel : ObservableObject, IDisposable
             return;
         }
 
+        // Skipped in mock/designer mode (see _locationId) -- ScreenTemplateElementRepository
+        // has no Mock* counterpart, and CreateWithMockServices promises no
+        // LocalDB dependency.
+        List<ScreenTemplateElement>? overlayElements = null;
+        if (_locationId is int locationId)
+        {
+            try
+            {
+                overlayElements = await _screenElements.GetAllByLocationAsync(locationId);
+            }
+            catch (Exception)
+            {
+                // Best-effort, same reasoning as the settings-read catch above --
+                // a failed overlay-elements read just means the guest screens
+                // keep whatever overlay was last rendered (or none).
+            }
+        }
+
         OnUi(() =>
         {
             _settings = settings;
@@ -943,6 +1005,12 @@ public class KioskViewModel : ObservableObject, IDisposable
             IsQrEnabled = settings.Sharing.QrEnabled;
             PrintsRemaining = settings.PrintOptions.PrintLimitPerSession;
             LiveViewTransform = BuildLiveViewTransform(settings.Screen);
+
+            if (overlayElements is not null)
+            {
+                _screenElementsByScreen = overlayElements.ToLookup(e => e.Screen);
+            }
+            ScreenOverlaysChanged?.Invoke();
         });
     }
 

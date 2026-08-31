@@ -32,4 +32,15 @@ public record BoothServices(
     IGifComposerService GifComposer,
     IBoothVideoService BoothVideo,
     IVirtualAttendantService AttendantCue,
-    ISurveyService Survey);
+    ISurveyService Survey)
+{
+    /// <summary>SMS delivery for the guest sharing screen (see
+    /// KioskViewModel.SendSmsAsync) -- an init property here, not a 22nd
+    /// positional parameter, so every existing `new BoothServices(...)` call
+    /// site (BoothStateMachineTests alone has 30+) keeps compiling unchanged
+    /// with this silently defaulting to the mock, same reasoning
+    /// BoothSettings.Theme/Capture/etc. already established for the same
+    /// problem. No real gateway yet -- same "mock now, real vendor later"
+    /// status IPaymentService/IConsentService have.</summary>
+    public ISmsDeliveryService Sms { get; init; } = new MockSmsDeliveryService();
+}
