@@ -23,6 +23,7 @@ public partial class AdminWindow : Window
     private readonly AdminDashboardRepository _repository = new();
     private readonly LocationRepository _locations = new();
     private readonly FrameRepository _frames = new();
+    private readonly SurveyRepository _survey = new();
 
     // "One booth machine has one location" -- same assumption
     // DatabaseInitializer's own seeding already makes -- so Settings and the
@@ -34,6 +35,16 @@ public partial class AdminWindow : Window
     private string? _pendingThemeLogoPath;
     private string? _existingThemeLogoPath;
     private PrintTemplate _currentPrintTemplate = PrintTemplate.Default;
+
+    private string? _pendingWatermarkPath;
+    private string? _existingWatermarkPath;
+    private string? _pendingGreenScreenBackgroundPath;
+    private string? _existingGreenScreenBackgroundPath;
+
+    // ScreenSettings has no editable UI in this phase (see BUILD_PLAN.md Phase 5,
+    // guest-facing screens) -- loaded and passed straight back through on save so
+    // it isn't clobbered back to defaults.
+    private ScreenSettings _currentScreenSettings = ScreenSettings.Default;
 
     public AdminWindow()
     {
@@ -199,6 +210,16 @@ public partial class AdminWindow : Window
         }
     }
 
+    private async void EditScreenLayoutButton_Click(object sender, RoutedEventArgs e)
+    {
+        var existing = await new ScreenTemplateElementRepository().GetAllByLocationAsync(_locationId);
+        var editor = new ScreenTemplateEditorWindow(existing, _locationId) { Owner = this };
+        editor.ShowDialog();
+        // No LoadAsync() reload needed after this one -- ScreenTemplateElement
+        // isn't read into any of the fields LoadAsync populates (unlike
+        // _currentPrintTemplate above), it's read fresh by MainWindow itself.
+    }
+
     private async Task LoadAsync()
     {
         RefreshButton.IsEnabled = false;
@@ -253,8 +274,60 @@ public partial class AdminWindow : Window
                     ? "No logo selected."
                     : System.IO.Path.GetFileName(theme.LogoImagePath);
 
+                _currentScreenSettings = locations[0].Screen;
+
+                CaptureSettings capture = locations[0].Capture;
+                CaptureModePhotoRadio.IsChecked = capture.Mode == "Photo";
+                CaptureModeGifRadio.IsChecked = capture.Mode == "GIF";
+                CaptureModeBoomerangRadio.IsChecked = capture.Mode == "Boomerang";
+                CaptureModeVideoRadio.IsChecked = capture.Mode == "Video";
+                AlsoCreateGifCheckBox.IsChecked = capture.AlsoCreateGif;
+                FrameCountBox.Text = capture.FrameCount.ToString();
+                FrameDelayBox.Text = capture.FrameDelayMs.ToString();
+                VideoDurationBox.Text = capture.VideoDurationSeconds.ToString();
+
+                EffectsSettings effects = locations[0].Effects;
+                BeautyFilterCheckBox.IsChecked = effects.BeautyFilterEnabled;
+                FiltersModeAskRadio.IsChecked = effects.FiltersMode != "Auto";
+                FiltersModeAutoRadio.IsChecked = effects.FiltersMode == "Auto";
+                _existingWatermarkPath = effects.WatermarkImagePath;
+                _pendingWatermarkPath = null;
+                SelectedWatermarkText.Text = effects.WatermarkImagePath is null
+                    ? "No watermark selected."
+                    : System.IO.Path.GetFileName(effects.WatermarkImagePath);
+
+                GreenScreenSettings greenScreen = locations[0].GreenScreen;
+                GreenScreenEnabledCheckBox.IsChecked = greenScreen.Enabled;
+                _existingGreenScreenBackgroundPath = greenScreen.BackgroundImagePath;
+                _pendingGreenScreenBackgroundPath = null;
+                SelectedGreenScreenBackgroundText.Text = greenScreen.BackgroundImagePath is null
+                    ? "No background selected."
+                    : System.IO.Path.GetFileName(greenScreen.BackgroundImagePath);
+
+                SurveyEnabledCheckBox.IsChecked = locations[0].Survey.Enabled;
+
+                DisclaimerSettings disclaimer = locations[0].Disclaimer;
+                DisclaimerHeaderBox.Text = disclaimer.Header;
+                DisclaimerTextBox.Text = disclaimer.Text;
+
+                SharingSettings sharing = locations[0].Sharing;
+                EmailEnabledCheckBox.IsChecked = sharing.EmailEnabled;
+                SmsEnabledCheckBox.IsChecked = sharing.SmsEnabled;
+                QrEnabledCheckBox.IsChecked = sharing.QrEnabled;
+
+                PrintOptions printOptions = locations[0].PrintOptions;
+                PrintAutomaticallyCheckBox.IsChecked = printOptions.PrintAutomatically;
+                ShowPrintButtonCheckBox.IsChecked = printOptions.ShowPrintButton;
+                PrintLimitPerEventBox.Text = printOptions.PrintLimitPerEvent.ToString();
+                PrintLimitPerSessionBox.Text = printOptions.PrintLimitPerSession.ToString();
+                PrintSharpeningLowRadio.IsChecked = printOptions.PrintSharpening == "Low";
+                PrintSharpeningMediumRadio.IsChecked = printOptions.PrintSharpening == "Medium";
+                PrintSharpeningHighRadio.IsChecked = printOptions.PrintSharpening == "High";
+
                 await LoadFramesAsync();
                 await LoadGuestbookVideosAsync();
+                await LoadSurveyQuestionsAsync();
+                await LoadSurveyResponsesAsync();
             }
         }
         catch (Exception ex)
@@ -382,6 +455,178 @@ public partial class AdminWindow : Window
         {
             await _frames.DeleteAsync(frameId);
             await LoadFramesAsync();
+        }
+    }
+
+    private async Task LoadSurveyQuestionsAsync()
+    {
+        var questions = await _survey.GetAllByLocationAsync(_locationId);
+        SurveyQuestionsList.ItemsSource = questions;
+        SurveyQuestionsEmptyText.Visibility = questions.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private async Task LoadSurveyResponsesAsync()
+    {
+        var responses = await _survey.GetResponsesByLocationAsync(_locationId);
+        SurveyResponsesList.ItemsSource = responses
+            .Select(r => $"Session {r.SessionId} -- \"{r.QuestionText}\" -> {r.Answer} ({r.RecordedAt:g})")
+            .ToList();
+        SurveyResponsesEmptyText.Visibility = responses.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private async void AddSurveyQuestionButton_Click(object sender, RoutedEventArgs e)
+    {
+        string text = NewSurveyQuestionBox.Text.Trim();
+        if (text.Length == 0)
+        {
+            SurveyQuestionStatusText.Text = "Enter a question first.";
+            SurveyQuestionStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+            return;
+        }
+
+        AddSurveyQuestionButton.IsEnabled = false;
+        try
+        {
+            var existing = await _survey.GetAllByLocationAsync(_locationId);
+            await _survey.InsertQuestionAsync(_locationId, text, sortOrder: existing.Count);
+
+            NewSurveyQuestionBox.Text = string.Empty;
+            SurveyQuestionStatusText.Text = "Question added -- shown to the next guest.";
+            SurveyQuestionStatusText.Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush");
+            await LoadSurveyQuestionsAsync();
+        }
+        catch (Exception ex)
+        {
+            SurveyQuestionStatusText.Text = $"Couldn't add question: {ex.Message}";
+            SurveyQuestionStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+        }
+        finally
+        {
+            AddSurveyQuestionButton.IsEnabled = true;
+        }
+    }
+
+    private async void DeleteSurveyQuestionButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: int surveyQuestionId })
+        {
+            await _survey.DeleteQuestionAsync(surveyQuestionId);
+            await LoadSurveyQuestionsAsync();
+        }
+    }
+
+    private void BrowseWatermarkButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Filter = "Image files (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg",
+            Title = "Choose a watermark image",
+        };
+        if (dialog.ShowDialog() == true)
+        {
+            _pendingWatermarkPath = dialog.FileName;
+            SelectedWatermarkText.Text = System.IO.Path.GetFileName(dialog.FileName);
+        }
+    }
+
+    private void BrowseGreenScreenBackgroundButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Filter = "Image files (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg",
+            Title = "Choose a green screen background image",
+        };
+        if (dialog.ShowDialog() == true)
+        {
+            _pendingGreenScreenBackgroundPath = dialog.FileName;
+            SelectedGreenScreenBackgroundText.Text = System.IO.Path.GetFileName(dialog.FileName);
+        }
+    }
+
+    /// <summary>Saves Capture/Effects/Green Screen/Survey/Disclaimer/Print/Sharing
+    /// settings added in Phase 1 (BUILD_PLAN.md's dslrBooth feature-parity plan).
+    /// Kept as its own button/status text, same one-save-button-per-section
+    /// precedent as SaveSettingsButton/SaveThemeButton above.</summary>
+    private async void SaveParitySettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!int.TryParse(FrameCountBox.Text, out int frameCount) || frameCount <= 0
+            || !int.TryParse(FrameDelayBox.Text, out int frameDelayMs) || frameDelayMs <= 0
+            || !int.TryParse(VideoDurationBox.Text, out int videoDurationSeconds) || videoDurationSeconds <= 0)
+        {
+            ParitySettingsStatusText.Text = "Frame count, frame delay, and video duration must be whole numbers greater than 0.";
+            ParitySettingsStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+            return;
+        }
+
+        if (!int.TryParse(PrintLimitPerEventBox.Text, out int printLimitPerEvent) || printLimitPerEvent <= 0
+            || !int.TryParse(PrintLimitPerSessionBox.Text, out int printLimitPerSession) || printLimitPerSession <= 0)
+        {
+            ParitySettingsStatusText.Text = "Print limits must be whole numbers greater than 0.";
+            ParitySettingsStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+            return;
+        }
+
+        string captureMode = CaptureModeGifRadio.IsChecked == true ? "GIF"
+            : CaptureModeBoomerangRadio.IsChecked == true ? "Boomerang"
+            : CaptureModeVideoRadio.IsChecked == true ? "Video"
+            : "Photo";
+        string filtersMode = FiltersModeAutoRadio.IsChecked == true ? "Auto" : "Ask";
+        string printSharpening = PrintSharpeningLowRadio.IsChecked == true ? "Low"
+            : PrintSharpeningHighRadio.IsChecked == true ? "High"
+            : "Medium";
+
+        // Same "own local copy" pattern as SaveThemeButton_Click/AddFrameButton_Click:
+        // only copy a newly-picked file, otherwise keep whatever is already on file.
+        string? watermarkPath = _existingWatermarkPath;
+        if (_pendingWatermarkPath is not null)
+        {
+            string watermarksDirectory = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "Watermarks");
+            System.IO.Directory.CreateDirectory(watermarksDirectory);
+            string storedFileName = $"{Guid.NewGuid():N}{System.IO.Path.GetExtension(_pendingWatermarkPath)}";
+            watermarkPath = System.IO.Path.Combine(watermarksDirectory, storedFileName);
+            System.IO.File.Copy(_pendingWatermarkPath, watermarkPath, overwrite: true);
+        }
+
+        string? greenScreenBackgroundPath = _existingGreenScreenBackgroundPath;
+        if (_pendingGreenScreenBackgroundPath is not null)
+        {
+            string greenScreenDirectory = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "GreenScreen");
+            System.IO.Directory.CreateDirectory(greenScreenDirectory);
+            string storedFileName = $"{Guid.NewGuid():N}{System.IO.Path.GetExtension(_pendingGreenScreenBackgroundPath)}";
+            greenScreenBackgroundPath = System.IO.Path.Combine(greenScreenDirectory, storedFileName);
+            System.IO.File.Copy(_pendingGreenScreenBackgroundPath, greenScreenBackgroundPath, overwrite: true);
+        }
+
+        var capture = new CaptureSettings(captureMode, AlsoCreateGifCheckBox.IsChecked == true, frameCount, frameDelayMs, videoDurationSeconds);
+        var screen = _currentScreenSettings;
+        var effects = new EffectsSettings(BeautyFilterCheckBox.IsChecked == true, filtersMode, watermarkPath);
+        var greenScreen = new GreenScreenSettings(GreenScreenEnabledCheckBox.IsChecked == true, greenScreenBackgroundPath);
+        var survey = new SurveySettings(SurveyEnabledCheckBox.IsChecked == true);
+        var disclaimer = new DisclaimerSettings(DisclaimerHeaderBox.Text.Trim(), DisclaimerTextBox.Text);
+        var printOptions = new PrintOptions(
+            PrintAutomaticallyCheckBox.IsChecked == true, ShowPrintButtonCheckBox.IsChecked == true,
+            printLimitPerEvent, printLimitPerSession, printSharpening);
+        var sharing = new SharingSettings(EmailEnabledCheckBox.IsChecked == true, SmsEnabledCheckBox.IsChecked == true, QrEnabledCheckBox.IsChecked == true);
+
+        SaveParitySettingsButton.IsEnabled = false;
+        try
+        {
+            await _locations.UpdateDslrBoothParitySettingsAsync(_locationId, capture, screen, effects, greenScreen, survey, disclaimer, printOptions, sharing);
+            _existingWatermarkPath = watermarkPath;
+            _pendingWatermarkPath = null;
+            _existingGreenScreenBackgroundPath = greenScreenBackgroundPath;
+            _pendingGreenScreenBackgroundPath = null;
+            ParitySettingsStatusText.Text = "Saved -- takes effect for the next guest session.";
+            ParitySettingsStatusText.Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush");
+        }
+        catch (Exception ex)
+        {
+            ParitySettingsStatusText.Text = $"Couldn't save: {ex.Message}";
+            ParitySettingsStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+        }
+        finally
+        {
+            SaveParitySettingsButton.IsEnabled = true;
         }
     }
 }

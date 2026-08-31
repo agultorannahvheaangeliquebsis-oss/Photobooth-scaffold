@@ -25,14 +25,16 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
             """
             SELECT CountdownSeconds, GlamFilterEnabled, PrintLayout, PrintWidthInches, PrintHeightInches, PrintStripCopies,
                    AccentColorHex, CanvasColorHex, InkColorHex, LogoImagePath, EventName, AdminPin,
-                   CaptureMode, AlsoCreateGif, GifFrameCount, GifFrameDelayMs,
+                   CaptureMode, AlsoCreateGif, GifFrameCount, GifFrameDelayMs, VideoDurationSeconds,
                    BoothIconsEnabled, ShowLiveView, MirrorLiveView, LiveViewRotation,
                    BeautyFilterEnabled, FiltersMode, WatermarkImagePath,
                    GreenScreenEnabled, GreenScreenBackgroundPath,
                    SurveyEnabled,
                    DisclaimerHeader, DisclaimerText,
                    PrintAutomatically, ShowPrintButton, PrintLimitPerEvent, PrintLimitPerSession, PrintSharpening,
-                   EmailEnabled, SmsEnabled, QrEnabled
+                   EmailEnabled, SmsEnabled, QrEnabled,
+                   AttendantEnabled, AttendantStyle, AttendantRandomizeConsent, AttendantRandomizeCountdown,
+                   AttendantRandomizeCapturing, AttendantRandomizeReviewing, AttendantRandomizePrinting, AttendantRandomizeComplete
             FROM Location WHERE LocationId = @LocationId;
             """,
             connection);
@@ -51,6 +53,7 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
         var disclaimer = default(DisclaimerSettings)!;
         var printOptions = default(PrintOptions)!;
         var sharing = default(SharingSettings)!;
+        var virtualAttendant = default(VirtualAttendantSettings)!;
         using (var reader = await command.ExecuteReaderAsync(ct))
         {
             if (!await reader.ReadAsync(ct))
@@ -72,14 +75,17 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
                 reader.IsDBNull(9) ? null : reader.GetString(9),
                 reader.GetString(10));
             adminPin = reader.GetString(11);
-            capture = new CaptureSettings(reader.GetString(12), reader.GetBoolean(13), reader.GetInt32(14), reader.GetInt32(15));
-            screen = new ScreenSettings(reader.GetBoolean(16), reader.GetBoolean(17), reader.GetBoolean(18), reader.GetInt32(19));
-            effects = new EffectsSettings(reader.GetBoolean(20), reader.GetString(21), reader.IsDBNull(22) ? null : reader.GetString(22));
-            greenScreen = new GreenScreenSettings(reader.GetBoolean(23), reader.IsDBNull(24) ? null : reader.GetString(24));
-            survey = new SurveySettings(reader.GetBoolean(25));
-            disclaimer = new DisclaimerSettings(reader.GetString(26), reader.GetString(27));
-            printOptions = new PrintOptions(reader.GetBoolean(28), reader.GetBoolean(29), reader.GetInt32(30), reader.GetInt32(31), reader.GetString(32));
-            sharing = new SharingSettings(reader.GetBoolean(33), reader.GetBoolean(34), reader.GetBoolean(35));
+            capture = new CaptureSettings(reader.GetString(12), reader.GetBoolean(13), reader.GetInt32(14), reader.GetInt32(15), reader.GetInt32(16));
+            screen = new ScreenSettings(reader.GetBoolean(17), reader.GetBoolean(18), reader.GetBoolean(19), reader.GetInt32(20));
+            effects = new EffectsSettings(reader.GetBoolean(21), reader.GetString(22), reader.IsDBNull(23) ? null : reader.GetString(23));
+            greenScreen = new GreenScreenSettings(reader.GetBoolean(24), reader.IsDBNull(25) ? null : reader.GetString(25));
+            survey = new SurveySettings(reader.GetBoolean(26));
+            disclaimer = new DisclaimerSettings(reader.GetString(27), reader.GetString(28));
+            printOptions = new PrintOptions(reader.GetBoolean(29), reader.GetBoolean(30), reader.GetInt32(31), reader.GetInt32(32), reader.GetString(33));
+            sharing = new SharingSettings(reader.GetBoolean(34), reader.GetBoolean(35), reader.GetBoolean(36));
+            virtualAttendant = new VirtualAttendantSettings(
+                reader.GetBoolean(37), reader.GetString(38), reader.GetBoolean(39), reader.GetBoolean(40),
+                reader.GetBoolean(41), reader.GetBoolean(42), reader.GetBoolean(43), reader.GetBoolean(44));
         }
 
         // A separate connection (not this method's `connection` above), so
@@ -101,6 +107,7 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
             Disclaimer = disclaimer,
             PrintOptions = printOptions,
             Sharing = sharing,
+            VirtualAttendant = virtualAttendant,
         };
     }
 }

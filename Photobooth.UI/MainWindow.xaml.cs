@@ -18,7 +18,20 @@ public partial class MainWindow : Window
     private UiFrameSelectionService _frameSelection = null!;
     private UiFeedbackService _feedback = null!;
     private UiGuestbookPromptService _guestbookPrompt = null!;
+    private SqlSurveyService _survey = null!;
     private IBoothSettingsProvider _settingsProvider = null!;
+    // Re-read at Idle alongside the theme -- same "next guest, no restart"
+    // cadence. BoothIconsEnabled has no on-screen icon UI to gate yet (see
+    // ApplyThemeAsync); it's kept here for Phase 6's Screen Editor to read.
+    private ScreenSettings _screenSettings = ScreenSettings.Default;
+    private SharingSettings _sharingSettings = SharingSettings.Default;
+    // Visual Screen Editor overlays (Phase 6) -- re-read alongside the theme,
+    // same "next guest, no restart" cadence as everything else read in
+    // ApplyThemeAsync.
+    private readonly ScreenTemplateElementRepository _screenElements = new();
+    private ILookup<ScreenTemplateScreen, ScreenTemplateElement> _screenElementsByScreen =
+        Array.Empty<ScreenTemplateElement>().ToLookup(e => e.Screen);
+    private int _locationId;
     private int _selectedFeedbackRating;
     private readonly DispatcherTimer _liveViewTimer;
     private bool _sessionRunning;
@@ -68,6 +81,7 @@ public partial class MainWindow : Window
         // never appearing rather than a raw crash or a hang.
         try
         {
+            _locationId = seedIds.LocationId;
             var sessionRepository = new SqlSessionRepository(seedIds.LocationId, seedIds.PrinterId);
 
             // Real, not mocked, unlike Consent/Payment below -- a frame pick
@@ -91,6 +105,13 @@ public partial class MainWindow : Window
             _guestbookPrompt.RecordDecisionRequested += () => Dispatcher.Invoke(ShowGuestbookAskPrompt);
             _guestbookPrompt.StopRequested += () => Dispatcher.Invoke(ShowGuestbookRecordingPrompt);
 
+            // Real, not mocked, same reasoning as _frameSelection/_feedback above --
+            // answering survey questions is just taps/text input, no external
+            // gateway; the SQL persistence (GetActiveQuestionsAsync/RecordResponsesAsync)
+            // lives in this same class since ISurveyService bundles both concerns.
+            _survey = new SqlSurveyService(seedIds.LocationId);
+            _survey.AnswersRequested += questions => Dispatcher.Invoke(() => ShowSurveyQuestions(questions));
+
             EnsureCameraBridgeRunning();
 
             var services = new BoothServices(
@@ -111,7 +132,10 @@ public partial class MainWindow : Window
                 Feedback: _feedback,
                 GuestbookPrompt: _guestbookPrompt,
                 VideoGuestbook: new FfmpegVideoGuestbookService(),
-                GifComposer: new GdiGifComposerService());
+                GifComposer: new GdiGifComposerService(),
+                BoothVideo: new FfmpegBoothVideoService(),
+                AttendantCue: new SqlVirtualAttendantService(seedIds.LocationId),
+                Survey: _survey);
             _settingsProvider = services.Settings;
             _stateMachine = new BoothStateMachine(services, mode: seedIds.LocationType);
         }
@@ -137,6 +161,7 @@ public partial class MainWindow : Window
         _stateMachine.CountdownTick += number => Dispatcher.Invoke(() => CountdownNumber.Text = number.ToString());
         _stateMachine.ErrorOccurred += message => Dispatcher.Invoke(() => ErrorMessage.Text = message);
         _stateMachine.PhotoUploaded += url => Dispatcher.Invoke(() => LoadQrCode(url));
+        _stateMachine.AttendantCueChanged += clip => Dispatcher.Invoke(() => PlayAttendantCue(clip));
 
         // Also flush any backlog left over from last time the app ran (e.g.
         // the venue's WiFi was down at closing time last night) -- the
@@ -149,6 +174,14 @@ public partial class MainWindow : Window
         // per frame doesn't pile up (see _liveViewFetchInProgress below).
         _liveViewTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
         _liveViewTimer.Tick += async (_, _) => await PollLiveViewFrameAsync();
+
+        // Canvas.ActualWidth/Height are 0 until the first layout pass -- these
+        // re-render once real dimensions are known (and on any later resize),
+        // since ApplyThemeAsync's first call (below) can otherwise render into
+        // a 0x0 canvas before the window has actually laid out.
+        WelcomeOverlayCanvas.SizeChanged += (_, _) => RenderScreenOverlay(WelcomeOverlayCanvas, ScreenTemplateScreen.Welcome);
+        CaptureOverlayCanvas.SizeChanged += (_, _) => RenderScreenOverlay(CaptureOverlayCanvas, ScreenTemplateScreen.Capture);
+        SharingOverlayCanvas.SizeChanged += (_, _) => RenderScreenOverlay(SharingOverlayCanvas, ScreenTemplateScreen.Sharing);
 
         ShowState(_stateMachine.CurrentState);
         _ = ApplyThemeAsync();
@@ -284,6 +317,24 @@ public partial class MainWindow : Window
         }
 
         BoothTheme theme = settings.Theme;
+        _screenSettings = settings.Screen;
+        _sharingSettings = settings.Sharing;
+        ApplyLiveViewTransform();
+
+        try
+        {
+            List<ScreenTemplateElement> elements = await _screenElements.GetAllByLocationAsync(_locationId);
+            _screenElementsByScreen = elements.ToLookup(e => e.Screen);
+        }
+        catch (Exception)
+        {
+            // Best-effort, same reasoning as the settings-read catch above -- a
+            // failed overlay-elements read just means the idle screen keeps
+            // whatever overlay was last rendered (or none).
+        }
+        RenderScreenOverlay(WelcomeOverlayCanvas, ScreenTemplateScreen.Welcome);
+        RenderScreenOverlay(CaptureOverlayCanvas, ScreenTemplateScreen.Capture);
+        RenderScreenOverlay(SharingOverlayCanvas, ScreenTemplateScreen.Sharing);
 
         // Every screen binds these via {StaticResource ...}, which resolves
         // to a direct reference to the brush object at XAML load time --
@@ -309,12 +360,91 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>Redraws one screen's ScreenTemplateElement rows as live WPF elements
+    /// positioned by percent of the canvas's own ActualWidth/ActualHeight -- the
+    /// guest-facing equivalent of PrintCompositor's percent-of-cell overlay math,
+    /// just rendered directly as TextBlock/Image/Rectangle instead of composited
+    /// onto a bitmap, since this is a live interactive screen, not a print.</summary>
+    private void RenderScreenOverlay(Canvas canvas, ScreenTemplateScreen screen)
+    {
+        canvas.Children.Clear();
+        double width = canvas.ActualWidth;
+        double height = canvas.ActualHeight;
+        if (width <= 0 || height <= 0)
+        {
+            return; // not yet laid out -- SizeChanged (see constructor) re-renders once it is
+        }
+
+        foreach (ScreenTemplateElement element in _screenElementsByScreen[screen])
+        {
+            FrameworkElement content = element.Kind switch
+            {
+                ScreenTemplateElementKind.Text => new TextBlock
+                {
+                    Text = element.Text,
+                    FontFamily = new FontFamily(element.FontFamily),
+                    FontSize = Math.Max(1, element.FontSizePercent * height),
+                    FontWeight = element.Bold ? FontWeights.Bold : FontWeights.Normal,
+                    Foreground = HexToBrush(element.ColorHex),
+                    TextAlignment = TextAlignment.Center,
+                    TextWrapping = TextWrapping.Wrap,
+                },
+                ScreenTemplateElementKind.Image => new Image
+                {
+                    Source = element.ImagePath is string path && System.IO.File.Exists(path)
+                        ? new BitmapImage(new Uri(System.IO.Path.GetFullPath(path)))
+                        : null,
+                    Stretch = Stretch.Uniform,
+                },
+                _ => (FrameworkElement)new System.Windows.Shapes.Rectangle { Fill = HexToBrush(element.ColorHex) },
+            };
+
+            content.Width = element.WidthPercent * width;
+            content.Height = element.HeightPercent * height;
+            Canvas.SetLeft(content, element.XPercent * width);
+            Canvas.SetTop(content, element.YPercent * height);
+            canvas.Children.Add(content);
+        }
+    }
+
+    private static SolidColorBrush HexToBrush(string hex)
+    {
+        try
+        {
+            return new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
+        }
+        catch (Exception)
+        {
+            return Brushes.Black;
+        }
+    }
+
     private static void SetBrushColor(string resourceKey, string colorHex)
     {
         if (Application.Current.Resources[resourceKey] is SolidColorBrush brush)
         {
             brush.Color = (Color)ColorConverter.ConvertFromString(colorHex);
         }
+    }
+
+    /// <summary>Applies ScreenSettings.MirrorLiveView/LiveViewRotation to
+    /// LiveViewImage (the Countdown-screen live camera preview -- the only
+    /// place a live feed is actually rendered; there's no live-view surface
+    /// in IdleView or CapturingView to apply these to). Only 0/90/180/270 are
+    /// meaningful rotations; the schema column has no CHECK constraint, so an
+    /// out-of-range value from a bad write just falls back to unrotated.</summary>
+    private void ApplyLiveViewTransform()
+    {
+        double rotation = _screenSettings.LiveViewRotation is 90 or 180 or 270 ? _screenSettings.LiveViewRotation : 0;
+        double scaleX = _screenSettings.MirrorLiveView ? -1 : 1;
+        LiveViewImage.LayoutTransform = new TransformGroup
+        {
+            Children =
+            {
+                new ScaleTransform(scaleX, 1),
+                new RotateTransform(rotation),
+            },
+        };
     }
 
     /// <summary>Checks the PIN typed into SetupPinBox against the current
@@ -418,6 +548,7 @@ public partial class MainWindow : Window
         CompleteView.Visibility = state == BoothState.Complete ? Visibility.Visible : Visibility.Collapsed;
         GuestbookView.Visibility = state == BoothState.Guestbook ? Visibility.Visible : Visibility.Collapsed;
         FeedbackView.Visibility = state == BoothState.Feedback ? Visibility.Visible : Visibility.Collapsed;
+        SurveyView.Visibility = state == BoothState.Survey ? Visibility.Visible : Visibility.Collapsed;
         ErrorView.Visibility = state == BoothState.Error ? Visibility.Visible : Visibility.Collapsed;
 
         if (state == BoothState.Setup)
@@ -442,14 +573,22 @@ public partial class MainWindow : Window
             }
         }
 
-        if (state == BoothState.Countdown)
+        if (state == BoothState.Countdown && _screenSettings.ShowLiveView)
         {
+            LiveViewImage.Visibility = Visibility.Visible;
             _liveViewTimer.Start();
         }
-        else if (_liveViewTimer.IsEnabled)
+        else
         {
-            _liveViewTimer.Stop();
-            _ = _liveView.StopAsync();
+            // Also covers ShowLiveView == false: never start the timer/pipe
+            // polling at all, not just hide the Image, so a booth with the
+            // feed turned off doesn't pay for frames nobody sees.
+            LiveViewImage.Visibility = Visibility.Collapsed;
+            if (_liveViewTimer.IsEnabled)
+            {
+                _liveViewTimer.Stop();
+                _ = _liveView.StopAsync();
+            }
         }
 
         if (state == BoothState.Reviewing)
@@ -459,7 +598,7 @@ public partial class MainWindow : Window
 
         bool qrEligibleScreen = state == BoothState.Printing || state == BoothState.Complete
             || state == BoothState.Guestbook || state == BoothState.Feedback;
-        QrPanel.Visibility = qrEligibleScreen && _stateMachine.LastPhotoUrl != null
+        QrPanel.Visibility = qrEligibleScreen && _sharingSettings.QrEnabled && _stateMachine.LastPhotoUrl != null
             ? Visibility.Visible
             : Visibility.Collapsed;
     }
@@ -576,12 +715,70 @@ public partial class MainWindow : Window
         _feedback.SubmitFeedback(new FeedbackResult(null, null));
     }
 
+    /// <summary>Plays a Virtual Attendant clip alongside whatever screen is already
+    /// showing -- best-effort, same reasoning BoothStateMachine's FireAttendantCueAsync
+    /// already swallows lookup failures for: a missing/bad file here shouldn't crash
+    /// or interrupt the guest session either.</summary>
+    private void PlayAttendantCue(AttendantClip clip)
+    {
+        try
+        {
+            if (!System.IO.File.Exists(clip.FilePath))
+            {
+                return;
+            }
+
+            AttendantMediaElement.Source = new Uri(System.IO.Path.GetFullPath(clip.FilePath));
+            AttendantMediaElement.Play();
+        }
+        catch (Exception)
+        {
+            // Best-effort: a bad clip path/format shouldn't disrupt the session.
+        }
+    }
+
+    /// <summary>Populates SurveyQuestionsPanel with one labeled TextBox per active
+    /// question, called when SqlSurveyService raises AnswersRequested (i.e. right as
+    /// BoothStateMachine enters Survey and starts waiting for a tap).</summary>
+    private void ShowSurveyQuestions(IReadOnlyList<SurveyQuestion> questions)
+    {
+        SurveyQuestionsPanel.Children.Clear();
+        foreach (SurveyQuestion question in questions)
+        {
+            SurveyQuestionsPanel.Children.Add(new TextBlock
+            {
+                Text = question.Text,
+                Style = (Style)FindResource("ScreenSubtitle"),
+                FontSize = 15,
+                TextWrapping = TextWrapping.Wrap,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0, 12, 0, 4),
+            });
+            var answerBox = new TextBox { Tag = question.SurveyQuestionId, Padding = new Thickness(8), FontSize = 15 };
+            SurveyQuestionsPanel.Children.Add(answerBox);
+        }
+    }
+
+    private void SubmitSurveyButton_Click(object sender, RoutedEventArgs e)
+    {
+        var answers = SurveyQuestionsPanel.Children.OfType<TextBox>()
+            .Where(box => box.Tag is int && !string.IsNullOrWhiteSpace(box.Text))
+            .Select(box => new SurveyAnswer((int)box.Tag!, box.Text.Trim()))
+            .ToList();
+        _survey.SubmitAnswers(answers);
+    }
+
+    private void SkipSurveyButton_Click(object sender, RoutedEventArgs e)
+    {
+        _survey.SubmitAnswers(Array.Empty<SurveyAnswer>());
+    }
+
     private void LoadQrCode(Uri photoUrl)
     {
         QrCodeImage.Source = LoadImage(QrCodeGenerator.GeneratePng(photoUrl.ToString()));
 
         bool qrEligibleScreen = _stateMachine.CurrentState == BoothState.Printing || _stateMachine.CurrentState == BoothState.Complete || _stateMachine.CurrentState == BoothState.Feedback;
-        QrPanel.Visibility = qrEligibleScreen ? Visibility.Visible : Visibility.Collapsed;
+        QrPanel.Visibility = qrEligibleScreen && _sharingSettings.QrEnabled ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private static BitmapImage LoadImage(byte[] png)

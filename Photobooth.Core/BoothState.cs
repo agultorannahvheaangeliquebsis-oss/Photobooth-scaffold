@@ -23,5 +23,11 @@ public enum BoothState
     Complete,
     Guestbook,
     Feedback,
+
+    /// <summary>Post-Feedback question-builder prompt (see BUILD_PLAN.md's Phase 6
+    /// scope text, ISurveyService) -- shown only when SurveySettings.Enabled is on
+    /// and there's at least one active SurveyQuestion, same "empty table = feature
+    /// invisible" reasoning FramePicker already established for Frame.</summary>
+    Survey,
     Error
 }

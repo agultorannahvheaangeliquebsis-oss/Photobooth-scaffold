@@ -1518,45 +1518,132 @@ not duplicated.
       `AdminWindow`/`MainWindow` don't read any of these settings yet
       (that's Phases 3 and 5).
 
-**Phase 2 — Capture mode expansion (BoothStateMachine) — unblocked 2026-08-31**
-- Overlaps the existing unstarted roadmap item "Alternative capture
-      formats: GIFs, Boomerangs, ... video" above — scope GIF/Boomerang/
-      Video as a `CaptureSettings.Mode` branch inside the existing
-      `Capturing` step rather than new `BoothState` values.
-- **No longer flagged as hardware-blocked.** `PtpCameraService` already
-      talks to whatever the camera bridge has on the other end of the pipe
-      -- Day 2's `--allow-webcam` verification proved the full
-      pipe/`CaptureAsync()` path end to end against this machine's UVC
-      webcam, not just the (still not attached) D3500. GIF/Boomerang are
-      just multiple `CaptureAsync()` calls composited together, so they
-      need no camera-specific code at all and can be built and verified
-      today the same way every other webcam-stand-in feature in this file
-      already has been.
-  - [ ] GIF mode: loop `ICameraService.CaptureAsync()` N times (frame
-        count/delay from `CaptureSettings`), then a new
-        `IGifComposerService` (interface + mock, same seam as everything
-        else -- real implementation via an animated-GIF-capable imaging
-        library) composites the frames into one animated GIF.
-  - [ ] Boomerang mode: same capture loop as GIF, real
-        `IGifComposerService` implementation appends the frames
-        reversed after the forward sequence (forward-then-backward loop).
-  - [ ] Video mode is the one piece that genuinely needs continuous
-        recording rather than discrete stills -- reuses the
-        `IVideoGuestbookService`/ffmpeg precedent (ordinary webcam+mic,
-        independent of the PTP pipe) rather than inventing a new capture
-        mechanism: a new `IBoothVideoService` with the same
-        Start/StopRecording shape, driven by `CaptureSettings` instead of
-        the guestbook prompt flow.
-- Real D3500 hardware is still the one thing that can't be verified from
-      this environment (same as every camera-touching feature in this
-      file) -- but that only affects the *real* PTP capture path, which
-      already works today via `PtpCameraService` for a single photo; GIF/
-      Boomerang/Video build directly on top of that same already-working
-      call, so they carry no additional hardware risk beyond what Day 2
-      already accepted.
+**Phase 2 — Capture mode expansion (BoothStateMachine) — GIF/Boomerang/
+Video all done 2026-08-31**
 
-**Phase 3 — Admin Dashboard UI (`AdminWindow.xaml`/`.cs`)**
-- [ ] Extend the existing sectioned layout (`SectionHeader`/`Row` styles)
+Overlaps the existing unstarted roadmap item "Alternative capture
+formats: GIFs, Boomerangs, ... video" above. Unblocked the same day it
+was originally flagged as hardware-risky (see the reasoning that was
+here before -- `PtpCameraService` already works against this machine's
+UVC webcam per Day 2, so GIF/Boomerang need no camera-specific code).
+
+- [x] `CaptureSettings` (Phase 1) extended with `FrameCount`/`FrameDelayMs`
+      (defaults 4/500ms, matching dslrBooth's own GIF screen defaults);
+      `schema.sql`'s `GifFrameCount`/`GifFrameDelayMs` columns and the
+      matching `DatabaseInitializer` top-up migration added alongside.
+- [x] `IGifComposerService` (interface + mock) added to `Photobooth.Core`,
+      same seam as camera/printer/branding. `MockGifComposerService`
+      copies the first frame with a `_gif`/`_boomerang` suffix (same
+      "copy with a suffix" pattern `MockPhotoBrandingService` already
+      established) and records the frame count/reversed flag it received
+      for tests/demo to assert against.
+- [x] `GdiGifComposerService` (real implementation) encodes each frame as
+      a single-image GIF via GDI+ (the only encoder GDI+ has), then
+      splices the frames' Image Descriptor + LZW data blocks together by
+      hand into one real animated GIF89a file -- no new NuGet dependency,
+      same "keeps this project dependency free" preference already
+      established for `PlaceholderImage`/branding/filter. Adds a
+      NETSCAPE2.0 Application Extension once (loop forever) and a
+      Graphic Control Extension per frame (delay, from `FrameDelayMs`).
+      **Documented known limitation:** only the first frame's color table
+      is kept as the shared palette; other frames' LZW data still indexes
+      whatever palette GDI+ chose for that frame individually. Reads
+      correctly for the real use case (frames captured back-to-back of a
+      barely-moving guest almost always get near-identical palettes) but
+      isn't spec-guaranteed for frames with genuinely different color
+      content. A fully correct version would re-quantize every frame to
+      one shared palette first -- meaningfully more work, deferred rather
+      than built speculatively.
+- [x] `BoothStateMachine`'s `Capturing` step branches on
+      `settings.Capture.Mode`: `"GIF"`/`"Boomerang"` loop
+      `ICameraService.CaptureAsync()` `FrameCount` times (with
+      `FrameDelayMs` between captures) and hand the frames to
+      `IGifComposerService.ComposeAsync(..., reversed: Mode == "Boomerang")`;
+      `"Photo"` (the default, and the only mode that existed before this)
+      is unchanged. Deliberately skips the glam filter/branding/
+      frame-overlay pipeline entirely for GIF/Boomerang -- those are all
+      single-still GDI+ operations that would either only touch the first
+      frame or corrupt the animation outright if pointed at a multi-frame
+      GIF; a real fix means compositing each effect onto every frame
+      before assembly, not attempted here, documented inline in the code.
+- [x] `BoothServices` gained a `GifComposer` property; every call site
+      updated (`MainWindow`'s composition root -> `GdiGifComposerService`,
+      `Photobooth.ConsoleDemo` -> `MockGifComposerService`, all 24
+      `Photobooth.Tests` call sites -> `MockGifComposerService`).
+- [x] **Video mode.** Needed continuous recording rather than discrete
+      stills, so it reuses the `IVideoGuestbookService`/ffmpeg precedent
+      (ordinary webcam+mic, independent of the PTP pipe) rather than
+      `ICameraService`. New `IBoothVideoService`/`BoothVideoRecording`
+      (interface + `MockBoothVideoService`), and
+      `FfmpegBoothVideoService` (real, drives ffmpeg to an mp4 the same
+      way `FfmpegVideoGuestbookService` does, reusing the same
+      `PHOTOBOOTH_FFMPEG_PATH`/`PHOTOBOOTH_WEBCAM_DEVICE_NAME`/
+      `PHOTOBOOTH_MIC_DEVICE_NAME` env vars rather than duplicating device
+      config under new names -- it's the same physical webcam/mic
+      either way). `CaptureSettings.VideoDurationSeconds` (default 10,
+      schema column + migration added alongside) drives a fixed-duration
+      recording: start, wait out the duration, stop -- no "guest taps
+      stop" UI yet, an accepted simplification for the same reason the
+      guestbook recording's 60s safety-net timeout already is one.
+  - [x] `BoothStateMachine`'s mode branch renamed `isBurstMode` ->
+        `isNonPrintableCapture` and extended to include `"Video"`
+        alongside `"GIF"`/`"Boomerang"` -- it now also guards the
+        `Printing` state itself (not just `FramePicker`), so Video mode
+        goes straight from `Reviewing` to `Complete` with no `Printing`
+        state, no `IPrinterService.PrintAsync` call, and no `Print` row --
+        dslrBooth's own Video mode is share-only too, and there's no
+        sane way to hand a video file to `SpoolerPrinterService`/GDI+
+        anyway. Not printing doesn't affect the session's outcome
+        otherwise -- `Complete`, the free-event `Payment` row, upload,
+        and email all still happen exactly as they do for Photo mode.
+  - [x] `BoothServices` gained a `BoothVideo` property; every call site
+        updated the same way `GifComposer` was (`MainWindow` ->
+        `FfmpegBoothVideoService`, `ConsoleDemo`/all 26
+        `Photobooth.Tests` call sites -> `MockBoothVideoService`).
+- Verified via `Photobooth.Tests`: 1 new test
+      (`RunSessionAsync_VideoMode_RecordsAndSkipsPrintingEntirely` --
+      confirms the recorded file becomes `LastCapturedImagePath`, and
+      explicitly asserts `Printing`/`FramePicker` are both absent from the
+      state sequence and no `Print` row or printer call happened, not just
+      that the session completed). `dotnet test` -- **124 passed, 0
+      failed**, up from 123.
+- Verified via `Photobooth.ConsoleDemo`: new session 20 (Video mode, 1s
+      recording for a fast demo) shows the real state sequence
+      `Reviewing -> Complete` (no `Printing` in between), `Recorded file`
+      matches `Final photo path`, `Printed this session: False (false is
+      correct...)`, and the `.mp4` still gets uploaded and emailed
+      correctly, same as any other session's final artifact.
+- (GIF/Boomerang verification details below are from earlier the same
+      day, unchanged by adding Video.) Verified via `Photobooth.Tests`: 4
+      new tests. `GdiGifComposerServiceTests`
+      runs the real GDI+ path against real `MockCameraService`-captured
+      frames and confirms a genuine `GIF89a`-signed file comes out with
+      the right frame count via `Image.GetFrameCount(FrameDimension.Time)`
+      -- 3 frames in for GIF mode, 6 frames out for Boomerang mode with 4
+      frames in (4 forward + 2 backward, not repeating the two end
+      frames) -- proving the splice math is correct, not just that a file
+      got written. `BoothStateMachineTests` adds GIF-mode (confirms
+      composer received 3 frames, `reversed: false`, `_gif` in the final
+      path, branding/filter/`FramePicker` all skipped) and Boomerang-mode
+      (confirms `reversed: true`, `_boomerang` in the path) cases.
+      `dotnet test` -- **123 passed, 0 failed**, up from 119.
+- Verified via `Photobooth.ConsoleDemo`: two new sessions (18: GIF, 3
+      frames; 19: Boomerang, 4 frames) added, simulating an admin flipping
+      `CaptureSettings.Mode` the same way every other admin-editable
+      setting in this demo already does. Session 19's real output:
+      `Frames composed: 4 (reversed: True)`, final path
+      `mock_0019_..._boomerang.gif`, uploaded and emailed correctly like
+      any other session.
+- Verified via `dotnet build Photobooth.sln`: clean, 0 warnings, 0
+      errors, all 7 projects.
+- **Not yet verified:** real D3500/real webcam hardware (same recurring
+      gap as every camera-touching feature in this file -- the mock/GDI+
+      path is fully exercised, the live `PtpCameraService` capture loop
+      for GIF/Boomerang specifically has not been run against physical
+      hardware, only against `MockCameraService`).
+
+**Phase 3 — Admin Dashboard UI (`AdminWindow.xaml`/`.cs`) — done 2026-08-31**
+- [x] Extend the existing sectioned layout (`SectionHeader`/`Row` styles)
       with new sections once Phase 1 settings exist: Capture Settings,
       Effects & Stickers (beauty filter/watermark/filters-mode — beauty
       filter overlaps the existing "Glam Booth mode" roadmap item),
@@ -1569,20 +1656,145 @@ not duplicated.
       question-builder, and the visual Screen Editor were cut from this
       "out of scope" list on 2026-08-31 -- see Phase 6 below, they're in
       scope now.)
+- `LocationRepository` gained `GetAllAsync`/`LocationRecord` coverage for
+  all 8 Phase 1 setting groups (same columns/order `SqlBoothSettingsProvider`
+  already reads) plus a new `UpdateDslrBoothParitySettingsAsync` write path,
+  kept separate from `UpdateSettingsAsync`/`UpdateThemeAsync` for the same
+  "don't force an unrelated section to validate" reason those two are
+  already split. `ScreenSettings` has no editable UI yet (its guest-facing
+  consumption is Phase 5, not this phase) so `AdminWindow` round-trips
+  whatever it loaded straight back through on save instead of resetting it.
+- `AdminWindow` gained seven new sections (Capture Settings, Effects &
+  Stickers, Green Screen, Survey, Disclaimer, Sharing Settings, Print
+  Setup extensions), reusing the existing `SectionHeader`/`Row` styles,
+  radio-button-group pattern (`CaptureMode`/`FiltersMode`/`PrintSharpening`
+  each mirror their schema `CHECK` constraint's valid values), and the
+  browse-and-copy-to-`Assets/<Folder>` pattern already established for
+  frame images and the theme logo (watermark → `Assets/Watermarks`, green
+  screen background → `Assets/GreenScreen`). One new "Save
+  Capture/Effects/Sharing Settings" button/status text for the whole
+  group, following the one-save-button-per-section precedent, with the
+  same defensive numeric validation and Firebrick/MutedBrush status-text
+  style as `SaveSettingsButton_Click`.
+- Verified via `dotnet build Photobooth.sln`: clean, 0 warnings, 0
+  errors, all 7 projects. `dotnet test`: 124 passed, 0 failed (no
+  regressions -- unchanged from the pre-existing count; no new tests
+  added, this phase is UI plus a repository write path, no new
+  `BoothStateMachine`-observable behavior to test).
+- **Not yet verified:** the new sections haven't been seen rendered,
+  same interactive-desktop gap as `AdminWindow`'s existing dashboard
+  section and `ConsentView`/`PaymentView` before it.
 
-**Phase 4 — Print Template Designer (`PrintTemplateEditorWindow`)**
-- [ ] Extend existing editor (already covers `PrintTemplateElement` =
+**Phase 4 — Print Template Designer (`PrintTemplateEditorWindow`) — done 2026-08-31**
+- [x] Extend existing editor (already covers `PrintTemplateElement` =
       dslrBooth's layers) with a layer list panel and alignment tools if
       not already present. Paper size/orientation already covered by
       `PrintLayout`/`PrintWidthInches`/`PrintHeightInches`.
+- Confirmed neither piece existed yet by reading the window's full
+      `.xaml`/`.xaml.cs` before writing anything: no list control of any
+      kind, no alignment buttons -- only free-drag/resize on the canvas
+      and one flat "Selected element" property panel.
+- Layer list panel: a `ListBox` (`LayerListBox`) added above "Selected
+      element", populated from `_elements` ("Text: <text>" / "Logo" per
+      row) via a new `RefreshLayerList()`, called after every add/delete
+      and reorder. Selecting a row calls the existing `SelectElement(index)`
+      (guarded by a new `_suppressLayerListEvents` flag, the same
+      round-trip-guard pattern `_suppressPropertyEvents` already uses for
+      the property panel); `SelectElement` now also pushes selection back
+      into `LayerListBox.SelectedIndex` so canvas clicks and list clicks
+      stay in sync both directions.
+- Alignment tools: six buttons (Left/Center/Right, Top/Middle/Bottom)
+      that set the selected element's `XPercent`/`YPercent` against the
+      canvas edges (e.g. right = `1 - WidthPercent`, center = `(1 -
+      WidthPercent) / 2`) via the same `with { }` pattern
+      `ElementContainer_MouseLeftButtonUp` already uses, then
+      `PositionVisual(index)` + `RefreshPreview()`.
+- Z-order: read `PrintCompositor.RenderPreview`/its `foreach
+      (PrintTemplateElement element in template.Elements)` loop first to
+      confirm list order really is paint order (later elements draw over
+      earlier ones) before adding "Bring to front"/"Send to back" buttons
+      -- confirmed, so both buttons just move the element to the end/start
+      of `_elements`.
+- Reordering approach: up/down buttons, not drag-to-reorder in the list.
+      `_elements`/`_containers`/`_handles` are three parallel lists every
+      existing handler indexes into (`_containers[index]`,
+      `SelectElement`, the drag/resize handlers); a `ListBox` drag-reorder
+      gesture would need its own drag-tracking state independent of the
+      canvas's existing `_draggingIndex`/`_resizing` fields, doubling the
+      surface area for keeping three lists in sync for a photobooth admin
+      screen that will rarely hold more than a handful of layers. One
+      `MoveSelectedLayerTo(newIndex)` handles up/down, front, and back
+      alike: removes the element/container/handle at the same index from
+      all three lists, re-inserts at `newIndex`, then rebuilds
+      `ElementsCanvas.Children` in list order (Canvas paints children in
+      collection order, which must track `_elements`' order after a
+      move).
+- Verified via `dotnet build Photobooth.sln`: clean, 0 warnings, 0
+      errors, all 7 projects. `dotnet test`: 124 passed, 0 failed -- no
+      regressions vs. Phase 3/5's count; `PrintTemplateEditorWindow` has
+      no direct unit tests (mouse/UI wiring, per its own doc comment) and
+      no pure logic was factored out worth a separate test -- the
+      alignment math is a few lines of arithmetic identical in shape to
+      what `ElementContainer_MouseLeftButtonUp` already does inline,
+      unguarded by a test today either.
+- **Not yet verified:** the new layer list and alignment buttons haven't
+      been seen rendered or clicked through, same interactive-desktop gap
+      every WPF screen in this project has.
 
-**Phase 5 — MainWindow guest-facing screens**
-- [ ] Apply `ScreenSettings` to existing state-bound views: `Idle` view
+**Phase 5 — MainWindow guest-facing screens — done 2026-08-31**
+- [x] Apply `ScreenSettings` to existing state-bound views: `Idle` view
       reads `BoothIconsEnabled`/`ShowLiveView`; `Capturing` view reads
       `MirrorLiveView`/`LiveViewRotation`/countdown color.
-- [ ] Post-`Complete` sharing step: surface `LastPhotoUrl` as QR (reuses
+- [x] Post-`Complete` sharing step: surface `LastPhotoUrl` as QR (reuses
       existing `CloudUpload`/`PhotoUploaded`) gated by
       `SharingSettings` Email/SMS/QR toggles.
+- The scope text's screen names don't quite match where these things
+      actually live in `MainWindow.xaml`: the live camera feed and the
+      countdown number both render in `CountdownView`, not `IdleView` or
+      `CapturingView` (`IdleView` is just "Tap to start" text, `CapturingView`
+      is just "Say cheese!" text -- neither has ever had a live-view or icon
+      element). `ShowLiveView`/`MirrorLiveView`/`LiveViewRotation` are wired
+      to the one place a live feed actually renders (`LiveViewImage` inside
+      `CountdownView`): `ShowState` now only starts `_liveViewTimer` (and
+      shows the `Image`) when `ScreenSettings.ShowLiveView` is true --
+      collapsed and the timer left stopped otherwise, so a booth with the
+      feed off doesn't keep polling the camera pipe for frames nobody sees.
+      A new `ApplyLiveViewTransform()` (called from `ApplyThemeAsync`
+      alongside the existing theme re-read) sets `LiveViewImage.LayoutTransform`
+      to a `ScaleTransform(-1,1)` for `MirrorLiveView` and a `RotateTransform`
+      for `LiveViewRotation` -- only 0/90/180/270 are honored (the schema
+      column has no `CHECK` constraint unlike `CaptureMode`/`FiltersMode`, so
+      an out-of-range value just falls back to unrotated rather than throwing).
+- `BoothIconsEnabled` has no on-screen icon UI to gate: nothing resembling
+      dslrBooth's decorative Screen Editor icons exists in `IdleView` today.
+      Rather than inventing new icon elements this phase didn't ask for, it's
+      read into a `_screenSettings` field (same re-read-at-Idle cadence as
+      everything else) for Phase 6's Screen Editor to consume once that UI
+      exists.
+- "Countdown color" was already satisfied structurally, not new code:
+      `CountdownNumber`'s `Foreground` was already bound to
+      `{StaticResource AccentBrush}`, which `ApplyThemeAsync` already
+      repaints from `BoothTheme.AccentColorHex` on every Idle transition --
+      confirmed by reading `MainWindow.xaml`, no separate countdown-color
+      setting exists in `ScreenSettings` to add.
+- QR gating: `QrPanel.Visibility` (set in both `ShowState` and `LoadQrCode`,
+      the two existing call sites) now additionally requires
+      `SharingSettings.QrEnabled`, read into a new `_sharingSettings` field
+      alongside `_screenSettings`. `EmailEnabled`/`SmsEnabled` end up as
+      no-ops in `MainWindow` for now: email delivery (`IEmailDeliveryService`,
+      triggered from `BoothStateMachine`'s consent-driven opt-in) isn't
+      QR-adjacent and isn't gated by this setting anywhere yet, and there is
+      no `ISmsDeliveryService`/SMS feature in `Photobooth.Core` at all --
+      confirmed by grep. `QrEnabled` is the only one of the three toggles
+      with a real guest-facing surface to gate today.
+- Verified via `dotnet build Photobooth.sln`: clean, 0 warnings, 0 errors,
+      all 7 projects. `dotnet test`: 124 passed, 0 failed -- unchanged from
+      Phase 3's count; no new `BoothStateMachine`-observable behavior was
+      added (the changes are `MainWindow` visibility/transform wiring only),
+      so no new unit tests were added either.
+- **Not yet verified:** the transform/visibility changes haven't been seen
+      rendered, same interactive-desktop gap as every other `MainWindow`
+      change in this file.
 
 **Phase 6 — Virtual Attendant, Survey question-builder, visual Screen
 Editor (added to scope 2026-08-31, was previously the open question below)**
@@ -1590,23 +1802,45 @@ Editor (added to scope 2026-08-31, was previously the open question below)**
 - **Virtual Attendant** — per-stage audio/video cues, not a new
       `BoothState` (the existing states already mark every stage dslrBooth
       cues: Consent, Countdown, Capturing, Reviewing, Printing, Complete).
-  - [ ] New `VirtualAttendantClip` table (`LocationId`, `Stage`, `FilePath`,
+  - [x] New `VirtualAttendantClip` table (`LocationId`, `Stage`, `FilePath`,
         `SortOrder`) -- a list per stage, not a single settings row, since
         dslrBooth's Randomize toggle needs a pool to pick from.
-  - [ ] `VirtualAttendantSettings` record on `BoothSettings` (`Enabled`,
+  - [x] `VirtualAttendantSettings` record on `BoothSettings` (`Enabled`,
         `Style`, per-stage `Randomize` flags).
-  - [ ] `IVirtualAttendantService` (interface + mock, same seam as
+  - [x] `IVirtualAttendantService` (interface + mock, same seam as
         everything else) -- `BoothStateMachine` calls it once per
         `SetState`, it picks (or randomizes) a clip for that stage and
         raises a new `AttendantCueChanged` event; `MainWindow` plays the
         clip alongside whatever screen is already showing. Purely
         additive to existing state transitions, no new states.
+- **Virtual Attendant — done 2026-08-31.** `Randomize` is six fixed bool
+      properties on `VirtualAttendantSettings` (`RandomizeConsent` ...
+      `RandomizeComplete`), not a `Dictionary<string,bool>` -- the cue-worthy
+      stages are a small, fixed set (matches `ScreenSettings`/`EffectsSettings`'s
+      fixed-property style, not a bag of flags). `BoothStateMachine.SetState` now
+      fires `_ = FireAttendantCueAsync(state)` after `StateChanged?.Invoke` --
+      fire-and-forget, wrapped in its own try/catch (same "best-effort, never
+      disrupts a session" shape the Feedback/Guestbook blocks already use), so a
+      slow or failing cue lookup can never delay or interrupt a transition.
+      `MockVirtualAttendantService` defaults to disabled with an empty clip pool
+      (matches a fresh table); `SqlVirtualAttendantService` (real, not mocked --
+      same reasoning `UiFeedbackService` is real, since picking a clip and
+      reading settings needs no external hardware/credentials) reads settings +
+      pool fresh on every call, same "next guest, no restart" cadence as
+      everything else. `MainWindow` plays the cue via a new zero-size
+      `MediaElement` (`LoadedBehavior`/`UnloadedBehavior="Manual"`, driven purely
+      by `PlayAttendantCue`) placed outside the state-bound views so it can play
+      alongside whatever screen is showing, exactly as scoped. Admin UI for
+      managing the clip pool itself (upload/reorder/assign-to-stage) is **not
+      built** -- the scope text's checklist doesn't ask for one (unlike Survey's
+      explicit "Admin UI" bullet below), so clips must be inserted directly for
+      now; noted as an open gap.
 - **Survey question-builder** — dslrBooth's "+ Question"/"View Responses"
       screen, currently just the `SurveySettings.Enabled` on/off switch
       from Phase 1.
-  - [ ] New `SurveyQuestion` (`LocationId`, `Text`, `SortOrder`) and
+  - [x] New `SurveyQuestion` (`LocationId`, `Text`, `SortOrder`) and
         `SurveyResponse` (`SessionId`, `SurveyQuestionId`, `Answer`) tables.
-  - [ ] `ISurveyService` (interface + mock) -- `GetActiveQuestionsAsync`,
+  - [x] `ISurveyService` (interface + mock) -- `GetActiveQuestionsAsync`,
         `RecordResponsesAsync`. New `BoothState.Survey`, shown after
         `Feedback` (same "best-effort, wrapped in its own try/catch, never
         turns a completed session into an Error one" pattern the Feedback
@@ -1614,32 +1848,121 @@ Editor (added to scope 2026-08-31, was previously the open question below)**
         `SurveySettings.Enabled` is off or there are no active questions
         -- same "empty table = feature invisible" reasoning `Frame`/
         `FramePicker` already established.
-  - [ ] Admin UI: `+ Question` add/remove list and a `View Responses`
+  - [x] Admin UI: `+ Question` add/remove list and a `View Responses`
         list, in `AdminWindow`'s new Survey section from Phase 3.
+- **Survey question-builder — done 2026-08-31.** `ISurveyService` ended up
+      with a third method, `CollectAnswersAsync(questions)`, beyond the scope
+      text's literal two -- `BoothStateMachine` needs something to await for
+      the guest's actual answers before it has anything to hand
+      `RecordResponsesAsync`, same "state waits on a service call" shape
+      `IFeedbackService.CollectAsync`/`IFrameSelectionService.SelectFrameAsync`
+      already use. `SqlSurveyService` (real, in `Photobooth.Data` rather than
+      `Photobooth.Core` like `UiFeedbackService`, since this one also needs
+      direct SQL access for `GetActiveQuestionsAsync`/`RecordResponsesAsync`)
+      bridges the wait to WPF via the same `TaskCompletionSource` handoff
+      `UiFeedbackService` established, raising `AnswersRequested` for
+      `MainWindow` to show `SurveyView`. `BoothStateMachine.RunSessionAsync`
+      runs the Survey block right after the existing Feedback
+      try/catch, inside its own try/catch, gated by `settings.Survey.Enabled
+      && questions.Count > 0` -- mirrors Feedback's shape exactly, including
+      "the state still shows, recording is just conditional" for a guest who
+      taps Skip. `MainWindow.SurveyView` renders one `TextBlock`+`TextBox`
+      pair per active question via `ShowSurveyQuestions`, and Submit/Skip both
+      call `_survey.SubmitAnswers` (empty list on Skip) to complete the
+      pending `TaskCompletionSource`. `AdminWindow`'s existing Survey section
+      (Phase 3's `SurveyEnabledCheckBox`) now also has a `+ Question`
+      add/delete `ItemsControl` (saved immediately via `SurveyRepository`,
+      same as the Frame library) and a read-only `View Responses` list
+      (`SurveyRepository.GetResponsesByLocationAsync`, joined to question text,
+      newest first).
 - **Visual Screen Editor** — dslrBooth's drag/resize canvas for Welcome/
       Capture/Sharing screens. Mapped onto the same
       percent-of-canvas element model `PrintTemplateElement` /
       `PrintTemplateEditorWindow` already use for prints, not a new UI
       paradigm.
-  - [ ] New `ScreenTemplateElement` table (`LocationId`, `Screen` --
+  - [x] New `ScreenTemplateElement` table (`LocationId`, `Screen` --
         `'Welcome'|'Capture'|'Sharing'`, `Kind` -- `'Text'|'Image'|'Shape'`,
         `X/Y/Width/HeightPercent`, plus the same text/image/font/color
         columns `PrintTemplateElement` already has).
-  - [ ] New `ScreenTemplateEditorWindow` (WPF), sibling to
+  - [x] New `ScreenTemplateEditorWindow` (WPF), sibling to
         `PrintTemplateEditorWindow`, reusing its drag/resize/percent-math
         approach across three tabs (Welcome/Capture/Sharing) instead of
         one canvas.
-  - [ ] `MainWindow`'s `Idle`/`Countdown`/sharing views render the saved
+  - [x] `MainWindow`'s `Idle`/`Countdown`/sharing views render the saved
         elements as an overlay on top of the existing state-bound
         controls, the same way `PrintCompositor` overlays
         `PrintTemplateElement` rows onto the captured photo at print time.
+- **Visual Screen Editor — done 2026-08-31.** `ScreenTemplateElement`
+      (`Photobooth.Core`) mirrors `PrintTemplateElement`'s column set plus
+      `Screen` (`Welcome`/`Capture`/`Sharing` -- `Capture` maps to
+      `CountdownView`, the only screen with a live camera feed, same mapping
+      Phase 5 already established for `ScreenSettings`; `Sharing` maps to the
+      post-`Complete` step, since there's no literal `BoothState.Sharing`) and
+      a third `Kind`, `Shape` (a plain color rectangle, reusing `ColorHex` as
+      its fill -- no separate `ShapeColorHex` column, same "one Kind,
+      differently-used fields" shape `PrintTemplateElementKind` already
+      established for `Text` vs `Logo`). `ScreenTemplateElementRepository`
+      (`Photobooth.Data`) mirrors `PrintTemplateElementRepository`'s
+      delete-then-reinsert `ReplaceAllAsync`, just across all three screens'
+      rows in one transaction instead of one screen's.
+      `ScreenTemplateEditorWindow` reuses `PrintTemplateEditorWindow`'s exact
+      drag/resize/percent-math handlers (`ElementContainer_MouseLeftButtonDown/
+      Move/Up`, `Handle_Mouse*`, `PositionVisual`) verbatim, copied rather than
+      factored into a shared base class -- but deliberately does **not**
+      triple the canvas: a `TabControl` used purely as a screen selector (no
+      per-tab content) swaps which screen's `List<ScreenTemplateElement>` one
+      shared `ElementsCanvas` is showing/editing
+      (`_elementsByScreen[_activeScreen]`, rebuilt via `LoadActiveScreen` on
+      `ScreenTabControl_SelectionChanged`), so there's one drag/resize call
+      site, not three. This trims Phase 4's layer-reorder/z-order/alignment
+      buttons and `PrintCompositor`-backed rendered preview -- neither is in
+      the Phase 6 scope text's checklist (only "drag/resize/percent-math" is),
+      and `ElementsCanvas` here is the live view itself (placed WPF elements),
+      not a bitmap composited from a captured photo, so there's nothing for a
+      `PrintCompositor`-style preview renderer to do. `AdminWindow` gets one
+      new "Edit screen layout..." button (Settings section, next to "Edit
+      print template...") opening the editor with the location's existing
+      elements loaded.
+      `MainWindow` renders the live overlay via three `IsHitTestVisible="False"`
+      `Canvas` elements (`WelcomeOverlayCanvas`/`CaptureOverlayCanvas`/
+      `SharingOverlayCanvas`) layered into the same state-bound `Grid` as every
+      other view, each `Visibility`-bound to its corresponding view
+      (`{Binding Visibility, ElementName=IdleView}` etc.) so it only shows
+      when that screen does; `IsHitTestVisible="False"` so a placed element
+      can never steal a guest's tap from the real controls underneath (e.g.
+      `Surface_MouseLeftButtonUp`'s tap-to-start on `Idle`). `RenderScreenOverlay`
+      positions `TextBlock`/`Image`/`Rectangle` by percent of the canvas's own
+      `ActualWidth`/`ActualHeight` directly in code-behind -- the "WPF-live-
+      rendering equivalent" of `PrintCompositor`'s percent-of-cell math the
+      task brief asked for, not a bitmap composite, since these are live
+      interactive screens. Elements are fetched fresh in `ApplyThemeAsync`
+      (same "next guest, no restart" cadence as the theme/settings reads
+      already there), and each canvas also re-renders on its own `SizeChanged`
+      (`ActualWidth`/`Height` are 0 until the first layout pass, so
+      `ApplyThemeAsync`'s very first call would otherwise render into an
+      empty canvas).
+      `ScreenTemplateElementTests.cs` covers `ScreenTemplateElement.IsValid`
+      (same shape as `PrintTemplateElementTests`, plus a case for `Shape`
+      needing neither `Text` nor `ImagePath`) -- the only pure logic this
+      sub-feature has; `ScreenTemplateEditorWindow`'s drag/resize wiring and
+      `MainWindow`'s overlay rendering are UI-only, same "no direct unit
+      tests, mouse/UI wiring isn't something a unit test can exercise" gap
+      `PrintTemplateEditorWindow` already carries -- **not yet seen rendered
+      or clicked through**, same interactive-desktop gap as every WPF screen
+      in this project.
 
-**Build order (updated 2026-08-31, reordered same day):** Phase 1 (done)
-→ **Phase 2 (next)** → Phase 3 → Phase 5 → Phase 4 → Phase 6. Moved
-Phase 2 up from last to second on request, now that it's confirmed
-unblocked (see above) -- it's independent of Phases 3-6, so there's no
-ordering cost to building it now instead of after the admin UI work.
-Phase 6 still sits after Phase 4 because all three of its pieces extend
-patterns Phases 3-4 establish first (settings sections, the
-percent-of-canvas editor); building it any earlier would mean
-re-deriving those patterns from scratch.
+**Build order (updated 2026-08-31):** Phase 1 (done) → Phase 2 (done) →
+Phase 3 (done) → Phase 5 (done) → Phase 4 (done) → Phase 6 (done). All
+six phases of this build plan are now complete. Phase 6 sat after Phase 4
+because all three of its pieces extend patterns Phases 3-4 establish first
+(settings sections, the percent-of-canvas editor) -- confirmed true in
+practice: Virtual Attendant reused `BoothSettings`'s nested-record-per-
+section shape, Survey extended Phase 3's `AdminWindow` section instead of
+duplicating it, and the Visual Screen Editor reused Phase 4's
+`PrintTemplateEditorWindow` drag/resize math directly rather than
+re-deriving it. Every phase's own entry above still carries its own
+"not yet verified" interactive-desktop caveats where they apply (mouse/UI
+wiring across `PrintTemplateEditorWindow`, `ScreenTemplateEditorWindow`,
+and `MainWindow`'s screen-specific rendering) -- those remain open gaps
+for whoever next runs this app on a real touchscreen, not a re-opened
+part of this build plan's own checklist.

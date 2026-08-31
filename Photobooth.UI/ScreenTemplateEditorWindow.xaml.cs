@@ -1,11 +1,9 @@
 using System.IO;
 using System.Linq;
 using IoPath = System.IO.Path;
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
@@ -15,34 +13,44 @@ using Photobooth.Data;
 namespace Photobooth.UI;
 
 /// <summary>
-/// Drag-and-drop visual editor for a print template's logo/text overlays.
-/// PreviewImage and ElementsCanvas occupy the exact same position/size, so a
-/// drag delta measured on the canvas maps 1:1 onto the rendered preview
-/// below it -- no separate scaling math needed to translate between them.
-/// The preview itself is rendered by PrintCompositor, the same code
-/// SpoolerPrinterService uses at print time, so what's shown here is
-/// provably what actually prints, not a second renderer that merely looks
-/// similar. Every drag/resize/property edit re-renders that preview so it
-/// stays live. Not yet seen rendered or clicked through -- same
-/// interactive-desktop gap every WPF screen in this project has; the
-/// percent math and compositing underneath it are unit-tested separately
-/// (PrintTemplateTests, PrintCompositorTests) since mouse-event wiring
-/// itself isn't something a unit test can exercise.
+/// Drag-and-drop visual editor for the Welcome/Capture/Sharing guest-facing
+/// screens' text/image/shape overlays -- the Visual Screen Editor from
+/// BUILD_PLAN.md's Phase 6. Reuses PrintTemplateEditorWindow's percent-of-canvas
+/// drag/resize math (ElementsCanvas maps 1:1 to XPercent/YPercent/WidthPercent/
+/// HeightPercent), but with one shared ElementsCanvas whose contents swap
+/// per-tab rather than three separate canvases -- factoring the canvas/list/
+/// property-panel state into a reusable per-tab structure keeps this
+/// maintainable without either tripling ~700 lines of drag/resize code three
+/// times over, or inventing a bigger abstraction layer than three tabs over one
+/// element model actually needs. Unlike the print editor, there's no
+/// PrintCompositor-rendered preview underneath: ElementsCanvas itself is the
+/// live view, since these are placed WPF elements, not composited onto a
+/// captured photo. Not yet seen rendered or clicked through -- same
+/// interactive-desktop gap every WPF screen in this project has.
 /// </summary>
-public partial class PrintTemplateEditorWindow : Window
+public partial class ScreenTemplateEditorWindow : Window
 {
-    private const int PreviewWidthPx = 500;
+    private const int CanvasWidth = 640;
+    private const int CanvasHeight = 400;
     private const double HandleSize = 12;
     private const double MinElementSizePx = 20;
 
     private readonly int _locationId;
-    private readonly PrintTemplate _initialTemplate;
-    private readonly List<PrintTemplateElement> _elements;
+
+    /// <summary>Working element lists, one per screen -- populated from the
+    /// existing rows at load, mutated in place as the admin edits, and flattened
+    /// back into one list on Save.</summary>
+    private readonly Dictionary<ScreenTemplateScreen, List<ScreenTemplateElement>> _elementsByScreen = new()
+    {
+        [ScreenTemplateScreen.Welcome] = new(),
+        [ScreenTemplateScreen.Capture] = new(),
+        [ScreenTemplateScreen.Sharing] = new(),
+    };
+
+    private ScreenTemplateScreen _activeScreen = ScreenTemplateScreen.Welcome;
+    private List<ScreenTemplateElement> _elements => _elementsByScreen[_activeScreen];
     private readonly List<Border> _containers = new();
     private readonly List<Rectangle> _handles = new();
-    private readonly string _samplePhotoPath;
-    private readonly int _canvasWidth;
-    private readonly int _canvasHeight;
 
     private int _selectedIndex = -1;
     private int _draggingIndex = -1;
@@ -52,18 +60,43 @@ public partial class PrintTemplateEditorWindow : Window
     private bool _suppressPropertyEvents;
     private bool _suppressLayerListEvents;
 
-    public PrintTemplateEditorWindow(PrintTemplate template, int locationId)
+    public ScreenTemplateEditorWindow(IReadOnlyList<ScreenTemplateElement> existingElements, int locationId)
     {
         InitializeComponent();
 
         _locationId = locationId;
-        _initialTemplate = template;
-        _elements = template.Elements.ToList();
-        _samplePhotoPath = FindOrCreateSamplePhoto();
+        foreach (ScreenTemplateElement element in existingElements)
+        {
+            _elementsByScreen[element.Screen].Add(element);
+        }
 
-        (_canvasWidth, _canvasHeight) = PrintCompositor.ComputePreviewDimensions(template, PreviewWidthPx);
-        PreviewHost.Width = _canvasWidth;
-        PreviewHost.Height = _canvasHeight;
+        ElementsCanvas.Width = CanvasWidth;
+        ElementsCanvas.Height = CanvasHeight;
+
+        LoadActiveScreen();
+    }
+
+    private void ScreenTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ScreenTabControl.SelectedItem is not TabItem { Tag: string tag } || !Enum.TryParse(tag, out ScreenTemplateScreen screen))
+        {
+            return;
+        }
+
+        _activeScreen = screen;
+        LoadActiveScreen();
+    }
+
+    /// <summary>Rebuilds ElementsCanvas's visuals for whichever screen is now
+    /// active -- same "clear and re-add" approach MoveSelectedLayerTo already
+    /// uses in PrintTemplateEditorWindow for a re-order, just for a full tab
+    /// switch instead.</summary>
+    private void LoadActiveScreen()
+    {
+        ElementsCanvas.Children.Clear();
+        _containers.Clear();
+        _handles.Clear();
+        _selectedIndex = -1;
 
         for (int i = 0; i < _elements.Count; i++)
         {
@@ -71,85 +104,16 @@ public partial class PrintTemplateEditorWindow : Window
         }
 
         RefreshLayerList();
-        RefreshPreview();
-    }
-
-    /// <summary>The most recently captured photo, if any -- falls back to a
-    /// generated placeholder so the editor works even with an empty ./captures
-    /// folder (e.g. this dev environment, with no camera hardware attached).</summary>
-    private static string FindOrCreateSamplePhoto()
-    {
-        if (Directory.Exists("./captures"))
-        {
-            FileInfo? newest = new DirectoryInfo("./captures").GetFiles()
-                .OrderByDescending(f => f.LastWriteTimeUtc)
-                .FirstOrDefault();
-            if (newest is not null)
-            {
-                return newest.FullName;
-            }
-        }
-
-        string placeholderPath = IoPath.Combine(IoPath.GetTempPath(), "photobooth_template_editor_placeholder.jpg");
-        if (!File.Exists(placeholderPath))
-        {
-            using var bitmap = new System.Drawing.Bitmap(800, 1200);
-            using (System.Drawing.Graphics graphics = System.Drawing.Graphics.FromImage(bitmap))
-            {
-                graphics.Clear(System.Drawing.Color.Gainsboro);
-                using var font = new System.Drawing.Font("Segoe UI", 36);
-                using var format = new System.Drawing.StringFormat
-                {
-                    Alignment = System.Drawing.StringAlignment.Center,
-                    LineAlignment = System.Drawing.StringAlignment.Center,
-                };
-                graphics.DrawString("Sample Photo", font, System.Drawing.Brushes.DimGray, new System.Drawing.RectangleF(0, 0, 800, 1200), format);
-            }
-            bitmap.Save(placeholderPath, System.Drawing.Imaging.ImageFormat.Jpeg);
-        }
-        return placeholderPath;
-    }
-
-    private void RefreshPreview()
-    {
-        try
-        {
-            PrintTemplate workingTemplate = _initialTemplate with { Elements = _elements };
-            using System.Drawing.Bitmap rendered = PrintCompositor.RenderPreview(_samplePhotoPath, workingTemplate, PreviewWidthPx);
-            PreviewImage.Source = ToBitmapSource(rendered);
-        }
-        catch (Exception ex)
-        {
-            EditorStatusText.Text = $"Couldn't render preview: {ex.Message}";
-            EditorStatusText.Foreground = Brushes.Firebrick;
-        }
-    }
-
-    [DllImport("gdi32.dll")]
-    private static extern bool DeleteObject(IntPtr hObject);
-
-    private static BitmapSource ToBitmapSource(System.Drawing.Bitmap bitmap)
-    {
-        IntPtr hBitmap = bitmap.GetHbitmap();
-        try
-        {
-            BitmapSource source = Imaging.CreateBitmapSourceFromHBitmap(
-                hBitmap, IntPtr.Zero, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
-            source.Freeze();
-            return source;
-        }
-        finally
-        {
-            DeleteObject(hBitmap);
-        }
+        SelectElement(-1);
     }
 
     private void AddVisualForElement(int index)
     {
-        PrintTemplateElement element = _elements[index];
+        ScreenTemplateElement element = _elements[index];
 
-        FrameworkElement content = element.Kind == PrintTemplateElementKind.Text
-            ? new TextBlock
+        FrameworkElement content = element.Kind switch
+        {
+            ScreenTemplateElementKind.Text => new TextBlock
             {
                 Text = element.Text,
                 FontWeight = element.Bold ? FontWeights.Bold : FontWeights.Normal,
@@ -157,14 +121,16 @@ public partial class PrintTemplateEditorWindow : Window
                 TextAlignment = TextAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextWrapping = TextWrapping.Wrap,
-            }
-            : new Image
+            },
+            ScreenTemplateElementKind.Image => new Image
             {
                 Source = element.ImagePath is string path && File.Exists(path)
                     ? new BitmapImage(new Uri(IoPath.GetFullPath(path)))
                     : null,
                 Stretch = Stretch.Uniform,
-            };
+            },
+            _ => new System.Windows.Shapes.Rectangle { Fill = HexToBrush(element.ColorHex) },
+        };
 
         var container = new Border
         {
@@ -198,14 +164,14 @@ public partial class PrintTemplateEditorWindow : Window
 
     private void PositionVisual(int index)
     {
-        PrintTemplateElement element = _elements[index];
+        ScreenTemplateElement element = _elements[index];
         Border container = _containers[index];
         Rectangle handle = _handles[index];
 
-        double left = element.XPercent * _canvasWidth;
-        double top = element.YPercent * _canvasHeight;
-        double width = element.WidthPercent * _canvasWidth;
-        double height = element.HeightPercent * _canvasHeight;
+        double left = element.XPercent * CanvasWidth;
+        double top = element.YPercent * CanvasHeight;
+        double width = element.WidthPercent * CanvasWidth;
+        double height = element.HeightPercent * CanvasHeight;
 
         Canvas.SetLeft(container, left);
         Canvas.SetTop(container, top);
@@ -248,8 +214,8 @@ public partial class PrintTemplateEditorWindow : Window
         double deltaX = current.X - _dragStartPoint.X;
         double deltaY = current.Y - _dragStartPoint.Y;
 
-        double newLeft = Math.Clamp(_dragStartLeft + deltaX, 0, Math.Max(0, _canvasWidth - container.Width));
-        double newTop = Math.Clamp(_dragStartTop + deltaY, 0, Math.Max(0, _canvasHeight - container.Height));
+        double newLeft = Math.Clamp(_dragStartLeft + deltaX, 0, Math.Max(0, CanvasWidth - container.Width));
+        double newTop = Math.Clamp(_dragStartTop + deltaY, 0, Math.Max(0, CanvasHeight - container.Height));
 
         Canvas.SetLeft(container, newLeft);
         Canvas.SetTop(container, newTop);
@@ -274,12 +240,11 @@ public partial class PrintTemplateEditorWindow : Window
         double top = Canvas.GetTop(container);
         _elements[index] = _elements[index] with
         {
-            XPercent = left / _canvasWidth,
-            YPercent = top / _canvasHeight,
+            XPercent = left / CanvasWidth,
+            YPercent = top / CanvasHeight,
         };
 
         SelectElement(index);
-        RefreshPreview();
         e.Handled = true;
     }
 
@@ -319,8 +284,8 @@ public partial class PrintTemplateEditorWindow : Window
 
         double left = Canvas.GetLeft(container);
         double top = Canvas.GetTop(container);
-        double newWidth = Math.Clamp(_dragStartWidth + deltaX, MinElementSizePx, Math.Max(MinElementSizePx, _canvasWidth - left));
-        double newHeight = Math.Clamp(_dragStartHeight + deltaY, MinElementSizePx, Math.Max(MinElementSizePx, _canvasHeight - top));
+        double newWidth = Math.Clamp(_dragStartWidth + deltaX, MinElementSizePx, Math.Max(MinElementSizePx, CanvasWidth - left));
+        double newHeight = Math.Clamp(_dragStartHeight + deltaY, MinElementSizePx, Math.Max(MinElementSizePx, CanvasHeight - top));
 
         container.Width = newWidth;
         container.Height = newHeight;
@@ -343,12 +308,11 @@ public partial class PrintTemplateEditorWindow : Window
         Border container = _containers[index];
         _elements[index] = _elements[index] with
         {
-            WidthPercent = container.Width / _canvasWidth,
-            HeightPercent = container.Height / _canvasHeight,
+            WidthPercent = container.Width / CanvasWidth,
+            HeightPercent = container.Height / CanvasHeight,
         };
 
         SelectElement(index);
-        RefreshPreview();
         e.Handled = true;
     }
 
@@ -374,42 +338,32 @@ public partial class PrintTemplateEditorWindow : Window
             _suppressLayerListEvents = false;
         }
 
-        MoveLayerUpButton.IsEnabled = index > 0;
-        MoveLayerDownButton.IsEnabled = index >= 0 && index < _elements.Count - 1;
-        bool hasSelection = index >= 0;
-        BringToFrontButton.IsEnabled = hasSelection;
-        SendToBackButton.IsEnabled = hasSelection;
-        AlignLeftButton.IsEnabled = hasSelection;
-        AlignCenterHButton.IsEnabled = hasSelection;
-        AlignRightButton.IsEnabled = hasSelection;
-        AlignTopButton.IsEnabled = hasSelection;
-        AlignCenterVButton.IsEnabled = hasSelection;
-        AlignBottomButton.IsEnabled = hasSelection;
-
         if (index < 0)
         {
             TextPropertiesPanel.Visibility = Visibility.Collapsed;
-            LogoPropertiesPanel.Visibility = Visibility.Collapsed;
+            ImagePropertiesPanel.Visibility = Visibility.Collapsed;
+            ShapePropertiesPanel.Visibility = Visibility.Collapsed;
             return;
         }
 
-        PrintTemplateElement element = _elements[index];
+        ScreenTemplateElement element = _elements[index];
         _suppressPropertyEvents = true;
         try
         {
-            if (element.Kind == PrintTemplateElementKind.Text)
+            TextPropertiesPanel.Visibility = element.Kind == ScreenTemplateElementKind.Text ? Visibility.Visible : Visibility.Collapsed;
+            ImagePropertiesPanel.Visibility = element.Kind == ScreenTemplateElementKind.Image ? Visibility.Visible : Visibility.Collapsed;
+            ShapePropertiesPanel.Visibility = element.Kind == ScreenTemplateElementKind.Shape ? Visibility.Visible : Visibility.Collapsed;
+
+            if (element.Kind == ScreenTemplateElementKind.Text)
             {
-                TextPropertiesPanel.Visibility = Visibility.Visible;
-                LogoPropertiesPanel.Visibility = Visibility.Collapsed;
                 ElementTextBox.Text = element.Text ?? string.Empty;
                 FontSizeSlider.Value = element.FontSizePercent;
                 BoldCheckBox.IsChecked = element.Bold;
                 ElementColorBox.Text = element.ColorHex;
             }
-            else
+            else if (element.Kind == ScreenTemplateElementKind.Shape)
             {
-                TextPropertiesPanel.Visibility = Visibility.Collapsed;
-                LogoPropertiesPanel.Visibility = Visibility.Visible;
+                ShapeColorBox.Text = element.ColorHex;
             }
         }
         finally
@@ -420,12 +374,16 @@ public partial class PrintTemplateEditorWindow : Window
 
     private void RefreshVisualContent(int index)
     {
-        PrintTemplateElement element = _elements[index];
+        ScreenTemplateElement element = _elements[index];
         if (_containers[index].Child is TextBlock textBlock)
         {
             textBlock.Text = element.Text;
             textBlock.FontWeight = element.Bold ? FontWeights.Bold : FontWeights.Normal;
             textBlock.Foreground = HexToBrush(element.ColorHex);
+        }
+        else if (_containers[index].Child is System.Windows.Shapes.Rectangle rectangle)
+        {
+            rectangle.Fill = HexToBrush(element.ColorHex);
         }
     }
 
@@ -450,7 +408,6 @@ public partial class PrintTemplateEditorWindow : Window
 
         _elements[_selectedIndex] = _elements[_selectedIndex] with { Text = ElementTextBox.Text };
         RefreshVisualContent(_selectedIndex);
-        RefreshPreview();
     }
 
     private void FontSizeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -461,7 +418,6 @@ public partial class PrintTemplateEditorWindow : Window
         }
 
         _elements[_selectedIndex] = _elements[_selectedIndex] with { FontSizePercent = FontSizeSlider.Value };
-        RefreshPreview();
     }
 
     private void BoldCheckBox_Click(object sender, RoutedEventArgs e)
@@ -473,7 +429,6 @@ public partial class PrintTemplateEditorWindow : Window
 
         _elements[_selectedIndex] = _elements[_selectedIndex] with { Bold = BoldCheckBox.IsChecked == true };
         RefreshVisualContent(_selectedIndex);
-        RefreshPreview();
     }
 
     private void ElementColorBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -483,51 +438,61 @@ public partial class PrintTemplateEditorWindow : Window
             return;
         }
 
-        _elements[_selectedIndex] = _elements[_selectedIndex] with { ColorHex = ElementColorBox.Text };
+        string hex = _elements[_selectedIndex].Kind == ScreenTemplateElementKind.Shape ? ShapeColorBox.Text : ElementColorBox.Text;
+        _elements[_selectedIndex] = _elements[_selectedIndex] with { ColorHex = hex };
         RefreshVisualContent(_selectedIndex);
-        RefreshPreview();
     }
 
     private void AddTextButton_Click(object sender, RoutedEventArgs e)
     {
-        var element = new PrintTemplateElement(
-            PrintTemplateElementKind.Text,
-            XPercent: 0.1, YPercent: 0.85, WidthPercent: 0.8, HeightPercent: 0.1,
+        var element = new ScreenTemplateElement(
+            _activeScreen, ScreenTemplateElementKind.Text,
+            XPercent: 0.1, YPercent: 0.4, WidthPercent: 0.8, HeightPercent: 0.2,
             Text: "Your text here");
         _elements.Add(element);
         AddVisualForElement(_elements.Count - 1);
         RefreshLayerList();
         SelectElement(_elements.Count - 1);
-        RefreshPreview();
     }
 
-    private void AddLogoButton_Click(object sender, RoutedEventArgs e)
+    private void AddImageButton_Click(object sender, RoutedEventArgs e)
     {
-        string? storedPath = PickAndStoreLogoImage();
+        string? storedPath = PickAndStoreImage();
         if (storedPath is null)
         {
             return;
         }
 
-        var element = new PrintTemplateElement(
-            PrintTemplateElementKind.Logo,
-            XPercent: 0.7, YPercent: 0.05, WidthPercent: 0.25, HeightPercent: 0.1,
+        var element = new ScreenTemplateElement(
+            _activeScreen, ScreenTemplateElementKind.Image,
+            XPercent: 0.35, YPercent: 0.05, WidthPercent: 0.3, HeightPercent: 0.2,
             ImagePath: storedPath);
         _elements.Add(element);
         AddVisualForElement(_elements.Count - 1);
         RefreshLayerList();
         SelectElement(_elements.Count - 1);
-        RefreshPreview();
     }
 
-    private void ChangeLogoImageButton_Click(object sender, RoutedEventArgs e)
+    private void AddShapeButton_Click(object sender, RoutedEventArgs e)
+    {
+        var element = new ScreenTemplateElement(
+            _activeScreen, ScreenTemplateElementKind.Shape,
+            XPercent: 0.05, YPercent: 0.05, WidthPercent: 0.2, HeightPercent: 0.1,
+            ColorHex: "#365C58");
+        _elements.Add(element);
+        AddVisualForElement(_elements.Count - 1);
+        RefreshLayerList();
+        SelectElement(_elements.Count - 1);
+    }
+
+    private void ChangeImageButton_Click(object sender, RoutedEventArgs e)
     {
         if (_selectedIndex < 0)
         {
             return;
         }
 
-        string? storedPath = PickAndStoreLogoImage();
+        string? storedPath = PickAndStoreImage();
         if (storedPath is null)
         {
             return;
@@ -538,25 +503,24 @@ public partial class PrintTemplateEditorWindow : Window
         {
             image.Source = new BitmapImage(new Uri(IoPath.GetFullPath(storedPath)));
         }
-        RefreshPreview();
     }
 
-    /// <summary>Copies the chosen image into a local Assets/PrintElements folder,
+    /// <summary>Copies the chosen image into a local Assets/ScreenElements folder,
     /// same "own local copy, not a reference to wherever the admin picked it from"
-    /// pattern AddFrameButton_Click/SaveThemeButton_Click already established.</summary>
-    private static string? PickAndStoreLogoImage()
+    /// pattern PrintTemplateEditorWindow.PickAndStoreLogoImage already established.</summary>
+    private static string? PickAndStoreImage()
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
             Filter = "Image files (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg",
-            Title = "Choose a logo image",
+            Title = "Choose an image",
         };
         if (dialog.ShowDialog() != true)
         {
             return null;
         }
 
-        string directory = IoPath.Combine(AppContext.BaseDirectory, "Assets", "PrintElements");
+        string directory = IoPath.Combine(AppContext.BaseDirectory, "Assets", "ScreenElements");
         Directory.CreateDirectory(directory);
         string storedFileName = $"{Guid.NewGuid():N}{IoPath.GetExtension(dialog.FileName)}";
         string storedPath = IoPath.Combine(directory, storedFileName);
@@ -579,7 +543,6 @@ public partial class PrintTemplateEditorWindow : Window
 
         RefreshLayerList();
         SelectElement(-1);
-        RefreshPreview();
     }
 
     private void RefreshLayerList()
@@ -588,11 +551,14 @@ public partial class PrintTemplateEditorWindow : Window
         try
         {
             LayerListBox.Items.Clear();
-            foreach (PrintTemplateElement element in _elements)
+            foreach (ScreenTemplateElement element in _elements)
             {
-                LayerListBox.Items.Add(element.Kind == PrintTemplateElementKind.Text
-                    ? $"Text: {element.Text}"
-                    : "Logo");
+                LayerListBox.Items.Add(element.Kind switch
+                {
+                    ScreenTemplateElementKind.Text => $"Text: {element.Text}",
+                    ScreenTemplateElementKind.Image => "Image",
+                    _ => "Shape",
+                });
             }
         }
         finally
@@ -611,89 +577,10 @@ public partial class PrintTemplateEditorWindow : Window
         SelectElement(LayerListBox.SelectedIndex);
     }
 
-    /// <summary>Moves the selected element to newIndex in all three parallel lists
-    /// (_elements/_containers/_handles) and rebuilds ElementsCanvas.Children in that
-    /// same order, since Canvas paints children in collection order and that order
-    /// must track _elements' order (the render order PrintCompositor uses) --
-    /// covers up/down reordering and front/back z-order with one method.</summary>
-    private void MoveSelectedLayerTo(int newIndex)
-    {
-        int index = _selectedIndex;
-        if (index < 0 || newIndex < 0 || newIndex >= _elements.Count || newIndex == index)
-        {
-            return;
-        }
-
-        PrintTemplateElement element = _elements[index];
-        Border container = _containers[index];
-        Rectangle handle = _handles[index];
-
-        _elements.RemoveAt(index);
-        _containers.RemoveAt(index);
-        _handles.RemoveAt(index);
-
-        _elements.Insert(newIndex, element);
-        _containers.Insert(newIndex, container);
-        _handles.Insert(newIndex, handle);
-
-        ElementsCanvas.Children.Clear();
-        foreach (Border c in _containers)
-        {
-            ElementsCanvas.Children.Add(c);
-        }
-        foreach (Rectangle h in _handles)
-        {
-            ElementsCanvas.Children.Add(h);
-        }
-
-        RefreshLayerList();
-        SelectElement(newIndex);
-        RefreshPreview();
-    }
-
-    private void MoveLayerUpButton_Click(object sender, RoutedEventArgs e) => MoveSelectedLayerTo(_selectedIndex - 1);
-
-    private void MoveLayerDownButton_Click(object sender, RoutedEventArgs e) => MoveSelectedLayerTo(_selectedIndex + 1);
-
-    private void BringToFrontButton_Click(object sender, RoutedEventArgs e) => MoveSelectedLayerTo(_elements.Count - 1);
-
-    private void SendToBackButton_Click(object sender, RoutedEventArgs e) => MoveSelectedLayerTo(0);
-
-    private void AlignSelected(double? xPercent, double? yPercent)
-    {
-        if (_selectedIndex < 0)
-        {
-            return;
-        }
-
-        _elements[_selectedIndex] = _elements[_selectedIndex] with
-        {
-            XPercent = xPercent ?? _elements[_selectedIndex].XPercent,
-            YPercent = yPercent ?? _elements[_selectedIndex].YPercent,
-        };
-        PositionVisual(_selectedIndex);
-        RefreshPreview();
-    }
-
-    private void AlignLeftButton_Click(object sender, RoutedEventArgs e) => AlignSelected(xPercent: 0, yPercent: null);
-
-    private void AlignRightButton_Click(object sender, RoutedEventArgs e) =>
-        AlignSelected(xPercent: _selectedIndex < 0 ? null : 1 - _elements[_selectedIndex].WidthPercent, yPercent: null);
-
-    private void AlignCenterHButton_Click(object sender, RoutedEventArgs e) =>
-        AlignSelected(xPercent: _selectedIndex < 0 ? null : (1 - _elements[_selectedIndex].WidthPercent) / 2, yPercent: null);
-
-    private void AlignTopButton_Click(object sender, RoutedEventArgs e) => AlignSelected(xPercent: null, yPercent: 0);
-
-    private void AlignBottomButton_Click(object sender, RoutedEventArgs e) =>
-        AlignSelected(xPercent: null, yPercent: _selectedIndex < 0 ? null : 1 - _elements[_selectedIndex].HeightPercent);
-
-    private void AlignCenterVButton_Click(object sender, RoutedEventArgs e) =>
-        AlignSelected(xPercent: null, yPercent: _selectedIndex < 0 ? null : (1 - _elements[_selectedIndex].HeightPercent) / 2);
-
     private async void SaveButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_elements.Any(element => !element.IsValid))
+        List<ScreenTemplateElement> all = _elementsByScreen.Values.SelectMany(list => list).ToList();
+        if (all.Any(element => !element.IsValid))
         {
             EditorStatusText.Text = "Every element needs valid bounds and either text or an image.";
             EditorStatusText.Foreground = Brushes.Firebrick;
@@ -703,7 +590,7 @@ public partial class PrintTemplateEditorWindow : Window
         SaveButton.IsEnabled = false;
         try
         {
-            await new PrintTemplateElementRepository().ReplaceAllAsync(_locationId, _elements);
+            await new ScreenTemplateElementRepository().ReplaceAllAsync(_locationId, all);
             DialogResult = true;
         }
         catch (Exception ex)

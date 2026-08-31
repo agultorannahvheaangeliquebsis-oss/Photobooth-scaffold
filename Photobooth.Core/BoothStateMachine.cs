@@ -41,6 +41,12 @@ public class BoothStateMachine
     /// <summary>Fires when the background upload for the current session's photo finishes -- may land during Reviewing, Printing, or Complete, whichever is showing when the network call happens to finish.</summary>
     public event Action<Uri>? PhotoUploaded;
 
+    /// <summary>Fires once per SetState when the Virtual Attendant has a clip configured
+    /// for that stage -- MainWindow plays it alongside whatever screen is already
+    /// showing. Purely additive: never gates or delays a state transition, and a
+    /// missing/misconfigured clip never raises this event at all (see FireAttendantCueAsync).</summary>
+    public event Action<AttendantClip>? AttendantCueChanged;
+
     /// <param name="mode">'event' or 'vendo', matching the booth's Location.Type -- fixed for the life of this state machine since one booth machine serves one location. Event-mode sessions skip straight through as a free_event Payment row; vendo-mode sessions run the Payment state before Printing.</param>
     public BoothStateMachine(BoothServices services, string mode = "event")
     {
@@ -52,6 +58,28 @@ public class BoothStateMachine
     {
         CurrentState = state;
         StateChanged?.Invoke(state);
+
+        // Fire-and-forget: the Virtual Attendant is purely decorative (audio/video
+        // playing alongside whatever screen is already showing), so a slow or failed
+        // cue lookup must never delay or interrupt the state transition itself.
+        _ = FireAttendantCueAsync(state);
+    }
+
+    private async Task FireAttendantCueAsync(BoothState state)
+    {
+        try
+        {
+            AttendantClip? clip = await _services.AttendantCue.GetCueAsync(state);
+            if (clip is not null)
+            {
+                AttendantCueChanged?.Invoke(clip);
+            }
+        }
+        catch (Exception)
+        {
+            // Best-effort, same reasoning as the Feedback/Guestbook try/catches below --
+            // a missing or misconfigured attendant clip should never disrupt a session.
+        }
     }
 
     /// <summary>Admin has confirmed the PIN and settings and wants guests to
@@ -123,20 +151,20 @@ public class BoothStateMachine
             PaymentInstructions = null;
             LastSelectedFrame = null;
 
-            // GIF/Boomerang: capture a burst of stills and composite them
-            // into one animated file -- see BUILD_PLAN.md's "dslrBooth
-            // feature-parity plan", Phase 2. Photo mode (the default, and
-            // the only mode that existed before this feature) is unchanged
-            // below. Deliberately skips the glam filter/branding/frame-
-            // overlay pipeline entirely for GIF/Boomerang: those are all
-            // single-still GDI+ operations (see GdiPhotoBrandingService/
-            // GdiPhotoFilterService/GdiFrameOverlayService) that would
-            // either only touch the first frame or corrupt the animation
-            // outright if pointed at a multi-frame GIF -- a real fix means
-            // compositing each effect onto every frame before assembly, not
-            // attempted here.
-            bool isBurstMode = settings.Capture.Mode is "GIF" or "Boomerang";
-            if (isBurstMode)
+            // GIF/Boomerang/Video: none of the three produce a printable
+            // single still, so none of them go through Printing below --
+            // see BUILD_PLAN.md's "dslrBooth feature-parity plan", Phase 2.
+            // Photo mode (the default, and the only mode that existed
+            // before this feature) is unchanged below. GIF/Boomerang also
+            // deliberately skip the glam filter/branding/frame-overlay
+            // pipeline entirely: those are all single-still GDI+ operations
+            // (see GdiPhotoBrandingService/GdiPhotoFilterService/
+            // GdiFrameOverlayService) that would either only touch the
+            // first frame or corrupt the animation outright if pointed at a
+            // multi-frame GIF -- a real fix means compositing each effect
+            // onto every frame before assembly, not attempted here.
+            bool isNonPrintableCapture = settings.Capture.Mode is "GIF" or "Boomerang" or "Video";
+            if (settings.Capture.Mode is "GIF" or "Boomerang")
             {
                 var framePaths = new List<string>();
                 for (int i = 0; i < settings.Capture.FrameCount; i++)
@@ -150,6 +178,18 @@ public class BoothStateMachine
 
                 LastCapturedImagePath = await _services.GifComposer.ComposeAsync(
                     framePaths, reversed: settings.Capture.Mode == "Boomerang", settings.Capture.FrameDelayMs, ct);
+            }
+            else if (settings.Capture.Mode == "Video")
+            {
+                // A fixed-duration recording (no "guest taps stop" UI yet,
+                // same simplification the guestbook recording's 60s safety
+                // net accepts for a different reason) -- starts, waits out
+                // VideoDurationSeconds, then stops. Independent of
+                // ICameraService entirely, same as IVideoGuestbookService.
+                await _services.BoothVideo.StartRecordingAsync(ct);
+                await Task.Delay(TimeSpan.FromSeconds(settings.Capture.VideoDurationSeconds), ct);
+                BoothVideoRecording recording = await _services.BoothVideo.StopRecordingAsync(ct);
+                LastCapturedImagePath = recording.FilePath;
             }
             else
             {
@@ -177,12 +217,12 @@ public class BoothStateMachine
             await Task.Delay(2000, ct); // guest sees the shot before it prints
 
             // Frame picker is a single-still GDI+ overlay too (see the
-            // isBurstMode comment above) -- skipped for GIF/Boomerang for
-            // the same reason. Also skipped entirely when no
-            // admin-configured frames are active -- a fresh booth with an
-            // empty Frame table behaves exactly as it did before this
-            // feature existed.
-            IReadOnlyList<FrameOption> frames = isBurstMode
+            // isNonPrintableCapture comment above) -- skipped for GIF/
+            // Boomerang/Video for the same reason. Also skipped entirely
+            // when no admin-configured frames are active -- a fresh booth
+            // with an empty Frame table behaves exactly as it did before
+            // this feature existed.
+            IReadOnlyList<FrameOption> frames = isNonPrintableCapture
                 ? []
                 : await _services.FrameLibrary.GetActiveFramesAsync(ct);
             if (frames.Count > 0)
@@ -228,9 +268,18 @@ public class BoothStateMachine
             // send doesn't hold up Printing.
             _ = FinalizeUploadAsync(uploadTask, ct);
 
-            SetState(BoothState.Printing);
-            await _services.Printer.PrintAsync(LastCapturedImagePath, settings.PrintTemplate, ct);
-            await _services.Sessions.RecordPrintAsync(sessionId.Value, LastCapturedImagePath, ct);
+            // GIF/Boomerang/Video have nothing printable -- dslrBooth's own
+            // Video/GIF modes are share-only too (see the Sharing Screen
+            // toggles surveyed in BUILD_PLAN.md's dslrBooth feature list).
+            // Skips the Printing state and Print row entirely rather than
+            // handing SpoolerPrinterService a .gif/.mp4 it has no way to
+            // rasterize onto paper.
+            if (!isNonPrintableCapture)
+            {
+                SetState(BoothState.Printing);
+                await _services.Printer.PrintAsync(LastCapturedImagePath, settings.PrintTemplate, ct);
+                await _services.Sessions.RecordPrintAsync(sessionId.Value, LastCapturedImagePath, ct);
+            }
 
             if (_mode != "vendo")
             {
@@ -283,6 +332,33 @@ public class BoothStateMachine
                 if (!feedback.IsEmpty)
                 {
                     await _services.Sessions.RecordFeedbackAsync(sessionId.Value, feedback.Rating, feedback.Comment, ct);
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            // Best-effort, wrapped in its own try/catch, same reasoning as the
+            // Feedback block just above: a guest who walks away without tapping
+            // anything, or any other failure collecting survey answers, should
+            // never turn an already-completed session into an Error one. Skipped
+            // entirely when the admin has it off, or there are no active
+            // questions configured -- same "empty table = feature invisible"
+            // reasoning FramePicker already established for an empty Frame table.
+            try
+            {
+                if (settings.Survey.Enabled)
+                {
+                    IReadOnlyList<SurveyQuestion> questions = await _services.Survey.GetActiveQuestionsAsync(ct);
+                    if (questions.Count > 0)
+                    {
+                        SetState(BoothState.Survey);
+                        IReadOnlyList<SurveyAnswer> answers = await _services.Survey.CollectAnswersAsync(questions, ct);
+                        if (answers.Count > 0)
+                        {
+                            await _services.Survey.RecordResponsesAsync(sessionId.Value, answers, ct);
+                        }
+                    }
                 }
             }
             catch (Exception)

@@ -29,4 +29,7 @@ public record BoothServices(
     IFeedbackService Feedback,
     IGuestbookPromptService GuestbookPrompt,
     IVideoGuestbookService VideoGuestbook,
-    IGifComposerService GifComposer);
+    IGifComposerService GifComposer,
+    IBoothVideoService BoothVideo,
+    IVirtualAttendantService AttendantCue,
+    ISurveyService Survey);

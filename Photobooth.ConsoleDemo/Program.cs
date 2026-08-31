@@ -18,6 +18,9 @@ var feedback = new MockFeedbackService();
 var guestbookPrompt = new MockGuestbookPromptService();
 var videoGuestbook = new MockVideoGuestbookService();
 var gifComposer = new MockGifComposerService();
+var boothVideo = new MockBoothVideoService();
+var attendantCue = new MockVirtualAttendantService();
+var survey = new MockSurveyService();
 int emailsPrinted = 0;
 void PrintNewEmails(MockEmailDeliveryService service)
 {
@@ -28,13 +31,14 @@ void PrintNewEmails(MockEmailDeliveryService service)
     }
 }
 
-var services = new BoothServices(camera, printer, cloudUpload, sessions, payment, uploadQueue, consent, email, branding, filter, settings, frameLibrary, frameSelection, frameOverlay, feedback, guestbookPrompt, videoGuestbook, gifComposer);
+var services = new BoothServices(camera, printer, cloudUpload, sessions, payment, uploadQueue, consent, email, branding, filter, settings, frameLibrary, frameSelection, frameOverlay, feedback, guestbookPrompt, videoGuestbook, gifComposer, boothVideo, attendantCue, survey);
 var eventMachine = new BoothStateMachine(services, mode: "event");
 
 eventMachine.StateChanged += state => Console.WriteLine($"  [STATE]     {state}");
 eventMachine.CountdownTick += n => Console.WriteLine($"  [COUNTDOWN] {n}");
 eventMachine.ErrorOccurred += msg => Console.WriteLine($"  [ERROR]     {msg}");
 eventMachine.PhotoUploaded += url => Console.WriteLine($"  [UPLOADED]  {url}");
+eventMachine.AttendantCueChanged += clip => Console.WriteLine($"  [ATTENDANT] {clip.Stage}: {clip.FilePath}");
 
 Console.WriteLine("=== Focus & Snap state machine simulation ===");
 Console.WriteLine("Running 5 event-mode sessions against the mock camera and printer.\n");
@@ -238,6 +242,55 @@ var printElements = new List<PrintTemplateElement>
 settings.Settings = settings.Settings with { PrintTemplate = settings.Settings.PrintTemplate with { Elements = printElements } };
 await eventMachine.RunSessionAsync();
 Console.WriteLine($"  Printed with {printer.PrintedTemplates[^1].Elements.Count} template element(s) (expected 2)");
+PrintNewEmails(email);
+Console.WriteLine();
+
+// GIF/Boomerang capture mode (Phase 2 of the dslrBooth feature-parity
+// plan, see BUILD_PLAN.md) -- flipping CaptureSettings.Mode here proves
+// BoothStateMachine's burst-capture branch actually runs the multi-frame
+// loop and reaches IGifComposerService, and that it skips the single-still
+// branding/filter/frame-picker pipeline entirely for these modes.
+Console.WriteLine("--- Session 18 (event, admin switches capture mode to GIF) ---");
+Console.WriteLine("  (simulating an admin switching from Photo to GIF mode, 3 frames)");
+settings.Settings = settings.Settings with { Capture = new CaptureSettings(Mode: "GIF", FrameCount: 3, FrameDelayMs: 10) };
+await eventMachine.RunSessionAsync();
+Console.WriteLine($"  Frames composed: {gifComposer.LastFrameCount} (reversed: {gifComposer.LastReversed})");
+Console.WriteLine($"  Final photo path: {eventMachine.LastCapturedImagePath}");
+PrintNewEmails(email);
+Console.WriteLine();
+
+Console.WriteLine("--- Session 19 (event, admin switches capture mode to Boomerang) ---");
+Console.WriteLine("  (simulating an admin switching from GIF to Boomerang mode, 4 frames)");
+settings.Settings = settings.Settings with { Capture = new CaptureSettings(Mode: "Boomerang", FrameCount: 4, FrameDelayMs: 10) };
+await eventMachine.RunSessionAsync();
+Console.WriteLine($"  Frames composed: {gifComposer.LastFrameCount} (reversed: {gifComposer.LastReversed})");
+Console.WriteLine($"  Final photo path: {eventMachine.LastCapturedImagePath}");
+PrintNewEmails(email);
+Console.WriteLine();
+
+Console.WriteLine("--- Session 20 (event, admin switches capture mode to Video) ---");
+Console.WriteLine("  (simulating an admin switching to Video mode, 1s recording for a fast demo)");
+settings.Settings = settings.Settings with { Capture = new CaptureSettings(Mode: "Video", VideoDurationSeconds: 1) };
+int printCountBeforeVideo = printer.PrintedTemplates.Count;
+await eventMachine.RunSessionAsync();
+Console.WriteLine($"  Recorded file: {boothVideo.RecordedFiles[^1]}");
+Console.WriteLine($"  Final photo path: {eventMachine.LastCapturedImagePath}");
+Console.WriteLine($"  Printed this session: {printer.PrintedTemplates.Count > printCountBeforeVideo} (false is correct -- Video mode has nothing printable)");
+PrintNewEmails(email);
+Console.WriteLine();
+
+// Back to Photo mode -- proves the branch is a live toggle, not a one-way
+// switch, and that the very next session's branding/filter pipeline runs
+// again normally.
+settings.Settings = settings.Settings with { Capture = CaptureSettings.Default };
+
+// Virtual Attendant (Phase 6) -- one clip configured for Countdown, none for
+// any other stage, proves AttendantCueChanged only fires for the stage that
+// actually has a clip configured.
+Console.WriteLine("--- Session 21 (event, Virtual Attendant cues Countdown only) ---");
+attendantCue.Settings = attendantCue.Settings with { Enabled = true };
+attendantCue.ClipsByStage[BoothState.Countdown] = new List<AttendantClip> { new("./attendant/countdown.mp3", BoothState.Countdown) };
+await eventMachine.RunSessionAsync();
 PrintNewEmails(email);
 Console.WriteLine();
 

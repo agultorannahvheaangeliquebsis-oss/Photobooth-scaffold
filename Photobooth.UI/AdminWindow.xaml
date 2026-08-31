@@ -112,6 +112,11 @@
                            Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,2,0,0" />
                 <Button x:Name="EditPrintTemplateButton" Content="Edit print template..." Padding="8,4"
                         HorizontalAlignment="Left" Margin="0,8,0,0" Click="EditPrintTemplateButton_Click" />
+                <!-- Visual Screen Editor (Phase 6), Welcome/Capture/Sharing overlay
+                     elements, same "own editor window, reload after Save" pattern as
+                     EditPrintTemplateButton above. -->
+                <Button x:Name="EditScreenLayoutButton" Content="Edit screen layout..." Padding="8,4"
+                        HorizontalAlignment="Left" Margin="0,8,0,0" Click="EditScreenLayoutButton_Click" />
 
                 <TextBlock x:Name="SettingsStatusText" Style="{StaticResource Row}"
                            Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" />
@@ -209,6 +214,153 @@
                 </ItemsControl>
                 <TextBlock x:Name="GuestbookVideosEmptyText" Text="No guestbook messages recorded yet."
                            Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}" Visibility="Collapsed" />
+
+                <!-- dslrBooth feature-parity settings (BUILD_PLAN.md Phase 3), backed
+                     by Location's new columns via LocationRepository's
+                     UpdateDslrBoothParitySettingsAsync. Takes effect for the next
+                     guest session, same as the Booth settings section above. -->
+                <TextBlock Text="Capture Settings" Style="{StaticResource SectionHeader}" />
+                <TextBlock Text="Mode:" Style="{StaticResource Row}" />
+                <StackPanel Orientation="Horizontal" Margin="0,2">
+                    <RadioButton x:Name="CaptureModePhotoRadio" GroupName="CaptureMode" Content="Photo"
+                                 Foreground="{StaticResource InkBrush}" IsChecked="True" Margin="0,0,12,0" />
+                    <RadioButton x:Name="CaptureModeGifRadio" GroupName="CaptureMode" Content="GIF"
+                                 Foreground="{StaticResource InkBrush}" Margin="0,0,12,0" />
+                    <RadioButton x:Name="CaptureModeBoomerangRadio" GroupName="CaptureMode" Content="Boomerang"
+                                 Foreground="{StaticResource InkBrush}" Margin="0,0,12,0" />
+                    <RadioButton x:Name="CaptureModeVideoRadio" GroupName="CaptureMode" Content="Video"
+                                 Foreground="{StaticResource InkBrush}" />
+                </StackPanel>
+                <CheckBox x:Name="AlsoCreateGifCheckBox" Content="Also create a GIF alongside the main capture"
+                          Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
+                <StackPanel Orientation="Horizontal" Margin="0,4">
+                    <TextBlock Text="GIF/Boomerang frame count:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
+                    <TextBox x:Name="FrameCountBox" Width="60" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,4">
+                    <TextBlock Text="Frame delay (ms):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
+                    <TextBox x:Name="FrameDelayBox" Width="60" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,4">
+                    <TextBlock Text="Video duration (seconds):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
+                    <TextBox x:Name="VideoDurationBox" Width="60" />
+                </StackPanel>
+
+                <TextBlock Text="Effects &amp; Stickers" Style="{StaticResource SectionHeader}" />
+                <CheckBox x:Name="BeautyFilterCheckBox" Content="Beauty filter enabled"
+                          Foreground="{StaticResource InkBrush}" Margin="0,4,0,0" />
+                <TextBlock Text="Filters mode:" Style="{StaticResource Row}" Margin="0,8,0,0" />
+                <StackPanel Orientation="Horizontal" Margin="0,2">
+                    <RadioButton x:Name="FiltersModeAskRadio" GroupName="FiltersMode" Content="Ask"
+                                 Foreground="{StaticResource InkBrush}" IsChecked="True" Margin="0,0,12,0" />
+                    <RadioButton x:Name="FiltersModeAutoRadio" GroupName="FiltersMode" Content="Auto"
+                                 Foreground="{StaticResource InkBrush}" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                    <Button x:Name="BrowseWatermarkButton" Content="Browse for watermark..." Padding="8,4" Click="BrowseWatermarkButton_Click" />
+                </StackPanel>
+                <TextBlock x:Name="SelectedWatermarkText" Text="No watermark selected." Style="{StaticResource Row}"
+                           Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
+
+                <TextBlock Text="Green Screen" Style="{StaticResource SectionHeader}" />
+                <CheckBox x:Name="GreenScreenEnabledCheckBox" Content="Green screen enabled"
+                          Foreground="{StaticResource InkBrush}" Margin="0,4,0,0" />
+                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                    <Button x:Name="BrowseGreenScreenBackgroundButton" Content="Browse for background..." Padding="8,4" Click="BrowseGreenScreenBackgroundButton_Click" />
+                </StackPanel>
+                <TextBlock x:Name="SelectedGreenScreenBackgroundText" Text="No background selected." Style="{StaticResource Row}"
+                           Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
+
+                <!-- Question-builder + responses list added in Phase 6 (see
+                     BUILD_PLAN.md); SurveyEnabledCheckBox is the same on/off
+                     switch from Phase 1/3, saved via SaveParitySettingsButton
+                     alongside Capture/Effects/etc below. Questions/Responses are
+                     saved immediately on Add/Delete, same as the Frame library. -->
+                <TextBlock Text="Survey" Style="{StaticResource SectionHeader}" />
+                <CheckBox x:Name="SurveyEnabledCheckBox" Content="Post-session survey enabled"
+                          Foreground="{StaticResource InkBrush}" Margin="0,4,0,0" />
+
+                <TextBlock Text="Questions" Style="{StaticResource Row}" FontWeight="SemiBold" Margin="0,10,0,0" />
+                <ItemsControl x:Name="SurveyQuestionsList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="{Binding Text}" Style="{StaticResource Row}" VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Content="Delete" Padding="8,4" Tag="{Binding SurveyQuestionId}" Click="DeleteSurveyQuestionButton_Click" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock x:Name="SurveyQuestionsEmptyText" Text="No questions added yet -- the Survey screen won't show for guests until one exists."
+                           Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Visibility="Collapsed" />
+                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                    <TextBlock Text="New question:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
+                    <TextBox x:Name="NewSurveyQuestionBox" Width="260" />
+                </StackPanel>
+                <Button x:Name="AddSurveyQuestionButton" Content="+ Question" Padding="16,8"
+                        HorizontalAlignment="Left" Margin="0,8,0,0" Click="AddSurveyQuestionButton_Click" />
+                <TextBlock x:Name="SurveyQuestionStatusText" Style="{StaticResource Row}"
+                           Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
+
+                <TextBlock Text="Responses" Style="{StaticResource Row}" FontWeight="SemiBold" Margin="0,14,0,0" />
+                <ItemsControl x:Name="SurveyResponsesList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" Style="{StaticResource Row}" Margin="0,2" TextWrapping="Wrap" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock x:Name="SurveyResponsesEmptyText" Text="No responses recorded yet."
+                           Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}" Visibility="Collapsed" />
+
+                <TextBlock Text="Disclaimer" Style="{StaticResource SectionHeader}" />
+                <StackPanel Orientation="Horizontal" Margin="0,4">
+                    <TextBlock Text="Header:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
+                    <TextBox x:Name="DisclaimerHeaderBox" Width="280" />
+                </StackPanel>
+                <TextBlock Text="Text:" Style="{StaticResource Row}" Margin="0,6,0,2" />
+                <TextBox x:Name="DisclaimerTextBox" AcceptsReturn="True" TextWrapping="Wrap"
+                         Height="80" VerticalScrollBarVisibility="Auto" />
+
+                <TextBlock Text="Sharing Settings" Style="{StaticResource SectionHeader}" />
+                <CheckBox x:Name="EmailEnabledCheckBox" Content="Email sharing enabled"
+                          Foreground="{StaticResource InkBrush}" Margin="0,4,0,0" />
+                <CheckBox x:Name="SmsEnabledCheckBox" Content="SMS sharing enabled"
+                          Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
+                <CheckBox x:Name="QrEnabledCheckBox" Content="QR sharing enabled"
+                          Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
+
+                <TextBlock Text="Print Setup extensions" Style="{StaticResource SectionHeader}" />
+                <CheckBox x:Name="PrintAutomaticallyCheckBox" Content="Print automatically"
+                          Foreground="{StaticResource InkBrush}" Margin="0,4,0,0" />
+                <CheckBox x:Name="ShowPrintButtonCheckBox" Content="Show print button to guests"
+                          Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
+                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                    <TextBlock Text="Print limit per event:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
+                    <TextBox x:Name="PrintLimitPerEventBox" Width="80" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,4">
+                    <TextBlock Text="Print limit per session:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
+                    <TextBox x:Name="PrintLimitPerSessionBox" Width="80" />
+                </StackPanel>
+                <TextBlock Text="Print sharpening:" Style="{StaticResource Row}" Margin="0,8,0,0" />
+                <StackPanel Orientation="Horizontal" Margin="0,2">
+                    <RadioButton x:Name="PrintSharpeningLowRadio" GroupName="PrintSharpening" Content="Low"
+                                 Foreground="{StaticResource InkBrush}" Margin="0,0,12,0" />
+                    <RadioButton x:Name="PrintSharpeningMediumRadio" GroupName="PrintSharpening" Content="Medium"
+                                 Foreground="{StaticResource InkBrush}" IsChecked="True" Margin="0,0,12,0" />
+                    <RadioButton x:Name="PrintSharpeningHighRadio" GroupName="PrintSharpening" Content="High"
+                                 Foreground="{StaticResource InkBrush}" />
+                </StackPanel>
+
+                <TextBlock x:Name="ParitySettingsStatusText" Style="{StaticResource Row}"
+                           Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                <Button x:Name="SaveParitySettingsButton" Content="Save Capture/Effects/Sharing Settings" Padding="16,8"
+                        HorizontalAlignment="Left" Margin="0,8,0,0" Click="SaveParitySettingsButton_Click" />
             </StackPanel>
         </ScrollViewer>
 

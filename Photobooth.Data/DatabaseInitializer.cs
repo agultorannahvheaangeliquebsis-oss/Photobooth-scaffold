@@ -67,6 +67,138 @@ public static class DatabaseInitializer
         await EnsureGuestbookVideoTableAsync(connection, ct);
         await EnsurePrintTemplateElementTableAsync(connection, ct);
         await EnsureDslrBoothParitySettingsColumnsAsync(connection, ct);
+        await EnsureVirtualAttendantColumnsAndTableAsync(connection, ct);
+        await EnsureSurveyTablesAsync(connection, ct);
+        await EnsureScreenTemplateElementTableAsync(connection, ct);
+    }
+
+    /// <summary>Same reasoning as EnsureDslrBoothParitySettingsColumnsAsync, for the
+    /// Virtual Attendant settings columns and clip pool table (see BUILD_PLAN.md's
+    /// Phase 6 scope text, IVirtualAttendantService).</summary>
+    private static async Task EnsureVirtualAttendantColumnsAndTableAsync(SqlConnection connection, CancellationToken ct)
+    {
+        using (var addColumns = new SqlCommand(
+            """
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'AttendantEnabled')
+                ALTER TABLE Location ADD AttendantEnabled BIT NOT NULL DEFAULT 0;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'AttendantStyle')
+                ALTER TABLE Location ADD AttendantStyle NVARCHAR(20) NOT NULL DEFAULT 'Friendly';
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'AttendantRandomizeConsent')
+                ALTER TABLE Location ADD AttendantRandomizeConsent BIT NOT NULL DEFAULT 0;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'AttendantRandomizeCountdown')
+                ALTER TABLE Location ADD AttendantRandomizeCountdown BIT NOT NULL DEFAULT 0;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'AttendantRandomizeCapturing')
+                ALTER TABLE Location ADD AttendantRandomizeCapturing BIT NOT NULL DEFAULT 0;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'AttendantRandomizeReviewing')
+                ALTER TABLE Location ADD AttendantRandomizeReviewing BIT NOT NULL DEFAULT 0;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'AttendantRandomizePrinting')
+                ALTER TABLE Location ADD AttendantRandomizePrinting BIT NOT NULL DEFAULT 0;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'AttendantRandomizeComplete')
+                ALTER TABLE Location ADD AttendantRandomizeComplete BIT NOT NULL DEFAULT 0;
+            """,
+            connection))
+        {
+            await addColumns.ExecuteNonQueryAsync(ct);
+        }
+
+        using (var checkCommand = new SqlCommand("SELECT 1 FROM sys.tables WHERE name = 'VirtualAttendantClip';", connection))
+        {
+            if (await checkCommand.ExecuteScalarAsync(ct) is not null)
+            {
+                return;
+            }
+        }
+
+        using var createCommand = new SqlCommand(
+            """
+            CREATE TABLE VirtualAttendantClip (
+                ClipId          INT IDENTITY(1,1) PRIMARY KEY,
+                LocationId      INT             NOT NULL REFERENCES Location(LocationId),
+                Stage           NVARCHAR(20)    NOT NULL CHECK (Stage IN ('Setup', 'Idle', 'Consent', 'Countdown', 'Capturing', 'Reviewing', 'FramePicker', 'Payment', 'Printing', 'Complete', 'Guestbook', 'Feedback', 'Survey', 'Error')),
+                FilePath        NVARCHAR(500)   NOT NULL,
+                SortOrder       INT             NOT NULL DEFAULT 0,
+                CreatedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
+            );
+            CREATE INDEX IX_VirtualAttendantClip_Location_Stage ON VirtualAttendantClip(LocationId, Stage, SortOrder);
+            """,
+            connection);
+        await createCommand.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>Same reasoning as EnsureConsentTableAsync, for the SurveyQuestion/
+    /// SurveyResponse tables added after this check was originally written (see
+    /// BUILD_PLAN.md's Phase 6 scope text, ISurveyService).</summary>
+    private static async Task EnsureSurveyTablesAsync(SqlConnection connection, CancellationToken ct)
+    {
+        using (var checkCommand = new SqlCommand("SELECT 1 FROM sys.tables WHERE name = 'SurveyQuestion';", connection))
+        {
+            if (await checkCommand.ExecuteScalarAsync(ct) is not null)
+            {
+                return;
+            }
+        }
+
+        using var createCommand = new SqlCommand(
+            """
+            CREATE TABLE SurveyQuestion (
+                SurveyQuestionId INT IDENTITY(1,1) PRIMARY KEY,
+                LocationId       INT             NOT NULL REFERENCES Location(LocationId),
+                Text             NVARCHAR(300)   NOT NULL,
+                SortOrder        INT             NOT NULL DEFAULT 0,
+                IsActive         BIT             NOT NULL DEFAULT 1,
+                CreatedAt        DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
+            );
+            CREATE TABLE SurveyResponse (
+                SurveyResponseId INT IDENTITY(1,1) PRIMARY KEY,
+                SessionId        INT             NOT NULL REFERENCES Session(SessionId),
+                SurveyQuestionId INT             NOT NULL REFERENCES SurveyQuestion(SurveyQuestionId),
+                Answer           NVARCHAR(1000)  NOT NULL,
+                RecordedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
+            );
+            CREATE INDEX IX_SurveyQuestion_Location_Active ON SurveyQuestion(LocationId, IsActive, SortOrder);
+            CREATE INDEX IX_SurveyResponse_Session ON SurveyResponse(SessionId);
+            """,
+            connection);
+        await createCommand.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>Same reasoning as EnsurePrintTemplateElementTableAsync, for the visual
+    /// Screen Editor's ScreenTemplateElement table (see BUILD_PLAN.md's Phase 6 scope
+    /// text, ScreenTemplateEditorWindow).</summary>
+    private static async Task EnsureScreenTemplateElementTableAsync(SqlConnection connection, CancellationToken ct)
+    {
+        using (var checkCommand = new SqlCommand("SELECT 1 FROM sys.tables WHERE name = 'ScreenTemplateElement';", connection))
+        {
+            if (await checkCommand.ExecuteScalarAsync(ct) is not null)
+            {
+                return;
+            }
+        }
+
+        using var createCommand = new SqlCommand(
+            """
+            CREATE TABLE ScreenTemplateElement (
+                ElementId       INT IDENTITY(1,1) PRIMARY KEY,
+                LocationId      INT             NOT NULL REFERENCES Location(LocationId),
+                Screen          NVARCHAR(20)    NOT NULL CHECK (Screen IN ('Welcome', 'Capture', 'Sharing')),
+                Kind            NVARCHAR(20)    NOT NULL CHECK (Kind IN ('Text', 'Image', 'Shape')),
+                XPercent        DECIMAL(6,4)    NOT NULL,
+                YPercent        DECIMAL(6,4)    NOT NULL,
+                WidthPercent    DECIMAL(6,4)    NOT NULL,
+                HeightPercent   DECIMAL(6,4)    NOT NULL,
+                Text            NVARCHAR(200)   NULL,
+                ImagePath       NVARCHAR(500)   NULL,
+                FontFamily      NVARCHAR(100)   NULL,
+                FontSizePercent DECIMAL(6,4)    NULL,
+                Bold            BIT             NOT NULL DEFAULT 0,
+                ColorHex        NVARCHAR(9)     NULL,
+                SortOrder       INT             NOT NULL DEFAULT 0,
+                CreatedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
+            );
+            CREATE INDEX IX_ScreenTemplateElement_Location_Screen ON ScreenTemplateElement(LocationId, Screen, SortOrder);
+            """,
+            connection);
+        await createCommand.ExecuteNonQueryAsync(ct);
     }
 
     /// <summary>Same reasoning as EnsureBoothSettingsColumnsAsync, for the dslrBooth
@@ -85,6 +217,8 @@ public static class DatabaseInitializer
                 ALTER TABLE Location ADD GifFrameCount INT NOT NULL DEFAULT 4;
             IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'GifFrameDelayMs')
                 ALTER TABLE Location ADD GifFrameDelayMs INT NOT NULL DEFAULT 500;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'VideoDurationSeconds')
+                ALTER TABLE Location ADD VideoDurationSeconds INT NOT NULL DEFAULT 10;
             IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'BoothIconsEnabled')
                 ALTER TABLE Location ADD BoothIconsEnabled BIT NOT NULL DEFAULT 0;
             IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'ShowLiveView')

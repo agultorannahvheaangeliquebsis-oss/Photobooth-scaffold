@@ -208,6 +208,25 @@
                 </StackPanel>
             </StackPanel>
 
+            <!-- Post-Feedback question-builder prompt (see BoothState.Survey,
+                 ISurveyService); SurveyQuestionsPanel is populated with one
+                 TextBox per active question by ShowSurveyQuestions. -->
+            <StackPanel x:Name="SurveyView" Visibility="Collapsed" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="480">
+                <TextBlock Text="One more thing..." Style="{StaticResource ScreenTitle}" />
+                <TextBlock Text="A couple quick questions -- totally optional." Style="{StaticResource ScreenSubtitle}" Margin="0,10,0,24" />
+                <StackPanel x:Name="SurveyQuestionsPanel" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,20,0,0">
+                    <Button Padding="28,14" Margin="0,0,12,0" Background="{StaticResource AccentBrush}"
+                            BorderThickness="0" Click="SubmitSurveyButton_Click">
+                        <TextBlock Text="SUBMIT" Foreground="White" FontSize="16" FontWeight="SemiBold" />
+                    </Button>
+                    <Button Padding="28,14" Background="Transparent" BorderBrush="{StaticResource LineBrush}"
+                            BorderThickness="1" Click="SkipSurveyButton_Click">
+                        <TextBlock Text="SKIP" Foreground="{StaticResource MutedBrush}" FontSize="16" FontWeight="SemiBold" />
+                    </Button>
+                </StackPanel>
+            </StackPanel>
+
             <StackPanel x:Name="ErrorView" Visibility="Collapsed" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="620">
                 <TextBlock Text="Something went wrong" Style="{StaticResource ScreenTitle}" />
                 <TextBlock x:Name="ErrorMessage" Style="{StaticResource ScreenSubtitle}" TextWrapping="Wrap" Margin="0,18,0,0" />
@@ -225,6 +244,29 @@
                     <TextBlock Text="Scan to download" Style="{StaticResource ScreenSubtitle}" FontSize="14" Margin="0,8,0,0" />
                 </StackPanel>
             </Border>
+            <!-- Visual Screen Editor overlays (see BUILD_PLAN.md's Phase 6 scope
+                 text, ScreenTemplateElementRepository), one per guest-facing
+                 screen, positioned/populated live in code-behind
+                 (RenderScreenOverlay) from ScreenTemplateElement percent-of-canvas
+                 bounds, the same live-WPF-elements approach ScreenTemplateEditorWindow
+                 itself uses (not a bitmap composite like PrintCompositor, since these
+                 are live interactive screens, not a print). IsHitTestVisible="False"
+                 so a placed element never steals a guest's tap from the real controls
+                 underneath (e.g. Surface_MouseLeftButtonUp's tap-to-start on Idle). -->
+            <Canvas x:Name="WelcomeOverlayCanvas" IsHitTestVisible="False"
+                    Visibility="{Binding Visibility, ElementName=IdleView}" />
+            <Canvas x:Name="CaptureOverlayCanvas" IsHitTestVisible="False"
+                    Visibility="{Binding Visibility, ElementName=CountdownView}" />
+            <Canvas x:Name="SharingOverlayCanvas" IsHitTestVisible="False"
+                    Visibility="{Binding Visibility, ElementName=CompleteView}" />
+
+            <!-- Virtual Attendant cue (see BoothStateMachine.AttendantCueChanged),
+                 plays alongside whatever screen is already showing, so it lives
+                 outside the state-bound views above rather than inside any one of
+                 them. LoadedBehavior/UnloadedBehavior=Manual: this is driven purely
+                 by PlayAttendantCue, not autoplay-on-source-set. -->
+            <MediaElement x:Name="AttendantMediaElement" Width="0" Height="0" Volume="1"
+                          LoadedBehavior="Manual" UnloadedBehavior="Manual" />
         </Grid>
 
         <TextBlock Grid.Row="2" Text="A PHOTO TO KEEP" FontSize="12" Foreground="{StaticResource MutedBrush}"

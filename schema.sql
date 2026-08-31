@@ -29,6 +29,7 @@ CREATE TABLE Location (
     AlsoCreateGif       BIT          NOT NULL DEFAULT 0,
     GifFrameCount       INT          NOT NULL DEFAULT 4,   -- GIF/Boomerang capture loop, see BoothStateMachine's Phase 2 branch
     GifFrameDelayMs     INT          NOT NULL DEFAULT 500,
+    VideoDurationSeconds INT         NOT NULL DEFAULT 10,  -- Video mode recording length, see IBoothVideoService
     BoothIconsEnabled   BIT          NOT NULL DEFAULT 0,
     ShowLiveView        BIT          NOT NULL DEFAULT 1,
     MirrorLiveView      BIT          NOT NULL DEFAULT 1,
@@ -49,6 +50,19 @@ CREATE TABLE Location (
     EmailEnabled        BIT          NOT NULL DEFAULT 1,
     SmsEnabled          BIT          NOT NULL DEFAULT 0,
     QrEnabled           BIT          NOT NULL DEFAULT 1,
+
+    -- Virtual Attendant (see BUILD_PLAN.md's Phase 6 scope text,
+    -- IVirtualAttendantService). Randomize is one column per cue-worthy
+    -- stage, not a generic key-value table -- BoothState's cue-worthy
+    -- stages are a small, fixed set.
+    AttendantEnabled            BIT NOT NULL DEFAULT 0,
+    AttendantStyle               NVARCHAR(20) NOT NULL DEFAULT 'Friendly',
+    AttendantRandomizeConsent    BIT NOT NULL DEFAULT 0,
+    AttendantRandomizeCountdown  BIT NOT NULL DEFAULT 0,
+    AttendantRandomizeCapturing  BIT NOT NULL DEFAULT 0,
+    AttendantRandomizeReviewing  BIT NOT NULL DEFAULT 0,
+    AttendantRandomizePrinting   BIT NOT NULL DEFAULT 0,
+    AttendantRandomizeComplete   BIT NOT NULL DEFAULT 0,
 
     CreatedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
 );
@@ -191,6 +205,63 @@ CREATE TABLE PrintTemplateElement (
     CreatedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
 );
 
+-- Per-stage Virtual Attendant audio/video cue pool (see
+-- IVirtualAttendantService, SqlVirtualAttendantService). A pool per stage,
+-- not a single row, since AttendantRandomize* above needs multiple clips to
+-- pick from.
+CREATE TABLE VirtualAttendantClip (
+    ClipId          INT IDENTITY(1,1) PRIMARY KEY,
+    LocationId      INT             NOT NULL REFERENCES Location(LocationId),
+    Stage           NVARCHAR(20)    NOT NULL CHECK (Stage IN ('Setup', 'Idle', 'Consent', 'Countdown', 'Capturing', 'Reviewing', 'FramePicker', 'Payment', 'Printing', 'Complete', 'Guestbook', 'Feedback', 'Survey', 'Error')),
+    FilePath        NVARCHAR(500)   NOT NULL,
+    SortOrder       INT             NOT NULL DEFAULT 0,
+    CreatedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
+-- Admin-authored survey question-builder (see ISurveyService, AdminWindow's
+-- Survey section, BoothState.Survey). A pool of questions, guest answers
+-- recorded per-question -- same "empty table = feature invisible" reasoning
+-- Frame/FramePicker already established for SurveyQuestion being empty.
+CREATE TABLE SurveyQuestion (
+    SurveyQuestionId INT IDENTITY(1,1) PRIMARY KEY,
+    LocationId       INT             NOT NULL REFERENCES Location(LocationId),
+    Text             NVARCHAR(300)   NOT NULL,
+    SortOrder        INT             NOT NULL DEFAULT 0,
+    IsActive         BIT             NOT NULL DEFAULT 1,
+    CreatedAt        DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
+CREATE TABLE SurveyResponse (
+    SurveyResponseId INT IDENTITY(1,1) PRIMARY KEY,
+    SessionId        INT             NOT NULL REFERENCES Session(SessionId),
+    SurveyQuestionId INT             NOT NULL REFERENCES SurveyQuestion(SurveyQuestionId),
+    Answer           NVARCHAR(1000)  NOT NULL,
+    RecordedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
+-- Admin-placed elements for the Welcome/Capture/Sharing guest-facing screens
+-- (see ScreenTemplateEditorWindow, MainWindow's live overlay rendering).
+-- Same percent-of-canvas model as PrintTemplateElement, one Screen value per
+-- tab in the editor.
+CREATE TABLE ScreenTemplateElement (
+    ElementId       INT IDENTITY(1,1) PRIMARY KEY,
+    LocationId      INT             NOT NULL REFERENCES Location(LocationId),
+    Screen          NVARCHAR(20)    NOT NULL CHECK (Screen IN ('Welcome', 'Capture', 'Sharing')),
+    Kind            NVARCHAR(20)    NOT NULL CHECK (Kind IN ('Text', 'Image', 'Shape')),
+    XPercent        DECIMAL(6,4)    NOT NULL,
+    YPercent        DECIMAL(6,4)    NOT NULL,
+    WidthPercent    DECIMAL(6,4)    NOT NULL,
+    HeightPercent   DECIMAL(6,4)    NOT NULL,
+    Text            NVARCHAR(200)   NULL,
+    ImagePath       NVARCHAR(500)   NULL,
+    FontFamily      NVARCHAR(100)   NULL,
+    FontSizePercent DECIMAL(6,4)    NULL,
+    Bold            BIT             NOT NULL DEFAULT 0,
+    ColorHex        NVARCHAR(9)     NULL,
+    SortOrder       INT             NOT NULL DEFAULT 0,
+    CreatedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
 -- Helpful indexes for the dashboard queries you'll write later
 CREATE INDEX IX_Session_Location_Mode ON Session(LocationId, Mode);
 CREATE INDEX IX_Print_Session ON [Print](SessionId);
@@ -201,3 +272,7 @@ CREATE INDEX IX_Frame_Location_Active ON Frame(LocationId, IsActive, SortOrder);
 CREATE INDEX IX_Feedback_Session ON Feedback(SessionId);
 CREATE INDEX IX_GuestbookVideo_Session ON GuestbookVideo(SessionId);
 CREATE INDEX IX_PrintTemplateElement_Location ON PrintTemplateElement(LocationId, SortOrder);
+CREATE INDEX IX_VirtualAttendantClip_Location_Stage ON VirtualAttendantClip(LocationId, Stage, SortOrder);
+CREATE INDEX IX_SurveyQuestion_Location_Active ON SurveyQuestion(LocationId, IsActive, SortOrder);
+CREATE INDEX IX_SurveyResponse_Session ON SurveyResponse(SessionId);
+CREATE INDEX IX_ScreenTemplateElement_Location_Screen ON ScreenTemplateElement(LocationId, Screen, SortOrder);

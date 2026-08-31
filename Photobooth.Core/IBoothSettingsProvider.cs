@@ -31,12 +31,17 @@ public record BoothSettings(int CountdownSeconds, bool GlamFilterEnabled, PrintT
     public DisclaimerSettings Disclaimer { get; init; } = DisclaimerSettings.Default;
     public PrintOptions PrintOptions { get; init; } = PrintOptions.Default;
     public SharingSettings Sharing { get; init; } = SharingSettings.Default;
+
+    // Phase 6 -- see BUILD_PLAN.md's Phase 6 scope text.
+    public VirtualAttendantSettings VirtualAttendant { get; init; } = VirtualAttendantSettings.Default;
 }
 
 /// <summary>Capture mode + related timing, see dslrBooth's Capture Settings screen.
 /// FrameCount/FrameDelayMs drive the GIF/Boomerang capture loop (see
-/// BoothStateMachine, IGifComposerService) -- unused when Mode is "Photo".</summary>
-public record CaptureSettings(string Mode = "Photo", bool AlsoCreateGif = false, int FrameCount = 4, int FrameDelayMs = 500)
+/// BoothStateMachine, IGifComposerService); VideoDurationSeconds drives the
+/// Video-mode recording length (see IBoothVideoService). All three are
+/// unused when Mode is "Photo".</summary>
+public record CaptureSettings(string Mode = "Photo", bool AlsoCreateGif = false, int FrameCount = 4, int FrameDelayMs = 500, int VideoDurationSeconds = 10)
 {
     public static CaptureSettings Default { get; } = new();
 }
@@ -90,6 +95,24 @@ public record PrintOptions(
 public record SharingSettings(bool EmailEnabled = true, bool SmsEnabled = false, bool QrEnabled = true)
 {
     public static SharingSettings Default { get; } = new();
+}
+
+/// <summary>Per-stage audio/video attendant cues, see dslrBooth's Virtual Attendant screen
+/// (BUILD_PLAN.md Phase 6). Randomize is a fixed bool per stage rather than a
+/// Dictionary&lt;string,bool&gt; -- BoothState's cue-worthy stages are a small, fixed set
+/// (Consent/Countdown/Capturing/Reviewing/Printing/Complete), same reasoning
+/// ScreenSettings/EffectsSettings use fixed properties instead of a bag of flags.</summary>
+public record VirtualAttendantSettings(
+    bool Enabled = false,
+    string Style = "Friendly",
+    bool RandomizeConsent = false,
+    bool RandomizeCountdown = false,
+    bool RandomizeCapturing = false,
+    bool RandomizeReviewing = false,
+    bool RandomizePrinting = false,
+    bool RandomizeComplete = false)
+{
+    public static VirtualAttendantSettings Default { get; } = new();
 }
 
 /// <summary>
