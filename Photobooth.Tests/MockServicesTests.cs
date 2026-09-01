@@ -55,7 +55,7 @@ public class MockPrinterServiceTests
     {
         var printer = new MockPrinterService();
 
-        await printer.PrintAsync("./captures/does-not-need-to-exist.bmp", PrintTemplate.Default);
+        await printer.PrintAsync(new[] { "./captures/does-not-need-to-exist.bmp" }, PrintTemplate.Default);
     }
 
     [Fact]
@@ -64,10 +64,21 @@ public class MockPrinterServiceTests
         var printer = new MockPrinterService();
         var stripTemplate = new PrintTemplate("Strip", WidthInches: 2, HeightInches: 6, StripCopies: 2);
 
-        await printer.PrintAsync("./captures/a.bmp", PrintTemplate.Default);
-        await printer.PrintAsync("./captures/b.bmp", stripTemplate);
+        await printer.PrintAsync(new[] { "./captures/a.bmp" }, PrintTemplate.Default);
+        await printer.PrintAsync(new[] { "./captures/b.bmp" }, stripTemplate);
 
         Assert.Equal(new[] { PrintTemplate.Default, stripTemplate }, printer.PrintedTemplates);
+    }
+
+    [Fact]
+    public async Task PrintAsync_RecordsEveryImagePathItWasCalledWith()
+    {
+        var printer = new MockPrinterService();
+        var poses = new[] { "./captures/a.bmp", "./captures/b.bmp", "./captures/c.bmp" };
+
+        await printer.PrintAsync(poses, PrintTemplate.Default);
+
+        Assert.Equal(poses, Assert.Single(printer.PrintedImagePaths));
     }
 }
 
@@ -143,6 +154,34 @@ public class PrintTemplateTests
         System.Drawing.Rectangle bounds = template.ComputeElementBounds(cell, element);
 
         Assert.Equal(new System.Drawing.Rectangle(50 + 50, 100 + 200, 100, 100), bounds);
+    }
+
+    [Fact]
+    public void RequiredPhotoCount_NoPhotoSlotElements_ReturnsOne()
+    {
+        var template = PrintTemplate.Default with
+        {
+            Elements = new[] { new PrintTemplateElement(PrintTemplateElementKind.Text, 0, 0, 0.5, 0.1, Text: "Hi") },
+        };
+
+        Assert.Equal(1, template.RequiredPhotoCount);
+    }
+
+    [Fact]
+    public void RequiredPhotoCount_PhotoSlotElements_ReturnsHighestIndexPlusOne()
+    {
+        var template = PrintTemplate.Default with
+        {
+            Elements = new[]
+            {
+                new PrintTemplateElement(PrintTemplateElementKind.PhotoSlot, 0, 0, 0.5, 0.5, PhotoIndex: 0),
+                new PrintTemplateElement(PrintTemplateElementKind.PhotoSlot, 0.5, 0, 0.5, 0.5, PhotoIndex: 1),
+                new PrintTemplateElement(PrintTemplateElementKind.PhotoSlot, 0, 0.5, 0.5, 0.5, PhotoIndex: 2),
+                new PrintTemplateElement(PrintTemplateElementKind.PhotoSlot, 0.5, 0.5, 0.5, 0.5, PhotoIndex: 3),
+            },
+        };
+
+        Assert.Equal(4, template.RequiredPhotoCount);
     }
 }
 

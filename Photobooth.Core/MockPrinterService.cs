@@ -12,9 +12,15 @@ public class MockPrinterService : IPrinterService
     /// current PrintTemplate through, not just that PrintAsync got called.</summary>
     public List<PrintTemplate> PrintedTemplates { get; } = new();
 
-    public async Task PrintAsync(string imagePath, PrintTemplate template, CancellationToken ct = default)
+    /// <summary>Every image-path list this mock was asked to print with, in call order --
+    /// lets multi-pose tests confirm BoothStateMachine passed every captured pose through,
+    /// not just that PrintAsync got called once.</summary>
+    public List<IReadOnlyList<string>> PrintedImagePaths { get; } = new();
+
+    public async Task PrintAsync(IReadOnlyList<string> imagePaths, PrintTemplate template, PrintRenderContext? context = null, CancellationToken ct = default)
     {
         PrintedTemplates.Add(template);
+        PrintedImagePaths.Add(imagePaths);
         await Task.Delay(2500, ct);
     }
 }

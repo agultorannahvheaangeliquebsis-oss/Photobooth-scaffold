@@ -28,6 +28,12 @@ public class BoothStateMachine
 
     public BoothState CurrentState { get; private set; } = BoothState.Setup;
     public string? LastCapturedImagePath { get; private set; }
+
+    /// <summary>Every pose captured this session, in PhotoIndex order -- a single-element
+    /// list matching LastCapturedImagePath for every template that predates PhotoSlot
+    /// elements (the common case). What actually gets handed to IPrinterService.PrintAsync.</summary>
+    public IReadOnlyList<string> LastCapturedImagePaths { get; private set; } = Array.Empty<string>();
+
     public Uri? LastPhotoUrl { get; private set; }
 
     /// <summary>QR code the guest scans to pay, set right before the Payment state shows. Null for a gateway with nothing to scan (e.g. a card reader). Only meaningful in vendo mode.</summary>
@@ -45,6 +51,12 @@ public class BoothStateMachine
     public event Action<BoothState>? StateChanged;
     public event Action<int>? CountdownTick;
     public event Action<string>? ErrorOccurred;
+
+    /// <summary>Fires once per pose, right before that pose's Countdown starts, for a
+    /// true multi-pose template (PrintTemplate.RequiredPhotoCount > 1) -- lets the UI show
+    /// "Pose 2 of 4". Never fires for a template that predates PhotoSlot elements (the
+    /// common case), same as CountdownTick never firing outside Countdown.</summary>
+    public event Action<int, int>? PoseChanged;
 
     /// <summary>Fires when the background upload for the current session's photo finishes -- may land during Reviewing, Printing, or Complete, whichever is showing when the network call happens to finish.</summary>
     public event Action<Uri>? PhotoUploaded;
@@ -181,14 +193,6 @@ public class BoothStateMachine
                 return;
             }
 
-            SetState(BoothState.Countdown);
-            for (int i = settings.CountdownSeconds; i > 0; i--)
-            {
-                CountdownTick?.Invoke(i);
-                await Task.Delay(1000, ct);
-            }
-
-            SetState(BoothState.Capturing);
             LastPhotoUrl = null;
             PaymentQrPng = null;
             PaymentInstructions = null;
@@ -206,10 +210,20 @@ public class BoothStateMachine
             // GdiFrameOverlayService) that would either only touch the
             // first frame or corrupt the animation outright if pointed at a
             // multi-frame GIF -- a real fix means compositing each effect
-            // onto every frame before assembly, not attempted here.
+            // onto every frame before assembly, not attempted here. Neither
+            // mode has a notion of multiple print poses either -- PhotoSlot
+            // templates only apply to Photo mode below.
             bool isNonPrintableCapture = settings.Capture.Mode is "GIF" or "Boomerang" or "Video";
             if (settings.Capture.Mode is "GIF" or "Boomerang")
             {
+                SetState(BoothState.Countdown);
+                for (int i = settings.CountdownSeconds; i > 0; i--)
+                {
+                    CountdownTick?.Invoke(i);
+                    await Task.Delay(1000, ct);
+                }
+
+                SetState(BoothState.Capturing);
                 var framePaths = new List<string>();
                 for (int i = 0; i < settings.Capture.FrameCount; i++)
                 {
@@ -222,9 +236,18 @@ public class BoothStateMachine
 
                 LastCapturedImagePath = await _services.GifComposer.ComposeAsync(
                     framePaths, reversed: settings.Capture.Mode == "Boomerang", settings.Capture.FrameDelayMs, ct);
+                LastCapturedImagePaths = new[] { LastCapturedImagePath };
             }
             else if (settings.Capture.Mode == "Video")
             {
+                SetState(BoothState.Countdown);
+                for (int i = settings.CountdownSeconds; i > 0; i--)
+                {
+                    CountdownTick?.Invoke(i);
+                    await Task.Delay(1000, ct);
+                }
+
+                SetState(BoothState.Capturing);
                 // A fixed-duration recording (no "guest taps stop" UI yet,
                 // same simplification the guestbook recording's 60s safety
                 // net accepts for a different reason) -- starts, waits out
@@ -234,82 +257,111 @@ public class BoothStateMachine
                 await Task.Delay(TimeSpan.FromSeconds(settings.Capture.VideoDurationSeconds), ct);
                 BoothVideoRecording recording = await _services.BoothVideo.StopRecordingAsync(ct);
                 LastCapturedImagePath = recording.FilePath;
+                LastCapturedImagePaths = new[] { LastCapturedImagePath };
             }
             else
             {
-                LastCapturedImagePath = await _services.Camera.CaptureAsync(ct);
-
-                // Filters (see PhotoFilterPreset/GdiFilterPresetService,
-                // BoothState.FilterPicker) run first in the effects chain -- a
-                // foundational photographic treatment the rest (green screen
-                // background swap, branding caption, frame/sticker overlay,
-                // watermark) layer on top of. Skipped entirely when the
-                // Filters toggle is off or no preset is enabled, same
-                // "disabled/empty pool = feature invisible" reasoning
-                // FramePicker/Stickers already established.
-                if (settings.Effects.FiltersEnabled)
+                // One Countdown/Capturing/effects cycle per required pose.
+                // PrintTemplate.RequiredPhotoCount is 1 for every template
+                // that predates PhotoSlot elements, so this loop runs
+                // exactly once -- identical to the single-capture behavior
+                // that existed before true multi-pose templates -- for
+                // every template in use before this feature.
+                int requiredPhotoCount = settings.PrintTemplate.RequiredPhotoCount;
+                var poses = new List<string>();
+                for (int poseIndex = 0; poseIndex < requiredPhotoCount; poseIndex++)
                 {
-                    List<PhotoFilterPreset> enabledPresets = PhotoFilterPresets.Parse(settings.Effects.EnabledFilterPresetIds);
-                    if (enabledPresets.Count > 0)
+                    if (requiredPhotoCount > 1)
                     {
-                        if (settings.Effects.FiltersMode == "Auto")
-                        {
-                            // Silent -- no guest interaction, no FilterPicker state.
-                            LastCapturedImagePath = await _services.FilterPreset.ApplyPresetAsync(LastCapturedImagePath, enabledPresets[0], ct);
-                        }
-                        else
-                        {
-                            // Ask: render every enabled preset against the actual
-                            // capture up front -- each candidate is a real,
-                            // fully-rendered result (not a generic stock
-                            // thumbnail), so whichever one the guest taps is
-                            // already the final file, no second apply pass needed.
-                            var filterOptions = new List<FilterOption>();
-                            foreach (PhotoFilterPreset preset in enabledPresets)
-                            {
-                                string previewPath = await _services.FilterPreset.ApplyPresetAsync(LastCapturedImagePath, preset, ct);
-                                filterOptions.Add(new FilterOption(preset, PhotoFilterPresets.DisplayName(preset), previewPath));
-                            }
+                        PoseChanged?.Invoke(poseIndex + 1, requiredPhotoCount);
+                    }
 
-                            SetState(BoothState.FilterPicker);
-                            FilterOption? chosenFilter = await WithGuestIdleTimeoutAsync(
-                                _services.FilterSelection.SelectFilterAsync(filterOptions, ct), (FilterOption?)null, ct);
-                            if (chosenFilter is not null)
+                    SetState(BoothState.Countdown);
+                    for (int i = settings.CountdownSeconds; i > 0; i--)
+                    {
+                        CountdownTick?.Invoke(i);
+                        await Task.Delay(1000, ct);
+                    }
+
+                    SetState(BoothState.Capturing);
+                    LastCapturedImagePath = await _services.Camera.CaptureAsync(ct);
+
+                    // Filters (see PhotoFilterPreset/GdiFilterPresetService,
+                    // BoothState.FilterPicker) run first in the effects chain -- a
+                    // foundational photographic treatment the rest (green screen
+                    // background swap, branding caption, frame/sticker overlay,
+                    // watermark) layer on top of. Skipped entirely when the
+                    // Filters toggle is off or no preset is enabled, same
+                    // "disabled/empty pool = feature invisible" reasoning
+                    // FramePicker/Stickers already established.
+                    if (settings.Effects.FiltersEnabled)
+                    {
+                        List<PhotoFilterPreset> enabledPresets = PhotoFilterPresets.Parse(settings.Effects.EnabledFilterPresetIds);
+                        if (enabledPresets.Count > 0)
+                        {
+                            if (settings.Effects.FiltersMode == "Auto")
                             {
-                                LastCapturedImagePath = chosenFilter.PreviewImagePath;
+                                // Silent -- no guest interaction, no FilterPicker state.
+                                LastCapturedImagePath = await _services.FilterPreset.ApplyPresetAsync(LastCapturedImagePath, enabledPresets[0], ct);
+                            }
+                            else
+                            {
+                                // Ask: render every enabled preset against the actual
+                                // capture up front -- each candidate is a real,
+                                // fully-rendered result (not a generic stock
+                                // thumbnail), so whichever one the guest taps is
+                                // already the final file, no second apply pass needed.
+                                var filterOptions = new List<FilterOption>();
+                                foreach (PhotoFilterPreset preset in enabledPresets)
+                                {
+                                    string previewPath = await _services.FilterPreset.ApplyPresetAsync(LastCapturedImagePath, preset, ct);
+                                    filterOptions.Add(new FilterOption(preset, PhotoFilterPresets.DisplayName(preset), previewPath));
+                                }
+
+                                SetState(BoothState.FilterPicker);
+                                FilterOption? chosenFilter = await WithGuestIdleTimeoutAsync(
+                                    _services.FilterSelection.SelectFilterAsync(filterOptions, ct), (FilterOption?)null, ct);
+                                if (chosenFilter is not null)
+                                {
+                                    LastCapturedImagePath = chosenFilter.PreviewImagePath;
+                                }
                             }
                         }
                     }
+
+                    // Green screen composites first, before the glam filter --
+                    // its green-dominance threshold needs the plain camera
+                    // colors, and a background composited after a B&W pass would
+                    // itself need to be desaturated to match, which isn't
+                    // attempted here. Skipped with no background configured:
+                    // nothing to composite against yet, even if the toggle is on.
+                    if (settings.GreenScreen is { Enabled: true, BackgroundImagePath: not null } greenScreen)
+                    {
+                        LastCapturedImagePath = await _services.GreenScreen.ApplyGreenScreenAsync(
+                            LastCapturedImagePath, greenScreen.BackgroundImagePath, ct);
+                    }
+
+                    // Glam filter (if this booth's settings have it on) applies
+                    // before branding, not after -- the caption bar is always white
+                    // text on a solid black bar regardless of the photo's colors, so
+                    // filter order doesn't affect its legibility either way, but
+                    // doing the color/contrast pass on the plain capture first keeps
+                    // the two effects independent and easy to reason about.
+                    if (settings.GlamFilterEnabled)
+                    {
+                        LastCapturedImagePath = await _services.Filter.ApplyGlamFilterAsync(LastCapturedImagePath, ct);
+                    }
+
+                    // Branded before anything downstream ever sees the path -- the
+                    // Reviewing screen, the print, and the upload should all show
+                    // the guest exactly the same (branded) photo, not three
+                    // different versions depending on which step ran first.
+                    LastCapturedImagePath = await _services.Branding.ApplyBrandingAsync(LastCapturedImagePath, settings.Theme.EventName, ct);
+
+                    poses.Add(LastCapturedImagePath);
                 }
 
-                // Green screen composites first, before the glam filter --
-                // its green-dominance threshold needs the plain camera
-                // colors, and a background composited after a B&W pass would
-                // itself need to be desaturated to match, which isn't
-                // attempted here. Skipped with no background configured:
-                // nothing to composite against yet, even if the toggle is on.
-                if (settings.GreenScreen is { Enabled: true, BackgroundImagePath: not null } greenScreen)
-                {
-                    LastCapturedImagePath = await _services.GreenScreen.ApplyGreenScreenAsync(
-                        LastCapturedImagePath, greenScreen.BackgroundImagePath, ct);
-                }
-
-                // Glam filter (if this booth's settings have it on) applies
-                // before branding, not after -- the caption bar is always white
-                // text on a solid black bar regardless of the photo's colors, so
-                // filter order doesn't affect its legibility either way, but
-                // doing the color/contrast pass on the plain capture first keeps
-                // the two effects independent and easy to reason about.
-                if (settings.GlamFilterEnabled)
-                {
-                    LastCapturedImagePath = await _services.Filter.ApplyGlamFilterAsync(LastCapturedImagePath, ct);
-                }
-
-                // Branded before anything downstream ever sees the path -- the
-                // Reviewing screen, the print, and the upload should all show
-                // the guest exactly the same (branded) photo, not three
-                // different versions depending on which step ran first.
-                LastCapturedImagePath = await _services.Branding.ApplyBrandingAsync(LastCapturedImagePath, settings.Theme.EventName, ct);
+                LastCapturedImagePaths = poses;
             }
 
             SetState(BoothState.Reviewing);
@@ -322,6 +374,10 @@ public class BoothStateMachine
             // Stickers screen's Stickers toggle is off -- either way, a fresh/
             // stickers-disabled booth behaves exactly as it did before this
             // feature existed.
+            // Applied to every captured pose (usually just the one), not only the
+            // last -- every pose in the final print gets the same treatment.
+            List<string> processedPoses = LastCapturedImagePaths.ToList();
+
             IReadOnlyList<FrameOption> frames = isNonPrintableCapture || !settings.Effects.StickersEnabled
                 ? []
                 : await _services.FrameLibrary.GetActiveFramesAsync(ct);
@@ -332,8 +388,11 @@ public class BoothStateMachine
                     _services.FrameSelection.SelectFrameAsync(frames, ct), (FrameOption?)null, ct);
                 if (LastSelectedFrame is not null)
                 {
-                    LastCapturedImagePath = await _services.FrameOverlay.ApplyFrameAsync(
-                        LastCapturedImagePath, LastSelectedFrame.ImagePath, ct);
+                    for (int i = 0; i < processedPoses.Count; i++)
+                    {
+                        processedPoses[i] = await _services.FrameOverlay.ApplyFrameAsync(
+                            processedPoses[i], LastSelectedFrame.ImagePath, ct);
+                    }
                 }
             }
 
@@ -348,9 +407,15 @@ public class BoothStateMachine
             // rest of this pipeline.
             if (!isNonPrintableCapture && settings.Effects is { WatermarkEnabled: true, WatermarkImagePath: not null })
             {
-                LastCapturedImagePath = await _services.FrameOverlay.ApplyFrameAsync(
-                    LastCapturedImagePath, settings.Effects.WatermarkImagePath, ct);
+                for (int i = 0; i < processedPoses.Count; i++)
+                {
+                    processedPoses[i] = await _services.FrameOverlay.ApplyFrameAsync(
+                        processedPoses[i], settings.Effects.WatermarkImagePath, ct);
+                }
             }
+
+            LastCapturedImagePaths = processedPoses;
+            LastCapturedImagePath = processedPoses[^1];
 
             // Post-Processing hook -- see IPostProcessingService's doc for why
             // this is fire-and-forget (doesn't await or gate the guest flow on
@@ -405,8 +470,20 @@ public class BoothStateMachine
             // rasterize onto paper.
             if (!isNonPrintableCapture)
             {
+                // A template with a QrCode element needs a real upload URL to
+                // encode -- give the still-in-flight upload a bounded chance to
+                // finish before printing (never indefinitely; the booth must
+                // never stall on a slow or dead network). A template without
+                // one keeps today's fully fire-and-forget upload -- printing
+                // never waits on it at all.
+                if (settings.PrintTemplate.Elements.Any(e => e.Kind == PrintTemplateElementKind.QrCode))
+                {
+                    await Task.WhenAny(uploadTask, Task.Delay(TimeSpan.FromSeconds(10), ct));
+                }
+
                 SetState(BoothState.Printing);
-                await _services.Printer.PrintAsync(LastCapturedImagePath, settings.PrintTemplate, ct);
+                var printContext = new PrintRenderContext(LastPhotoUrl, settings.Theme.EventName, DateTime.Now);
+                await _services.Printer.PrintAsync(LastCapturedImagePaths, settings.PrintTemplate, printContext, ct);
                 await _services.Sessions.RecordPrintAsync(sessionId.Value, LastCapturedImagePath, ct);
             }
 

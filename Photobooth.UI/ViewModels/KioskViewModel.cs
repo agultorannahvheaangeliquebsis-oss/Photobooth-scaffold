@@ -89,7 +89,23 @@ public class KioskViewModel : ObservableObject, IDisposable
         int? locationId = null,
         UiFilterSelectionService? filterSelection = null)
     {
-        _dispatcher = Dispatcher.CurrentDispatcher;
+        // Application.Current.Dispatcher, not Dispatcher.CurrentDispatcher: this
+        // constructor runs inside BoothCompositionRoot.BuildKioskViewModel, which
+        // EventLauncherWindow.LaunchSelectedAsync deliberately calls via Task.Run
+        // to keep DB init/camera-bridge startup off the UI thread -- so "current"
+        // here is a threadpool thread, not the real UI thread.
+        // Dispatcher.CurrentDispatcher would have silently created a brand-new
+        // Dispatcher bound to that threadpool thread (nobody ever calls Run() on
+        // it, since it just returns to the pool), and every OnUi() call from the
+        // real UI thread afterward would then block forever in Dispatcher.Invoke
+        // waiting on a message loop that never pumps -- confirmed via live repro
+        // (traced exactly to this line: execution stops dead between
+        // "BuildKioskViewModel returned" and "LaunchEventCommand executed", 0% CPU,
+        // no exception, no timeout). Application.Current.Dispatcher is fixed to the
+        // one real UI thread for the life of the app, regardless of which thread
+        // constructs this ViewModel. Falls back to CurrentDispatcher only for a
+        // bare unit-test context with no running Application at all.
+        _dispatcher = System.Windows.Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
         _liveView = liveView;
         _locationId = locationId;
 
@@ -140,6 +156,11 @@ public class KioskViewModel : ObservableObject, IDisposable
 
         _stateMachine.StateChanged += state => OnUi(() => ApplyState(state));
         _stateMachine.CountdownTick += value => OnUi(() => CountdownValue = value);
+        _stateMachine.PoseChanged += (pose, total) => OnUi(() =>
+        {
+            ShowPoseProgress = total > 1;
+            PoseProgressText = $"Pose {pose} of {total}";
+        });
         _stateMachine.ErrorOccurred += message => OnUi(() =>
         {
             ErrorMessage = message;
@@ -338,6 +359,26 @@ public class KioskViewModel : ObservableObject, IDisposable
     {
         get => _countdownValue;
         private set => SetProperty(ref _countdownValue, value);
+    }
+
+    private string _poseProgressText = string.Empty;
+
+    /// <summary>"Pose 2 of 4" -- only meaningful for a true multi-pose template
+    /// (PrintTemplate.RequiredPhotoCount > 1). Bound alongside CountdownValue/
+    /// LiveViewStream on the Countdown/Capturing screens, visibility gated by
+    /// ShowPoseProgress so a template with a single photo slot (every template
+    /// before this feature) shows nothing extra.</summary>
+    public string PoseProgressText
+    {
+        get => _poseProgressText;
+        private set => SetProperty(ref _poseProgressText, value);
+    }
+
+    private bool _showPoseProgress;
+    public bool ShowPoseProgress
+    {
+        get => _showPoseProgress;
+        private set => SetProperty(ref _showPoseProgress, value);
     }
 
     private ImageSource? _liveViewStream;
@@ -690,7 +731,7 @@ public class KioskViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref _qrEnabled, value);
     }
 
-    public bool CanPrint => PrintsRemaining > 0 && !IsPrinting && _stateMachine.LastCapturedImagePath is not null;
+    public bool CanPrint => PrintsRemaining > 0 && !IsPrinting && _stateMachine.LastCapturedImagePaths.Count > 0;
 
     public bool CanSendEmail => IsEmailEnabled && LooksLikeEmail(ShareEmail) && _stateMachine.LastPhotoUrl is not null;
 
@@ -801,7 +842,7 @@ public class KioskViewModel : ObservableObject, IDisposable
     /// per-session limit being decremented in both places.</summary>
     private async Task PrintAsync()
     {
-        if (_stateMachine.LastCapturedImagePath is not string path)
+        if (_stateMachine.LastCapturedImagePaths.Count == 0)
         {
             return;
         }
@@ -810,7 +851,8 @@ public class KioskViewModel : ObservableObject, IDisposable
         ShareStatus = "Sending to printer...";
         try
         {
-            await _services.Printer.PrintAsync(path, _settings.PrintTemplate);
+            var context = new PrintRenderContext(_stateMachine.LastPhotoUrl, _settings.Theme.EventName, DateTime.Now);
+            await _services.Printer.PrintAsync(_stateMachine.LastCapturedImagePaths, _settings.PrintTemplate, context);
             PrintsRemaining = Math.Max(0, PrintsRemaining - 1);
             Admin.PrintsThisSession++;
             Admin.PrintsThisEvent++;
@@ -902,7 +944,7 @@ public class KioskViewModel : ObservableObject, IDisposable
 
         if (state == BoothState.Reviewing)
         {
-            _ = BuildTemplatePreviewAsync(_stateMachine.LastCapturedImagePath);
+            _ = BuildTemplatePreviewAsync(_stateMachine.LastCapturedImagePaths);
         }
 
         if (state == BoothState.Payment)
@@ -1165,18 +1207,18 @@ public class KioskViewModel : ObservableObject, IDisposable
     /// multi-megapixel capture, so it runs off the UI thread and the resulting
     /// bitmap is frozen before it crosses back.
     /// </summary>
-    private async Task BuildTemplatePreviewAsync(string? capturePath)
+    private async Task BuildTemplatePreviewAsync(IReadOnlyList<string> capturePaths)
     {
         TemplatePreview = null;
         PreviewUnavailableReason = null;
 
-        if (capturePath is null || !File.Exists(capturePath))
+        if (capturePaths.Count == 0 || !File.Exists(capturePaths[0]))
         {
             PreviewUnavailableReason = "Your photo is on its way.";
             return;
         }
 
-        string extension = Path.GetExtension(capturePath).ToLowerInvariant();
+        string extension = Path.GetExtension(capturePaths[0]).ToLowerInvariant();
         if (extension is not (".jpg" or ".jpeg" or ".png" or ".bmp" or ".gif"))
         {
             // Video mode: nothing to composite onto paper (which is also why
@@ -1190,7 +1232,7 @@ public class KioskViewModel : ObservableObject, IDisposable
         {
             ImageSource preview = await Task.Run(() =>
             {
-                using System.Drawing.Bitmap composed = PrintCompositor.RenderPreview(capturePath, template, previewWidthPx: 720);
+                using System.Drawing.Bitmap composed = PrintCompositor.RenderPreview(capturePaths, template, previewWidthPx: 720);
                 using var buffer = new MemoryStream();
                 composed.Save(buffer, System.Drawing.Imaging.ImageFormat.Png);
                 buffer.Position = 0;
@@ -1206,7 +1248,7 @@ public class KioskViewModel : ObservableObject, IDisposable
             // rather than surfacing an error over a successful session.
             OnUi(() =>
             {
-                TemplatePreview = LoadImageFromPath(capturePath);
+                TemplatePreview = LoadImageFromPath(capturePaths[^1]);
                 if (TemplatePreview is null)
                 {
                     PreviewUnavailableReason = "Your photo is ready to share.";

@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Linq;
 
 namespace Photobooth.Core;
 
@@ -20,6 +21,24 @@ public record PrintTemplate(string Layout, double WidthInches, double HeightInch
     /// BoothSettings.Theme uses -- so every existing `new PrintTemplate(...)` call
     /// site keeps compiling unchanged with an empty element list.</summary>
     public IReadOnlyList<PrintTemplateElement> Elements { get; init; } = Array.Empty<PrintTemplateElement>();
+
+    /// <summary>How many distinct captured photos this template needs -- 1 for every
+    /// template that existed before PhotoSlot elements (the single capture is repeated
+    /// into every cell, see PrintCompositor's legacy cell mode), or one more than the
+    /// highest PhotoIndex among this template's PhotoSlot elements otherwise. Read by
+    /// BoothStateMachine before Capturing to decide how many pose/countdown cycles to
+    /// run.</summary>
+    public int RequiredPhotoCount
+    {
+        get
+        {
+            List<int> photoIndexes = Elements
+                .Where(e => e.Kind == PrintTemplateElementKind.PhotoSlot)
+                .Select(e => e.PhotoIndex ?? 0)
+                .ToList();
+            return photoIndexes.Count == 0 ? 1 : photoIndexes.Max() + 1;
+        }
+    }
 
     public bool IsValid =>
         (Layout == "Single" || Layout == "Strip")

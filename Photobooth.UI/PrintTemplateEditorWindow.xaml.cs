@@ -15,25 +15,40 @@ using Photobooth.Data;
 namespace Photobooth.UI;
 
 /// <summary>
-/// Drag-and-drop visual editor for a print template's logo/text overlays.
-/// PreviewImage and ElementsCanvas occupy the exact same position/size, so a
-/// drag delta measured on the canvas maps 1:1 onto the rendered preview
-/// below it -- no separate scaling math needed to translate between them.
-/// The preview itself is rendered by PrintCompositor, the same code
-/// SpoolerPrinterService uses at print time, so what's shown here is
-/// provably what actually prints, not a second renderer that merely looks
-/// similar. Every drag/resize/property edit re-renders that preview so it
-/// stays live. Not yet seen rendered or clicked through -- same
-/// interactive-desktop gap every WPF screen in this project has; the
-/// percent math and compositing underneath it are unit-tested separately
-/// (PrintTemplateTests, PrintCompositorTests) since mouse-event wiring
-/// itself isn't something a unit test can exercise.
+/// Drag-and-drop visual editor for a print template's overlay elements
+/// (Text/Logo/Image/Shape/QR Code/Session Data/Photo Slot). PreviewImage and
+/// ElementsCanvas occupy the exact same position/size, so a drag delta
+/// measured on the canvas maps 1:1 onto the rendered preview below it -- no
+/// separate scaling math needed to translate between them. The preview
+/// itself is rendered by PrintCompositor, the same code SpoolerPrinterService
+/// uses at print time, so what's shown here is provably what actually
+/// prints, not a second renderer that merely looks similar. Every drag/
+/// resize/property edit re-renders that preview so it stays live.
+///
+/// A template with one or more Photo Slot elements switches PrintCompositor
+/// into "slot mode" -- every element (including each Photo Slot) is
+/// positioned once against the whole page instead of being repeated per
+/// strip cell. The preview here reuses one sample photo for every slot
+/// (position/kind is what's being edited, not real pose content); a real
+/// session captures a distinct photo per slot -- see BoothStateMachine.
+///
+/// Not yet seen rendered or clicked through -- same interactive-desktop gap
+/// every WPF screen in this project has; the percent math and compositing
+/// underneath it are unit-tested separately (PrintTemplateTests,
+/// PrintCompositorTests) since mouse-event wiring itself isn't something a
+/// unit test can exercise.
 /// </summary>
 public partial class PrintTemplateEditorWindow : Window
 {
     private const int PreviewWidthPx = 500;
     private const double HandleSize = 12;
     private const double MinElementSizePx = 20;
+
+    /// <summary>Stub context so QrCode/SessionData elements preview as something
+    /// non-blank -- the real print uses BoothStateMachine's live PrintRenderContext
+    /// (the guest's actual upload URL/event name/print time).</summary>
+    private static readonly PrintRenderContext PreviewContext =
+        new(new Uri("https://example.com/preview"), "Sample Event", DateTime.Now);
 
     private readonly int _locationId;
     private readonly PrintTemplate _initialTemplate;
@@ -110,12 +125,20 @@ public partial class PrintTemplateEditorWindow : Window
         return placeholderPath;
     }
 
+    /// <summary>The one sample photo, repeated once per required pose -- a true
+    /// multi-pose template's PhotoSlot elements each need a photo to preview against,
+    /// and a real distinct pose per slot isn't available here (no camera in this editor,
+    /// only ever a stand-in for position/kind editing).</summary>
+    private List<string> BuildSamplePhotoPaths(int count) =>
+        Enumerable.Repeat(_samplePhotoPath, Math.Max(count, 1)).ToList();
+
     private void RefreshPreview()
     {
         try
         {
             PrintTemplate workingTemplate = _initialTemplate with { Elements = _elements };
-            using System.Drawing.Bitmap rendered = PrintCompositor.RenderPreview(_samplePhotoPath, workingTemplate, PreviewWidthPx);
+            using System.Drawing.Bitmap rendered = PrintCompositor.RenderPreview(
+                BuildSamplePhotoPaths(workingTemplate.RequiredPhotoCount), workingTemplate, PreviewWidthPx, PreviewContext);
             PreviewImage.Source = ToBitmapSource(rendered);
         }
         catch (Exception ex)
@@ -147,24 +170,7 @@ public partial class PrintTemplateEditorWindow : Window
     private void AddVisualForElement(int index)
     {
         PrintTemplateElement element = _elements[index];
-
-        FrameworkElement content = element.Kind == PrintTemplateElementKind.Text
-            ? new TextBlock
-            {
-                Text = element.Text,
-                FontWeight = element.Bold ? FontWeights.Bold : FontWeights.Normal,
-                Foreground = HexToBrush(element.ColorHex),
-                TextAlignment = TextAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextWrapping = TextWrapping.Wrap,
-            }
-            : new Image
-            {
-                Source = element.ImagePath is string path && File.Exists(path)
-                    ? new BitmapImage(new Uri(IoPath.GetFullPath(path)))
-                    : null,
-                Stretch = Stretch.Uniform,
-            };
+        FrameworkElement content = BuildContentVisual(element);
 
         var container = new Border
         {
@@ -195,6 +201,59 @@ public partial class PrintTemplateEditorWindow : Window
 
         PositionVisual(index);
     }
+
+    /// <summary>One visual per kind -- Text/Logo/Image render their real content (as
+    /// before); Shape renders its actual fill/outline; QrCode/SessionData/PhotoSlot
+    /// render a small placeholder label, since their real content (a generated QR, a
+    /// resolved date/time, an actual captured pose) only exists at render/print time,
+    /// not while dragging a hit-target around the editor canvas.</summary>
+    private static FrameworkElement BuildContentVisual(PrintTemplateElement element) => element.Kind switch
+    {
+        PrintTemplateElementKind.Text => new TextBlock
+        {
+            Text = element.Text,
+            FontWeight = element.Bold ? FontWeights.Bold : FontWeights.Normal,
+            Foreground = HexToBrush(element.ColorHex),
+            TextAlignment = TextAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+        },
+        PrintTemplateElementKind.Logo or PrintTemplateElementKind.Image => new Image
+        {
+            Source = element.ImagePath is string path && File.Exists(path)
+                ? new BitmapImage(new Uri(IoPath.GetFullPath(path)))
+                : null,
+            Stretch = Stretch.Uniform,
+        },
+        PrintTemplateElementKind.Shape => element.ShapeType == "Ellipse"
+            ? new Ellipse { Fill = HexToBrush(element.ColorHex) }
+            : new Rectangle { Fill = HexToBrush(element.ColorHex) },
+        PrintTemplateElementKind.QrCode => new TextBlock
+        {
+            Text = "QR Code",
+            FontWeight = FontWeights.Bold,
+            Foreground = Brushes.DimGray,
+            TextAlignment = TextAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        },
+        PrintTemplateElementKind.SessionData => new TextBlock
+        {
+            Text = $"{{{element.Text}}}",
+            Foreground = Brushes.DimGray,
+            TextAlignment = TextAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+        },
+        PrintTemplateElementKind.PhotoSlot => new TextBlock
+        {
+            Text = $"Pose {(element.PhotoIndex ?? 0) + 1}",
+            FontWeight = FontWeights.Bold,
+            Foreground = Brushes.DimGray,
+            TextAlignment = TextAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        },
+        _ => new TextBlock(),
+    };
 
     private void PositionVisual(int index)
     {
@@ -363,6 +422,7 @@ public partial class PrintTemplateEditorWindow : Window
         _selectedIndex = index;
         DeleteSelectedButton.IsEnabled = index >= 0;
         NoSelectionText.Visibility = index >= 0 ? Visibility.Collapsed : Visibility.Visible;
+        PositionSizePanel.Visibility = index >= 0 ? Visibility.Visible : Visibility.Collapsed;
 
         _suppressLayerListEvents = true;
         try
@@ -386,10 +446,15 @@ public partial class PrintTemplateEditorWindow : Window
         AlignCenterVButton.IsEnabled = hasSelection;
         AlignBottomButton.IsEnabled = hasSelection;
 
+        TextPropertiesPanel.Visibility = Visibility.Collapsed;
+        LogoPropertiesPanel.Visibility = Visibility.Collapsed;
+        ShapePropertiesPanel.Visibility = Visibility.Collapsed;
+        QrCodePropertiesPanel.Visibility = Visibility.Collapsed;
+        SessionDataPropertiesPanel.Visibility = Visibility.Collapsed;
+        PhotoSlotPropertiesPanel.Visibility = Visibility.Collapsed;
+
         if (index < 0)
         {
-            TextPropertiesPanel.Visibility = Visibility.Collapsed;
-            LogoPropertiesPanel.Visibility = Visibility.Collapsed;
             return;
         }
 
@@ -397,19 +462,53 @@ public partial class PrintTemplateEditorWindow : Window
         _suppressPropertyEvents = true;
         try
         {
-            if (element.Kind == PrintTemplateElementKind.Text)
+            ElementXBox.Text = ((int)(element.XPercent * _canvasWidth)).ToString();
+            ElementYBox.Text = ((int)(element.YPercent * _canvasHeight)).ToString();
+            ElementWidthBox.Text = ((int)(element.WidthPercent * _canvasWidth)).ToString();
+            ElementHeightBox.Text = ((int)(element.HeightPercent * _canvasHeight)).ToString();
+
+            switch (element.Kind)
             {
-                TextPropertiesPanel.Visibility = Visibility.Visible;
-                LogoPropertiesPanel.Visibility = Visibility.Collapsed;
-                ElementTextBox.Text = element.Text ?? string.Empty;
-                FontSizeSlider.Value = element.FontSizePercent;
-                BoldCheckBox.IsChecked = element.Bold;
-                ElementColorBox.Text = element.ColorHex;
-            }
-            else
-            {
-                TextPropertiesPanel.Visibility = Visibility.Collapsed;
-                LogoPropertiesPanel.Visibility = Visibility.Visible;
+                case PrintTemplateElementKind.Text:
+                    TextPropertiesPanel.Visibility = Visibility.Visible;
+                    ElementTextBox.Text = element.Text ?? string.Empty;
+                    FontSizeSlider.Value = element.FontSizePercent;
+                    BoldCheckBox.IsChecked = element.Bold;
+                    ElementColorBox.Text = element.ColorHex;
+                    break;
+
+                case PrintTemplateElementKind.Logo:
+                case PrintTemplateElementKind.Image:
+                    LogoPropertiesPanel.Visibility = Visibility.Visible;
+                    ImageKindLabel.Text = element.Kind == PrintTemplateElementKind.Logo ? "Logo image" : "Image";
+                    break;
+
+                case PrintTemplateElementKind.Shape:
+                    ShapePropertiesPanel.Visibility = Visibility.Visible;
+                    ShapeColorBox.Text = element.ColorHex;
+                    break;
+
+                case PrintTemplateElementKind.QrCode:
+                    QrCodePropertiesPanel.Visibility = Visibility.Visible;
+                    break;
+
+                case PrintTemplateElementKind.SessionData:
+                    SessionDataPropertiesPanel.Visibility = Visibility.Visible;
+                    foreach (ComboBoxItem item in SessionDataFieldCombo.Items)
+                    {
+                        if ((string?)item.Tag == element.Text)
+                        {
+                            SessionDataFieldCombo.SelectedItem = item;
+                            break;
+                        }
+                    }
+                    break;
+
+                case PrintTemplateElementKind.PhotoSlot:
+                    PhotoSlotPropertiesPanel.Visibility = Visibility.Visible;
+                    PhotoSlotIndexText.Text = $"Pose {(element.PhotoIndex ?? 0) + 1} of this template's photo slots. " +
+                        "The pose number is assigned when a Photo Slot is added and can't be edited here.";
+                    break;
             }
         }
         finally
@@ -418,15 +517,14 @@ public partial class PrintTemplateEditorWindow : Window
         }
     }
 
+    /// <summary>Rebuilds the selected element's visual from scratch and re-inserts it in
+    /// place -- simpler than patching individual properties across seven different kinds
+    /// of content (TextBlock/Image/Shape), and cheap enough for an admin-only editor.</summary>
     private void RefreshVisualContent(int index)
     {
-        PrintTemplateElement element = _elements[index];
-        if (_containers[index].Child is TextBlock textBlock)
-        {
-            textBlock.Text = element.Text;
-            textBlock.FontWeight = element.Bold ? FontWeights.Bold : FontWeights.Normal;
-            textBlock.Foreground = HexToBrush(element.ColorHex);
-        }
+        Border container = _containers[index];
+        FrameworkElement content = BuildContentVisual(_elements[index]);
+        container.Child = content;
     }
 
     private static SolidColorBrush HexToBrush(string hex)
@@ -488,12 +586,68 @@ public partial class PrintTemplateEditorWindow : Window
         RefreshPreview();
     }
 
-    private void AddTextButton_Click(object sender, RoutedEventArgs e)
+    private void ShapeColorBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        var element = new PrintTemplateElement(
-            PrintTemplateElementKind.Text,
-            XPercent: 0.1, YPercent: 0.85, WidthPercent: 0.8, HeightPercent: 0.1,
-            Text: "Your text here");
+        if (_suppressPropertyEvents || _selectedIndex < 0)
+        {
+            return;
+        }
+
+        _elements[_selectedIndex] = _elements[_selectedIndex] with { ColorHex = ShapeColorBox.Text };
+        RefreshVisualContent(_selectedIndex);
+        RefreshPreview();
+    }
+
+    private void SessionDataFieldCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressPropertyEvents || _selectedIndex < 0)
+        {
+            return;
+        }
+
+        if (SessionDataFieldCombo.SelectedItem is ComboBoxItem { Tag: string fieldKey })
+        {
+            _elements[_selectedIndex] = _elements[_selectedIndex] with { Text = fieldKey };
+            RefreshVisualContent(_selectedIndex);
+            RefreshLayerList();
+            RefreshPreview();
+        }
+    }
+
+    /// <summary>Shared by the four X/Y/W/H boxes -- parses pixels against the current
+    /// canvas size and writes the corresponding percent property, same conversion
+    /// PositionVisual/the drag handlers already use in the other direction.</summary>
+    private void ApplyPositionSizeBoxChange(Func<PrintTemplateElement, double, PrintTemplateElement> apply, string text, double canvasExtent)
+    {
+        if (_suppressPropertyEvents || _selectedIndex < 0)
+        {
+            return;
+        }
+
+        if (!double.TryParse(text, out double pixels))
+        {
+            return;
+        }
+
+        _elements[_selectedIndex] = apply(_elements[_selectedIndex], pixels / canvasExtent);
+        PositionVisual(_selectedIndex);
+        RefreshPreview();
+    }
+
+    private void ElementXBox_TextChanged(object sender, TextChangedEventArgs e) =>
+        ApplyPositionSizeBoxChange((el, percent) => el with { XPercent = percent }, ElementXBox.Text, _canvasWidth);
+
+    private void ElementYBox_TextChanged(object sender, TextChangedEventArgs e) =>
+        ApplyPositionSizeBoxChange((el, percent) => el with { YPercent = percent }, ElementYBox.Text, _canvasHeight);
+
+    private void ElementWidthBox_TextChanged(object sender, TextChangedEventArgs e) =>
+        ApplyPositionSizeBoxChange((el, percent) => el with { WidthPercent = percent }, ElementWidthBox.Text, _canvasWidth);
+
+    private void ElementHeightBox_TextChanged(object sender, TextChangedEventArgs e) =>
+        ApplyPositionSizeBoxChange((el, percent) => el with { HeightPercent = percent }, ElementHeightBox.Text, _canvasHeight);
+
+    private void AddElement(PrintTemplateElement element)
+    {
         _elements.Add(element);
         AddVisualForElement(_elements.Count - 1);
         RefreshLayerList();
@@ -501,23 +655,73 @@ public partial class PrintTemplateEditorWindow : Window
         RefreshPreview();
     }
 
+    private void AddTextButton_Click(object sender, RoutedEventArgs e) => AddElement(new PrintTemplateElement(
+        PrintTemplateElementKind.Text,
+        XPercent: 0.1, YPercent: 0.85, WidthPercent: 0.8, HeightPercent: 0.1,
+        Text: "Your text here"));
+
     private void AddLogoButton_Click(object sender, RoutedEventArgs e)
     {
-        string? storedPath = PickAndStoreLogoImage();
+        string? storedPath = PickAndStoreImage();
         if (storedPath is null)
         {
             return;
         }
 
-        var element = new PrintTemplateElement(
+        AddElement(new PrintTemplateElement(
             PrintTemplateElementKind.Logo,
             XPercent: 0.7, YPercent: 0.05, WidthPercent: 0.25, HeightPercent: 0.1,
-            ImagePath: storedPath);
-        _elements.Add(element);
-        AddVisualForElement(_elements.Count - 1);
-        RefreshLayerList();
-        SelectElement(_elements.Count - 1);
-        RefreshPreview();
+            ImagePath: storedPath));
+    }
+
+    private void AddImageButton_Click(object sender, RoutedEventArgs e)
+    {
+        string? storedPath = PickAndStoreImage();
+        if (storedPath is null)
+        {
+            return;
+        }
+
+        AddElement(new PrintTemplateElement(
+            PrintTemplateElementKind.Image,
+            XPercent: 0.1, YPercent: 0.05, WidthPercent: 0.25, HeightPercent: 0.1,
+            ImagePath: storedPath));
+    }
+
+    private void AddRectangleButton_Click(object sender, RoutedEventArgs e) => AddElement(new PrintTemplateElement(
+        PrintTemplateElementKind.Shape,
+        XPercent: 0.35, YPercent: 0.35, WidthPercent: 0.3, HeightPercent: 0.3,
+        ColorHex: "#808080", ShapeType: "Rectangle"));
+
+    private void AddEllipseButton_Click(object sender, RoutedEventArgs e) => AddElement(new PrintTemplateElement(
+        PrintTemplateElementKind.Shape,
+        XPercent: 0.35, YPercent: 0.35, WidthPercent: 0.3, HeightPercent: 0.3,
+        ColorHex: "#808080", ShapeType: "Ellipse"));
+
+    private void AddQrCodeButton_Click(object sender, RoutedEventArgs e) => AddElement(new PrintTemplateElement(
+        PrintTemplateElementKind.QrCode,
+        XPercent: 0.05, YPercent: 0.75, WidthPercent: 0.2, HeightPercent: 0.2));
+
+    private void AddSessionDataButton_Click(object sender, RoutedEventArgs e) => AddElement(new PrintTemplateElement(
+        PrintTemplateElementKind.SessionData,
+        XPercent: 0.1, YPercent: 0.92, WidthPercent: 0.8, HeightPercent: 0.06,
+        Text: "EventName"));
+
+    /// <summary>PhotoIndex is assigned as the current count of existing PhotoSlot
+    /// elements, so repeated clicks number 0, 1, 2, 3... contiguously -- required for
+    /// PrintTemplate.RequiredPhotoCount to correctly infer how many poses to capture.
+    /// Default position cascades in a 2-column grid so slots don't all land on top of
+    /// each other; drag or the X/Y/W/H fields reposition from there.</summary>
+    private void AddPhotoSlotButton_Click(object sender, RoutedEventArgs e)
+    {
+        int photoIndex = _elements.Count(el => el.Kind == PrintTemplateElementKind.PhotoSlot);
+        double x = 0.05 + (photoIndex % 2) * 0.5;
+        double y = 0.05 + (photoIndex / 2) * 0.5;
+
+        AddElement(new PrintTemplateElement(
+            PrintTemplateElementKind.PhotoSlot,
+            XPercent: x, YPercent: y, WidthPercent: 0.42, HeightPercent: 0.42,
+            PhotoIndex: photoIndex));
     }
 
     private void ChangeLogoImageButton_Click(object sender, RoutedEventArgs e)
@@ -527,29 +731,26 @@ public partial class PrintTemplateEditorWindow : Window
             return;
         }
 
-        string? storedPath = PickAndStoreLogoImage();
+        string? storedPath = PickAndStoreImage();
         if (storedPath is null)
         {
             return;
         }
 
         _elements[_selectedIndex] = _elements[_selectedIndex] with { ImagePath = storedPath };
-        if (_containers[_selectedIndex].Child is Image image)
-        {
-            image.Source = new BitmapImage(new Uri(IoPath.GetFullPath(storedPath)));
-        }
+        RefreshVisualContent(_selectedIndex);
         RefreshPreview();
     }
 
     /// <summary>Copies the chosen image into a local Assets/PrintElements folder,
     /// same "own local copy, not a reference to wherever the admin picked it from"
     /// pattern AddFrameButton_Click/SaveThemeButton_Click already established.</summary>
-    private static string? PickAndStoreLogoImage()
+    private static string? PickAndStoreImage()
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
             Filter = "Image files (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg",
-            Title = "Choose a logo image",
+            Title = "Choose an image",
         };
         if (dialog.ShowDialog() != true)
         {
@@ -582,6 +783,18 @@ public partial class PrintTemplateEditorWindow : Window
         RefreshPreview();
     }
 
+    private static string LayerLabel(PrintTemplateElement element) => element.Kind switch
+    {
+        PrintTemplateElementKind.Text => $"Text: {element.Text}",
+        PrintTemplateElementKind.Logo => "Logo",
+        PrintTemplateElementKind.Image => "Image",
+        PrintTemplateElementKind.Shape => element.ShapeType == "Ellipse" ? "Ellipse" : "Rectangle",
+        PrintTemplateElementKind.QrCode => "QR Code",
+        PrintTemplateElementKind.SessionData => $"Session Data: {element.Text}",
+        PrintTemplateElementKind.PhotoSlot => $"Photo Slot #{(element.PhotoIndex ?? 0) + 1}",
+        _ => element.Kind.ToString(),
+    };
+
     private void RefreshLayerList()
     {
         _suppressLayerListEvents = true;
@@ -590,9 +803,7 @@ public partial class PrintTemplateEditorWindow : Window
             LayerListBox.Items.Clear();
             foreach (PrintTemplateElement element in _elements)
             {
-                LayerListBox.Items.Add(element.Kind == PrintTemplateElementKind.Text
-                    ? $"Text: {element.Text}"
-                    : "Logo");
+                LayerListBox.Items.Add(LayerLabel(element));
             }
         }
         finally
@@ -695,7 +906,7 @@ public partial class PrintTemplateEditorWindow : Window
     {
         if (_elements.Any(element => !element.IsValid))
         {
-            EditorStatusText.Text = "Every element needs valid bounds and either text or an image.";
+            EditorStatusText.Text = "Every element needs valid bounds and whatever content its kind requires.";
             EditorStatusText.Foreground = Brushes.Firebrick;
             return;
         }

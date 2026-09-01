@@ -47,4 +47,67 @@ public class PrintTemplateElementTests
         var element = new PrintTemplateElement(PrintTemplateElementKind.Text, x, y, width, height, Text: "Hello");
         Assert.False(element.IsValid);
     }
+
+    [Fact]
+    public void IsValid_ImageElementWithImagePath_ReturnsTrue()
+    {
+        var element = new PrintTemplateElement(PrintTemplateElementKind.Image, 0, 0, 0.5, 0.1, ImagePath: "./photo.png");
+        Assert.True(element.IsValid);
+    }
+
+    [Fact]
+    public void IsValid_ImageElementWithNoImagePath_ReturnsFalse()
+    {
+        var element = new PrintTemplateElement(PrintTemplateElementKind.Image, 0, 0, 0.5, 0.1, ImagePath: null);
+        Assert.False(element.IsValid);
+    }
+
+    [Fact]
+    public void IsValid_ShapeElementWithShapeType_ReturnsTrue()
+    {
+        var element = new PrintTemplateElement(PrintTemplateElementKind.Shape, 0, 0, 0.5, 0.1, ShapeType: "Rectangle");
+        Assert.True(element.IsValid);
+    }
+
+    [Fact]
+    public void IsValid_ShapeElementWithNoShapeType_ReturnsFalse()
+    {
+        var element = new PrintTemplateElement(PrintTemplateElementKind.Shape, 0, 0, 0.5, 0.1, ShapeType: null);
+        Assert.False(element.IsValid);
+    }
+
+    [Fact]
+    public void IsValid_QrCodeElement_ReturnsTrueWithNoOtherContentNeeded()
+    {
+        var element = new PrintTemplateElement(PrintTemplateElementKind.QrCode, 0, 0, 0.5, 0.1);
+        Assert.True(element.IsValid);
+    }
+
+    [Fact]
+    public void IsValid_SessionDataElementWithFieldKey_ReturnsTrue()
+    {
+        var element = new PrintTemplateElement(PrintTemplateElementKind.SessionData, 0, 0, 0.5, 0.1, Text: "EventName");
+        Assert.True(element.IsValid);
+    }
+
+    [Fact]
+    public void IsValid_SessionDataElementWithNoFieldKey_ReturnsFalse()
+    {
+        var element = new PrintTemplateElement(PrintTemplateElementKind.SessionData, 0, 0, 0.5, 0.1, Text: null);
+        Assert.False(element.IsValid);
+    }
+
+    [Fact]
+    public void IsValid_PhotoSlotElementWithPhotoIndex_ReturnsTrue()
+    {
+        var element = new PrintTemplateElement(PrintTemplateElementKind.PhotoSlot, 0, 0, 0.5, 0.1, PhotoIndex: 0);
+        Assert.True(element.IsValid);
+    }
+
+    [Fact]
+    public void IsValid_PhotoSlotElementWithNoPhotoIndex_ReturnsFalse()
+    {
+        var element = new PrintTemplateElement(PrintTemplateElementKind.PhotoSlot, 0, 0, 0.5, 0.1, PhotoIndex: null);
+        Assert.False(element.IsValid);
+    }
 }

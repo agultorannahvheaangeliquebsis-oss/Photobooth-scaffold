@@ -201,7 +201,7 @@ CREATE TABLE GuestbookVideo (
 CREATE TABLE PrintTemplateElement (
     ElementId       INT IDENTITY(1,1) PRIMARY KEY,
     LocationId      INT             NOT NULL REFERENCES Location(LocationId),
-    Kind            NVARCHAR(20)    NOT NULL CHECK (Kind IN ('Logo', 'Text')),
+    Kind            NVARCHAR(20)    NOT NULL CHECK (Kind IN ('Logo', 'Text', 'Image', 'Shape', 'QrCode', 'SessionData', 'PhotoSlot')),
     XPercent        DECIMAL(6,4)    NOT NULL,
     YPercent        DECIMAL(6,4)    NOT NULL,
     WidthPercent    DECIMAL(6,4)    NOT NULL,
@@ -212,6 +212,8 @@ CREATE TABLE PrintTemplateElement (
     FontSizePercent DECIMAL(6,4)    NULL,
     Bold            BIT             NOT NULL DEFAULT 0,
     ColorHex        NVARCHAR(9)     NULL,
+    ShapeType       NVARCHAR(20)    NULL,         -- 'Rectangle' or 'Ellipse', Shape only
+    PhotoIndex      INT             NULL,         -- 0-based captured pose, PhotoSlot only
     SortOrder       INT             NOT NULL DEFAULT 0,
     CreatedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
 );

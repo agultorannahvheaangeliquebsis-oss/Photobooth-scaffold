@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Drawing.Printing;
+using System.Linq;
 using System.Runtime.Versioning;
 
 namespace Photobooth.Core;
@@ -26,7 +27,7 @@ public class SpoolerPrinterService : IPrinterService
         _printerName = Environment.GetEnvironmentVariable(EnvVarName);
     }
 
-    public Task PrintAsync(string imagePath, PrintTemplate template, CancellationToken ct = default)
+    public Task PrintAsync(IReadOnlyList<string> imagePaths, PrintTemplate template, PrintRenderContext? context = null, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
 
@@ -35,36 +36,46 @@ public class SpoolerPrinterService : IPrinterService
         // meaning PrintAsync already had with MockPrinterService.
         return Task.Run(() =>
         {
-            using var image = Image.FromFile(imagePath);
-            using var document = new PrintDocument();
-
-            if (!string.IsNullOrWhiteSpace(_printerName))
+            var images = imagePaths.Select(path => (Image)Image.FromFile(path)).ToList();
+            try
             {
-                document.PrinterSettings.PrinterName = _printerName;
+                using var document = new PrintDocument();
+
+                if (!string.IsNullOrWhiteSpace(_printerName))
+                {
+                    document.PrinterSettings.PrinterName = _printerName;
+                }
+                if (!document.PrinterSettings.IsValid)
+                {
+                    throw new InvalidOperationException(
+                        $"Printer '{document.PrinterSettings.PrinterName}' is not installed or not available. " +
+                        $"Set {EnvVarName} to an installed printer's exact name, or install/attach the booth printer.");
+                }
+
+                // PaperSize.Width/Height are in hundredths of an inch, per the
+                // PrintDocument API -- so a 2x6 strip template becomes a 200x600
+                // custom paper size, same units as System.Windows.Forms uses.
+                document.DefaultPageSettings.PaperSize = new PaperSize(
+                    "PhotoboothTemplate", (int)(template.WidthInches * 100), (int)(template.HeightInches * 100));
+
+                document.PrintPage += (_, e) => Draw(images, e, template, context);
+                document.Print();
             }
-            if (!document.PrinterSettings.IsValid)
+            finally
             {
-                throw new InvalidOperationException(
-                    $"Printer '{document.PrinterSettings.PrinterName}' is not installed or not available. " +
-                    $"Set {EnvVarName} to an installed printer's exact name, or install/attach the booth printer.");
+                foreach (Image image in images)
+                {
+                    image.Dispose();
+                }
             }
-
-            // PaperSize.Width/Height are in hundredths of an inch, per the
-            // PrintDocument API -- so a 2x6 strip template becomes a 200x600
-            // custom paper size, same units as System.Windows.Forms uses.
-            document.DefaultPageSettings.PaperSize = new PaperSize(
-                "PhotoboothTemplate", (int)(template.WidthInches * 100), (int)(template.HeightInches * 100));
-
-            document.PrintPage += (_, e) => Draw(image, e, template);
-            document.Print();
         }, ct);
     }
 
-    /// <summary>Draws the photo (plus any admin-placed logo/text elements) into each
-    /// cell PrintTemplate.ComputeCellBounds hands back -- one full-page cell for
-    /// "Single", one per strip copy for "Strip". Delegates to PrintCompositor, the
-    /// same code PrintTemplateEditorWindow's live preview calls, so what the admin
-    /// sees in the editor is provably what actually prints.</summary>
-    private static void Draw(Image image, PrintPageEventArgs e, PrintTemplate template) =>
-        PrintCompositor.DrawTemplate(image, template, e.MarginBounds, e.Graphics!);
+    /// <summary>Draws the captured pose(s) (plus any admin-placed overlay elements) into
+    /// the page -- one full-page cell repeating images[0] for a legacy "Single"/"Strip"
+    /// template, or one photo per PhotoSlot for a true multi-pose template. Delegates to
+    /// PrintCompositor, the same code PrintTemplateEditorWindow's live preview calls, so
+    /// what the admin sees in the editor is provably what actually prints.</summary>
+    private static void Draw(IReadOnlyList<Image> images, PrintPageEventArgs e, PrintTemplate template, PrintRenderContext? context) =>
+        PrintCompositor.DrawTemplate(images, template, e.MarginBounds, e.Graphics!, context);
 }

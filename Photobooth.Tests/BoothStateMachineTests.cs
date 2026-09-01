@@ -1289,4 +1289,52 @@ public class BoothStateMachineTests
         Assert.Equal(createdSession.SessionId, Assert.Single(sessions.CompletedSessionIds));
         Assert.Empty(sessions.RecordedFeedback);
     }
+
+    [Fact]
+    public async Task RunSessionAsync_TemplateWithThreePhotoSlots_CapturesThreeDistinctPosesAndPrintsAllThree()
+    {
+        var camera = new MockCameraService();
+        var printer = new MockPrinterService();
+        var cloudUpload = new MockCloudUploadService();
+        var paymentService = new MockQrPaymentService();
+        var sessions = new MockSessionRepository();
+        var uploadQueue = new MockPendingUploadQueue();
+        var consent = new MockConsentService();
+        var email = new MockEmailDeliveryService();
+        var branding = new MockPhotoBrandingService();
+        var filter = new MockPhotoFilterService();
+        var multiPoseTemplate = PrintTemplate.Default with
+        {
+            Elements = new[]
+            {
+                new PrintTemplateElement(PrintTemplateElementKind.PhotoSlot, 0, 0, 0.33, 1, PhotoIndex: 0),
+                new PrintTemplateElement(PrintTemplateElementKind.PhotoSlot, 0.33, 0, 0.33, 1, PhotoIndex: 1),
+                new PrintTemplateElement(PrintTemplateElementKind.PhotoSlot, 0.66, 0, 0.34, 1, PhotoIndex: 2),
+            },
+        };
+        var settings = new MockBoothSettingsProvider
+        {
+            Settings = new BoothSettings(CountdownSeconds: 3, GlamFilterEnabled: false, PrintTemplate: multiPoseTemplate),
+        };
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
+        var machine = new BoothStateMachine(services, mode: "event");
+
+        var poseChanges = new List<(int Pose, int Total)>();
+        machine.PoseChanged += (pose, total) => poseChanges.Add((pose, total));
+
+        await machine.RunSessionAsync();
+
+        // Fired once per pose, before that pose's own Countdown -- the UI's
+        // "Pose 2 of 4" progress relies on this sequence.
+        Assert.Equal(new[] { (1, 3), (2, 3), (3, 3) }, poseChanges);
+
+        // Three distinct captured/processed poses, not the same one photo
+        // reused three times -- the actual "true multi-pose" behavior.
+        Assert.Equal(3, machine.LastCapturedImagePaths.Count);
+        Assert.Equal(3, machine.LastCapturedImagePaths.Distinct().Count());
+        Assert.All(machine.LastCapturedImagePaths, path => Assert.True(File.Exists(path)));
+
+        // Every pose handed to the printer, in order, not just the last one.
+        Assert.Equal(machine.LastCapturedImagePaths, Assert.Single(printer.PrintedImagePaths));
+    }
 }

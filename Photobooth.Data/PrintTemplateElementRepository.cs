@@ -14,7 +14,7 @@ public class PrintTemplateElementRepository
         using var command = new SqlCommand(
             """
             SELECT Kind, XPercent, YPercent, WidthPercent, HeightPercent, Text, ImagePath,
-                   FontFamily, FontSizePercent, Bold, ColorHex
+                   FontFamily, FontSizePercent, Bold, ColorHex, ShapeType, PhotoIndex
             FROM PrintTemplateElement
             WHERE LocationId = @LocationId
             ORDER BY SortOrder, ElementId;
@@ -37,7 +37,9 @@ public class PrintTemplateElementRepository
                 reader.IsDBNull(7) ? "Segoe UI" : reader.GetString(7),
                 reader.IsDBNull(8) ? 0.05 : (double)reader.GetDecimal(8),
                 !reader.IsDBNull(9) && reader.GetBoolean(9),
-                reader.IsDBNull(10) ? "#202124" : reader.GetString(10)));
+                reader.IsDBNull(10) ? "#202124" : reader.GetString(10),
+                reader.IsDBNull(11) ? null : reader.GetString(11),
+                reader.IsDBNull(12) ? null : reader.GetInt32(12)));
         }
         return results;
     }
@@ -62,9 +64,9 @@ public class PrintTemplateElementRepository
             using var insertCommand = new SqlCommand(
                 """
                 INSERT INTO PrintTemplateElement
-                    (LocationId, Kind, XPercent, YPercent, WidthPercent, HeightPercent, Text, ImagePath, FontFamily, FontSizePercent, Bold, ColorHex, SortOrder)
+                    (LocationId, Kind, XPercent, YPercent, WidthPercent, HeightPercent, Text, ImagePath, FontFamily, FontSizePercent, Bold, ColorHex, ShapeType, PhotoIndex, SortOrder)
                 VALUES
-                    (@LocationId, @Kind, @XPercent, @YPercent, @WidthPercent, @HeightPercent, @Text, @ImagePath, @FontFamily, @FontSizePercent, @Bold, @ColorHex, @SortOrder);
+                    (@LocationId, @Kind, @XPercent, @YPercent, @WidthPercent, @HeightPercent, @Text, @ImagePath, @FontFamily, @FontSizePercent, @Bold, @ColorHex, @ShapeType, @PhotoIndex, @SortOrder);
                 """,
                 connection, transaction);
             insertCommand.Parameters.AddWithValue("@LocationId", locationId);
@@ -79,6 +81,8 @@ public class PrintTemplateElementRepository
             insertCommand.Parameters.AddWithValue("@FontSizePercent", element.FontSizePercent);
             insertCommand.Parameters.AddWithValue("@Bold", element.Bold);
             insertCommand.Parameters.AddWithValue("@ColorHex", element.ColorHex);
+            insertCommand.Parameters.AddWithValue("@ShapeType", (object?)element.ShapeType ?? DBNull.Value);
+            insertCommand.Parameters.AddWithValue("@PhotoIndex", (object?)element.PhotoIndex ?? DBNull.Value);
             insertCommand.Parameters.AddWithValue("@SortOrder", i);
             await insertCommand.ExecuteNonQueryAsync(ct);
         }

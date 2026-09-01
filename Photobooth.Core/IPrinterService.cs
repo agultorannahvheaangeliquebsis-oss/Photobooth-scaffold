@@ -7,5 +7,8 @@ namespace Photobooth.Core;
 /// </summary>
 public interface IPrinterService
 {
-    Task PrintAsync(string imagePath, PrintTemplate template, CancellationToken ct = default);
+    /// <param name="imagePaths">One captured pose per PrintTemplate.RequiredPhotoCount slot,
+    /// in PhotoIndex order -- a single-element list for every template that predates
+    /// PhotoSlot elements (the common case), matching PrintCompositor's legacy cell mode.</param>
+    Task PrintAsync(IReadOnlyList<string> imagePaths, PrintTemplate template, PrintRenderContext? context = null, CancellationToken ct = default);
 }

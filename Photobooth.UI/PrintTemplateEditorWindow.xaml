@@ -55,10 +55,16 @@
 
         <StackPanel Grid.Row="1" Grid.Column="1" Margin="16,0,0,0">
             <TextBlock Text="Add element" Style="{StaticResource EditorSectionHeader}" Margin="0,0,0,6" />
-            <StackPanel Orientation="Horizontal">
-                <Button x:Name="AddTextButton" Content="+ Text" Padding="10,6" Margin="0,0,8,0" Click="AddTextButton_Click" />
-                <Button x:Name="AddLogoButton" Content="+ Logo" Padding="10,6" Click="AddLogoButton_Click" />
-            </StackPanel>
+            <WrapPanel>
+                <Button x:Name="AddTextButton" Content="+ Text" Padding="10,6" Margin="0,0,8,6" Click="AddTextButton_Click" />
+                <Button x:Name="AddLogoButton" Content="+ Logo" Padding="10,6" Margin="0,0,8,6" Click="AddLogoButton_Click" />
+                <Button x:Name="AddImageButton" Content="+ Image" Padding="10,6" Margin="0,0,8,6" Click="AddImageButton_Click" />
+                <Button x:Name="AddRectangleButton" Content="+ Rectangle" Padding="10,6" Margin="0,0,8,6" Click="AddRectangleButton_Click" />
+                <Button x:Name="AddEllipseButton" Content="+ Ellipse" Padding="10,6" Margin="0,0,8,6" Click="AddEllipseButton_Click" />
+                <Button x:Name="AddQrCodeButton" Content="+ QR Code" Padding="10,6" Margin="0,0,8,6" Click="AddQrCodeButton_Click" />
+                <Button x:Name="AddSessionDataButton" Content="+ Session Data" Padding="10,6" Margin="0,0,8,6" Click="AddSessionDataButton_Click" />
+                <Button x:Name="AddPhotoSlotButton" Content="+ Photo Slot" Padding="10,6" Margin="0,0,8,6" Click="AddPhotoSlotButton_Click" />
+            </WrapPanel>
 
             <TextBlock Text="Layers" Style="{StaticResource EditorSectionHeader}" />
             <ListBox x:Name="LayerListBox" Height="90" SelectionChanged="LayerListBox_SelectionChanged" />
@@ -87,6 +93,35 @@
             <TextBlock x:Name="NoSelectionText" Text="Tap an element on the preview to edit it." Style="{StaticResource EditorLabel}"
                        Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
 
+            <StackPanel x:Name="PositionSizePanel" Visibility="Collapsed">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition />
+                        <RowDefinition />
+                    </Grid.RowDefinitions>
+                    <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,4,0">
+                        <TextBlock Text="X (px)" Style="{StaticResource EditorLabel}" />
+                        <TextBox x:Name="ElementXBox" TextChanged="ElementXBox_TextChanged" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="0" Grid.Column="1" Margin="4,0,0,0">
+                        <TextBlock Text="Y (px)" Style="{StaticResource EditorLabel}" />
+                        <TextBox x:Name="ElementYBox" TextChanged="ElementYBox_TextChanged" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,4,0">
+                        <TextBlock Text="Width (px)" Style="{StaticResource EditorLabel}" />
+                        <TextBox x:Name="ElementWidthBox" TextChanged="ElementWidthBox_TextChanged" />
+                    </StackPanel>
+                    <StackPanel Grid.Row="1" Grid.Column="1" Margin="4,0,0,0">
+                        <TextBlock Text="Height (px)" Style="{StaticResource EditorLabel}" />
+                        <TextBox x:Name="ElementHeightBox" TextChanged="ElementHeightBox_TextChanged" />
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+
             <StackPanel x:Name="TextPropertiesPanel" Visibility="Collapsed">
                 <TextBlock Text="Text" Style="{StaticResource EditorLabel}" />
                 <TextBox x:Name="ElementTextBox" TextChanged="ElementTextBox_TextChanged" />
@@ -101,8 +136,31 @@
             </StackPanel>
 
             <StackPanel x:Name="LogoPropertiesPanel" Visibility="Collapsed">
-                <TextBlock Text="Logo image" Style="{StaticResource EditorLabel}" />
+                <TextBlock x:Name="ImageKindLabel" Text="Logo image" Style="{StaticResource EditorLabel}" />
                 <Button x:Name="ChangeLogoImageButton" Content="Browse..." Padding="8,4" HorizontalAlignment="Left" Click="ChangeLogoImageButton_Click" />
+            </StackPanel>
+
+            <StackPanel x:Name="ShapePropertiesPanel" Visibility="Collapsed">
+                <TextBlock Text="Fill color (hex)" Style="{StaticResource EditorLabel}" />
+                <TextBox x:Name="ShapeColorBox" TextChanged="ShapeColorBox_TextChanged" />
+            </StackPanel>
+
+            <StackPanel x:Name="QrCodePropertiesPanel" Visibility="Collapsed">
+                <TextBlock Text="Renders the guest's own photo download link once their photo has uploaded. Blank if printing happens before the upload finishes."
+                           Style="{StaticResource EditorLabel}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel x:Name="SessionDataPropertiesPanel" Visibility="Collapsed">
+                <TextBlock Text="Field" Style="{StaticResource EditorLabel}" />
+                <ComboBox x:Name="SessionDataFieldCombo" SelectionChanged="SessionDataFieldCombo_SelectionChanged">
+                    <ComboBoxItem Content="Event Name" Tag="EventName" />
+                    <ComboBoxItem Content="Date" Tag="Date" />
+                    <ComboBoxItem Content="Time" Tag="Time" />
+                </ComboBox>
+            </StackPanel>
+
+            <StackPanel x:Name="PhotoSlotPropertiesPanel" Visibility="Collapsed">
+                <TextBlock x:Name="PhotoSlotIndexText" Style="{StaticResource EditorLabel}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
             </StackPanel>
 
             <Button x:Name="DeleteSelectedButton" Content="Delete selected" Padding="10,6" Margin="0,16,0,0"

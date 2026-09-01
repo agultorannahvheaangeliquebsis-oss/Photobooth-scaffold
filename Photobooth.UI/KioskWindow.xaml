@@ -198,6 +198,16 @@
                 <TextBlock Text="GET READY" Style="{StaticResource KioskPrompt}"
                            FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}" />
 
+                <!-- Only visible for a true multi-pose template
+                     (PrintTemplate.RequiredPhotoCount greater than 1); see
+                     KioskViewModel.ShowPoseProgress/PoseProgressText. -->
+                <TextBlock Text="{Binding PoseProgressText}"
+                           Visibility="{Binding ShowPoseProgress, Converter={StaticResource BoolToVisibility}}"
+                           Style="{StaticResource KioskBody}"
+                           Foreground="{StaticResource KioskAccentBrush}"
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,8" />
+
                 <!-- NotifyOnTargetUpdated turns every countdown tick into a
                      Binding.TargetUpdated event, which is what drives the scale
                      pulse below - no code-behind, and it re-fires even when the
