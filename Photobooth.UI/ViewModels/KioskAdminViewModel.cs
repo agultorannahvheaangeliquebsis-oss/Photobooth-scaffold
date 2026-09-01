@@ -41,7 +41,7 @@ public class KioskAdminViewModel : ObservableObject
     }
 
     /// <summary>Set by KioskWindow right after construction (e.g.
-    /// <c>() =&gt; new AdminWindow { Owner = this }.ShowDialog()</c>) -- a
+    /// <c>() =&gt; new AdminWindow(_viewModel.LocationId) { Owner = this }.ShowDialog()</c>) -- a
     /// settable delegate rather than a constructor parameter because this
     /// ViewModel is built before its owning Window exists, so the Window
     /// can't be captured yet at construction time. Left null in mock/designer

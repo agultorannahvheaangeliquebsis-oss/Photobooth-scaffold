@@ -37,6 +37,13 @@ public partial class ScreenTemplateEditorWindow : Window
 
     private readonly int _locationId;
 
+    /// <summary>Working copy of the screen-chrome toggles edited by the
+    /// SETTINGS tab (see ScreenSettingsCheckBox_Click/LiveViewRotationCombo_
+    /// SelectionChanged) -- booth-wide, not per-tab, same as the underlying
+    /// Location columns (see LocationRepository.UpdateScreenSettingsAsync).</summary>
+    private ScreenSettings _screenSettings;
+    private bool _suppressScreenSettingsEvents;
+
     /// <summary>Working element lists, one per screen -- populated from the
     /// existing rows at load, mutated in place as the admin edits, and flattened
     /// back into one list on Save.</summary>
@@ -60,11 +67,12 @@ public partial class ScreenTemplateEditorWindow : Window
     private bool _suppressPropertyEvents;
     private bool _suppressLayerListEvents;
 
-    public ScreenTemplateEditorWindow(IReadOnlyList<ScreenTemplateElement> existingElements, int locationId)
+    public ScreenTemplateEditorWindow(IReadOnlyList<ScreenTemplateElement> existingElements, int locationId, ScreenSettings screenSettings)
     {
         InitializeComponent();
 
         _locationId = locationId;
+        _screenSettings = screenSettings;
         foreach (ScreenTemplateElement element in existingElements)
         {
             _elementsByScreen[element.Screen].Add(element);
@@ -74,6 +82,58 @@ public partial class ScreenTemplateEditorWindow : Window
         ElementsCanvas.Height = CanvasHeight;
 
         LoadActiveScreen();
+        LoadScreenSettingsControls();
+    }
+
+    private void LoadScreenSettingsControls()
+    {
+        _suppressScreenSettingsEvents = true;
+        try
+        {
+            BoothIconsEnabledCheckBox.IsChecked = _screenSettings.BoothIconsEnabled;
+            ShowLiveViewCheckBox.IsChecked = _screenSettings.ShowLiveView;
+            MirrorLiveViewCheckBox.IsChecked = _screenSettings.MirrorLiveView;
+            foreach (ComboBoxItem item in LiveViewRotationCombo.Items)
+            {
+                if (item.Tag is string tag && int.TryParse(tag, out int degrees) && degrees == _screenSettings.LiveViewRotation)
+                {
+                    LiveViewRotationCombo.SelectedItem = item;
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            _suppressScreenSettingsEvents = false;
+        }
+    }
+
+    private void ScreenSettingsCheckBox_Click(object sender, RoutedEventArgs e)
+    {
+        if (_suppressScreenSettingsEvents)
+        {
+            return;
+        }
+
+        _screenSettings = _screenSettings with
+        {
+            BoothIconsEnabled = BoothIconsEnabledCheckBox.IsChecked == true,
+            ShowLiveView = ShowLiveViewCheckBox.IsChecked == true,
+            MirrorLiveView = MirrorLiveViewCheckBox.IsChecked == true,
+        };
+    }
+
+    private void LiveViewRotationCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressScreenSettingsEvents)
+        {
+            return;
+        }
+
+        if (LiveViewRotationCombo.SelectedItem is ComboBoxItem { Tag: string tag } && int.TryParse(tag, out int degrees))
+        {
+            _screenSettings = _screenSettings with { LiveViewRotation = degrees };
+        }
     }
 
     private void ScreenTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -528,6 +588,45 @@ public partial class ScreenTemplateEditorWindow : Window
         return storedPath;
     }
 
+    /// <summary>Aligns the selected element against the canvas bounds --
+    /// left/right/top/bottom snap the corresponding edge to 0 or the
+    /// canvas's own width/height, CenterHorizontal/CenterVertical center it
+    /// within the canvas. Only ever touches XPercent/YPercent (size is
+    /// untouched), same as a drag-move does.</summary>
+    private void AlignButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_selectedIndex < 0 || sender is not Button { Tag: string alignment })
+        {
+            return;
+        }
+
+        Border container = _containers[_selectedIndex];
+        double left = Canvas.GetLeft(container);
+        double top = Canvas.GetTop(container);
+
+        switch (alignment)
+        {
+            case "Left": left = 0; break;
+            case "Right": left = CanvasWidth - container.Width; break;
+            case "CenterHorizontal": left = (CanvasWidth - container.Width) / 2; break;
+            case "Top": top = 0; break;
+            case "Bottom": top = CanvasHeight - container.Height; break;
+            case "CenterVertical": top = (CanvasHeight - container.Height) / 2; break;
+        }
+
+        Canvas.SetLeft(container, left);
+        Canvas.SetTop(container, top);
+        Rectangle handle = _handles[_selectedIndex];
+        Canvas.SetLeft(handle, left + container.Width - HandleSize / 2);
+        Canvas.SetTop(handle, top + container.Height - HandleSize / 2);
+
+        _elements[_selectedIndex] = _elements[_selectedIndex] with
+        {
+            XPercent = left / CanvasWidth,
+            YPercent = top / CanvasHeight,
+        };
+    }
+
     private void DeleteSelectedButton_Click(object sender, RoutedEventArgs e)
     {
         if (_selectedIndex < 0)
@@ -591,6 +690,7 @@ public partial class ScreenTemplateEditorWindow : Window
         try
         {
             await new ScreenTemplateElementRepository().ReplaceAllAsync(_locationId, all);
+            await new LocationRepository().UpdateScreenSettingsAsync(_locationId, _screenSettings);
             DialogResult = true;
         }
         catch (Exception ex)

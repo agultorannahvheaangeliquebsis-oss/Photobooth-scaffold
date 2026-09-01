@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Linq;
 using Photobooth.Core;
 using Photobooth.Data;
 using Photobooth.UI.ViewModels;
@@ -42,7 +43,8 @@ public static class BoothCompositionRoot
         UiFrameSelectionService FrameSelection,
         UiFeedbackService Feedback,
         UiGuestbookPromptService GuestbookPrompt,
-        SqlSurveyService Survey);
+        SqlSurveyService Survey,
+        UiFilterSelectionService FilterSelection);
 
     /// <summary>Blocking -- callers must invoke this off the UI thread's
     /// synchronous continuation via <c>Task.Run(() =&gt; Build())...GetAwaiter().GetResult()</c>
@@ -54,7 +56,12 @@ public static class BoothCompositionRoot
     /// init fails, or a plain <see cref="Exception"/> if a service
     /// constructor fails (e.g. missing CLOUDINARY_URL) -- callers own
     /// showing a message and exiting on either.</summary>
-    public static RealBooth Build()
+    /// <paramref name="locationId"/> picks which event/location this booth run
+    /// is for -- see EventLauncherWindow, where an admin launches one of
+    /// possibly several saved events. Null (the default) keeps the original
+    /// "one booth machine has one Location" behavior: whichever Location
+    /// DatabaseInitializer seeded/found first.
+    public static RealBooth Build(int? locationId = null)
     {
         DatabaseInitializer.SeedIds seedIds;
         try
@@ -66,6 +73,12 @@ public static class BoothCompositionRoot
             throw new DatabaseUnavailableException(ex);
         }
 
+        var locationRepository = new LocationRepository();
+        List<LocationRecord> locations = Task.Run(() => locationRepository.GetAllAsync()).GetAwaiter().GetResult();
+        LocationRecord target = (locationId is int requestedId ? locations.FirstOrDefault(l => l.LocationId == requestedId) : null)
+            ?? locations.First(l => l.LocationId == seedIds.LocationId);
+        seedIds = seedIds with { LocationId = target.LocationId, LocationType = target.Type };
+
         // Real, not mocked -- a frame pick / star rating+comment / guestbook
         // ask-stop tap / survey answer is just button taps and text input,
         // no external hardware or gateway to integrate, unlike
@@ -74,8 +87,9 @@ public static class BoothCompositionRoot
         var feedback = new UiFeedbackService();
         var guestbookPrompt = new UiGuestbookPromptService();
         var survey = new SqlSurveyService(seedIds.LocationId);
+        var filterSelection = new UiFilterSelectionService();
 
-        Process? cameraBridgeProcess = EnsureCameraBridgeRunning();
+        Process? cameraBridgeProcess = EnsureCameraBridgeRunning(target.Screen.EnableWebcams);
 
         var sessionRepository = new SqlSessionRepository(seedIds.LocationId, seedIds.PrinterId);
         var services = new BoothServices(
@@ -103,6 +117,9 @@ public static class BoothCompositionRoot
         {
             Sms = new MockSmsDeliveryService(),
             GreenScreen = new GdiGreenScreenService(),
+            PostProcessing = new ProcessPostProcessingService(),
+            FilterPreset = new GdiFilterPresetService(),
+            FilterSelection = filterSelection,
         };
 
         return new RealBooth(
@@ -113,7 +130,8 @@ public static class BoothCompositionRoot
             frameSelection,
             feedback,
             guestbookPrompt,
-            survey);
+            survey,
+            filterSelection);
     }
 
     /// <summary>Builds a real <see cref="KioskViewModel"/> for a real booth --
@@ -122,9 +140,9 @@ public static class BoothCompositionRoot
     /// through to the ViewModel, since KioskWindow now has a screen for each of
     /// FramePicker/Guestbook/Feedback/Survey. Returns the <see cref="RealBooth"/>
     /// too, so the caller can register camera-bridge process cleanup.</summary>
-    public static (KioskViewModel ViewModel, RealBooth Booth) BuildKioskViewModel()
+    public static (KioskViewModel ViewModel, RealBooth Booth) BuildKioskViewModel(int? locationId = null)
     {
-        RealBooth booth = Build();
+        RealBooth booth = Build(locationId);
         var viewModel = new KioskViewModel(
             booth.Services,
             booth.LiveView,
@@ -133,7 +151,8 @@ public static class BoothCompositionRoot
             booth.Feedback,
             booth.GuestbookPrompt,
             booth.Survey,
-            booth.SeedIds.LocationId);
+            booth.SeedIds.LocationId,
+            booth.FilterSelection);
         return (viewModel, booth);
     }
 
@@ -148,7 +167,17 @@ public static class BoothCompositionRoot
     /// Returns the started process (null if already running, not found, or
     /// failed to start) -- the caller owns killing it on exit if non-null,
     /// since only the process that launched it should tear it down.</summary>
-    private static Process? EnsureCameraBridgeRunning()
+    /// <param name="enableWebcams">The launched event's own
+    /// ScreenSettings.EnableWebcams (AdminWindow's Camera Settings section) --
+    /// false has the same effect as PHOTOBOOTH_REQUIRE_DSLR, just per-event
+    /// instead of machine-wide. Only takes effect while starting a fresh bridge
+    /// process: if one is already running (e.g. a previous event launch in this
+    /// same app session left it up), this setting change won't retroactively
+    /// restart it with new arguments -- same "next fresh launch" caveat every
+    /// other admin-editable setting in this codebase avoids by being read fresh
+    /// per session, which isn't possible here since the bridge is an
+    /// already-running external process, not something re-read per call.</param>
+    private static Process? EnsureCameraBridgeRunning(bool enableWebcams)
     {
         if (PtpCameraService.IsBridgeHostRunning())
         {
@@ -169,7 +198,8 @@ public static class BoothCompositionRoot
             UseShellExecute = false,
             CreateNoWindow = true,
         };
-        if (Environment.GetEnvironmentVariable("PHOTOBOOTH_REQUIRE_DSLR") is "1" or "true")
+        bool requireDslr = !enableWebcams || Environment.GetEnvironmentVariable("PHOTOBOOTH_REQUIRE_DSLR") is "1" or "true";
+        if (requireDslr)
         {
             startInfo.ArgumentList.Add("--require-dslr");
         }

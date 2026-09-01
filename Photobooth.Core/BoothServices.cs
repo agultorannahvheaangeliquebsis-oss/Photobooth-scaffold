@@ -49,4 +49,18 @@ public record BoothServices(
     /// same reason Sms is: avoids a 23rd positional constructor parameter
     /// every existing call site would otherwise need to learn about.</summary>
     public IGreenScreenService GreenScreen { get; init; } = new MockGreenScreenService();
+
+    /// <summary>Post-Processing hook for the Effects &amp; Stickers screen
+    /// (see BoothStateMachine's capture step) -- an init property here for
+    /// the same reason Sms/GreenScreen are.</summary>
+    public IPostProcessingService PostProcessing { get; init; } = new MockPostProcessingService();
+
+    /// <summary>Applies a PhotoFilterPreset's color grade (see BoothStateMachine's
+    /// FilterPicker step) -- an init property here for the same reason Sms/
+    /// GreenScreen/PostProcessing are.</summary>
+    public IFilterPresetService FilterPreset { get; init; } = new MockFilterPresetService();
+
+    /// <summary>Collects the guest's filter pick during FilterPicker -- an init
+    /// property here for the same reason Sms/GreenScreen/PostProcessing are.</summary>
+    public IFilterSelectionService FilterSelection { get; init; } = new MockFilterSelectionService();
 }

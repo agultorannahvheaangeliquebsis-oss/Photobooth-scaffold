@@ -105,6 +105,36 @@ public static class DatabaseInitializer
         {
             if (await checkCommand.ExecuteScalarAsync(ct) is not null)
             {
+                // Table already existed before FilterPicker was added to
+                // BoothState -- its Stage CHECK constraint (auto-named, since
+                // the CREATE TABLE below never named it) still rejects that
+                // value. Not a column add, so the usual IF NOT EXISTS/ALTER ADD
+                // pattern the rest of this file uses doesn't apply; drop
+                // whatever the constraint is actually called (found via
+                // sys.check_constraints, since SQL Server picked its name) and
+                // recreate it with the fuller list, this time explicitly named
+                // so a future widening can just DROP CONSTRAINT by name.
+                using var widenCheck = new SqlCommand(
+                    """
+                    IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'CK_VirtualAttendantClip_Stage')
+                    BEGIN
+                        DECLARE @constraintName NVARCHAR(200);
+                        SELECT @constraintName = cc.name
+                        FROM sys.check_constraints cc
+                        JOIN sys.columns col ON col.object_id = cc.parent_object_id AND col.column_id = cc.parent_column_id
+                        WHERE cc.parent_object_id = OBJECT_ID('VirtualAttendantClip') AND col.name = 'Stage';
+
+                        IF @constraintName IS NOT NULL
+                        BEGIN
+                            EXEC('ALTER TABLE VirtualAttendantClip DROP CONSTRAINT [' + @constraintName + ']');
+                        END
+
+                        ALTER TABLE VirtualAttendantClip ADD CONSTRAINT CK_VirtualAttendantClip_Stage
+                            CHECK (Stage IN ('Setup', 'Idle', 'Consent', 'Countdown', 'Capturing', 'FilterPicker', 'Reviewing', 'FramePicker', 'Payment', 'Printing', 'Complete', 'Guestbook', 'Feedback', 'Survey', 'Error'));
+                    END
+                    """,
+                    connection);
+                await widenCheck.ExecuteNonQueryAsync(ct);
                 return;
             }
         }
@@ -114,7 +144,7 @@ public static class DatabaseInitializer
             CREATE TABLE VirtualAttendantClip (
                 ClipId          INT IDENTITY(1,1) PRIMARY KEY,
                 LocationId      INT             NOT NULL REFERENCES Location(LocationId),
-                Stage           NVARCHAR(20)    NOT NULL CHECK (Stage IN ('Setup', 'Idle', 'Consent', 'Countdown', 'Capturing', 'Reviewing', 'FramePicker', 'Payment', 'Printing', 'Complete', 'Guestbook', 'Feedback', 'Survey', 'Error')),
+                Stage           NVARCHAR(20)    NOT NULL CONSTRAINT CK_VirtualAttendantClip_Stage CHECK (Stage IN ('Setup', 'Idle', 'Consent', 'Countdown', 'Capturing', 'FilterPicker', 'Reviewing', 'FramePicker', 'Payment', 'Printing', 'Complete', 'Guestbook', 'Feedback', 'Survey', 'Error')),
                 FilePath        NVARCHAR(500)   NOT NULL,
                 SortOrder       INT             NOT NULL DEFAULT 0,
                 CreatedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
@@ -227,12 +257,32 @@ public static class DatabaseInitializer
                 ALTER TABLE Location ADD MirrorLiveView BIT NOT NULL DEFAULT 1;
             IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'LiveViewRotation')
                 ALTER TABLE Location ADD LiveViewRotation INT NOT NULL DEFAULT 0;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'EnableWebcams')
+                ALTER TABLE Location ADD EnableWebcams BIT NOT NULL DEFAULT 1;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'WebcamResolutionQuality')
+                ALTER TABLE Location ADD WebcamResolutionQuality INT NOT NULL DEFAULT 70;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'AudioInputDeviceName')
+                ALTER TABLE Location ADD AudioInputDeviceName NVARCHAR(200) NULL;
             IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'BeautyFilterEnabled')
                 ALTER TABLE Location ADD BeautyFilterEnabled BIT NOT NULL DEFAULT 0;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'BeautyFilterAlsoDuringCountdown')
+                ALTER TABLE Location ADD BeautyFilterAlsoDuringCountdown BIT NOT NULL DEFAULT 0;
             IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'FiltersMode')
                 ALTER TABLE Location ADD FiltersMode NVARCHAR(20) NOT NULL DEFAULT 'Ask' CHECK (FiltersMode IN ('Ask', 'Auto'));
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'FiltersEnabled')
+                ALTER TABLE Location ADD FiltersEnabled BIT NOT NULL DEFAULT 0;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'EnabledFilterPresetIds')
+                ALTER TABLE Location ADD EnabledFilterPresetIds NVARCHAR(300) NOT NULL DEFAULT 'Original,BlackAndWhiteGlam,BlackAndWhite,Filter1977,Brannan,Gotham,Hefe,LordKelvin,Nashville';
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'PostProcessingEnabled')
+                ALTER TABLE Location ADD PostProcessingEnabled BIT NOT NULL DEFAULT 0;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'PostProcessingApplicationPath')
+                ALTER TABLE Location ADD PostProcessingApplicationPath NVARCHAR(500) NULL;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'StickersEnabled')
+                ALTER TABLE Location ADD StickersEnabled BIT NOT NULL DEFAULT 1;
             IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'WatermarkImagePath')
                 ALTER TABLE Location ADD WatermarkImagePath NVARCHAR(500) NULL;
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'WatermarkEnabled')
+                ALTER TABLE Location ADD WatermarkEnabled BIT NOT NULL DEFAULT 0;
             IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'GreenScreenEnabled')
                 ALTER TABLE Location ADD GreenScreenEnabled BIT NOT NULL DEFAULT 0;
             IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('Location') AND name = 'GreenScreenBackgroundPath')

@@ -47,7 +47,7 @@ public partial class KioskWindow : Window
         // captured any earlier. Same PIN trust level MainWindow's F12/Setup
         // "Open Settings" button used -- no second PIN check, since reaching
         // the admin overlay already required one.
-        _viewModel.Admin.OpenFullSettings = () => new AdminWindow { Owner = this }.ShowDialog();
+        _viewModel.Admin.OpenFullSettings = () => new AdminWindow(_viewModel.LocationId) { Owner = this }.ShowDialog();
 
         _viewModel.ScreenOverlaysChanged += () => Dispatcher.Invoke(RenderAllScreenOverlays);
         _viewModel.AttendantCueRequested += clip => Dispatcher.Invoke(() => PlayAttendantCue(clip));

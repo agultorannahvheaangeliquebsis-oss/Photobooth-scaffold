@@ -277,6 +277,37 @@
             </StackPanel>
         </Grid>
 
+        <!-- ======================= [4b] FILTER PICKER ======================= -->
+        <Grid x:Name="FilterPickerScreen"
+              Style="{StaticResource KioskScreenRoot}"
+              Visibility="{Binding CurrentScreenState, Converter={StaticResource ScreenVisibility}, ConverterParameter=FilterPicker}"
+              Margin="72">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <TextBlock Text="Pick a filter" Style="{StaticResource KioskH1}" Margin="0,0,0,36" />
+                <ItemsControl ItemsSource="{Binding FilterOptions}" HorizontalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal" HorizontalAlignment="Center" MaxWidth="1100" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Style="{StaticResource KioskModeTile}"
+                                    Command="{Binding DataContext.SelectFilterCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    CommandParameter="{Binding}">
+                                <StackPanel>
+                                    <Image Width="150" Height="90" Stretch="UniformToFill" Source="{Binding PreviewImagePath, Converter={StaticResource PathToImageSource}}" />
+                                    <TextBlock Text="{Binding DisplayName}" FontFamily="{StaticResource KioskFont}" FontSize="16"
+                                               FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}"
+                                               HorizontalAlignment="Center" Margin="0,10,0,0" />
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Grid>
+
         <!-- ========================= [5] FRAME PICKER ========================= -->
         <Grid x:Name="FramePickerScreen"
               Style="{StaticResource KioskScreenRoot}"

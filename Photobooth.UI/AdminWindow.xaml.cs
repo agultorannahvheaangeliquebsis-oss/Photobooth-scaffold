@@ -1,6 +1,8 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using Photobooth.Core;
 using Photobooth.Data;
 
@@ -19,11 +21,6 @@ namespace Photobooth.UI;
 /// display string, unlike RevenueList/InventoryList's plain-string rows).</summary>
 public record GuestbookVideoRow(int GuestbookVideoId, string FilePath, string Label);
 
-/// <summary>Flattened view of a VirtualAttendantClipRecord for AttendantClipsList's
-/// bindings -- same reasoning as GuestbookVideoRow above (WPF bindings can't call
-/// Path.GetFileName directly).</summary>
-public record AttendantClipRow(int ClipId, string Stage, string FileName);
-
 public partial class AdminWindow : Window
 {
     private readonly AdminDashboardRepository _repository = new();
@@ -32,13 +29,17 @@ public partial class AdminWindow : Window
     private readonly SurveyRepository _survey = new();
     private readonly VirtualAttendantClipRepository _attendantClips = new();
 
-    // "One booth machine has one location" -- same assumption
-    // DatabaseInitializer's own seeding already makes -- so Settings and the
-    // Frame library always target the first (only) Location row rather than
-    // needing one passed in.
+    // Which event/location this dashboard is editing. A booth machine can now
+    // have several saved events (see EventLauncherWindow) -- _requestedLocationId
+    // is the one the caller asked for (e.g. the event KioskWindow is actually
+    // running), falling back to the first Location row if null, same as this
+    // window's original "one booth machine has one location" assumption did.
+    private readonly int? _requestedLocationId;
     private int _locationId;
 
     private string? _pendingFrameImagePath;
+    private List<FrameRecord> _stickerFrames = new();
+    private int _stickerPreviewIndex;
     private string? _pendingThemeLogoPath;
     private string? _existingThemeLogoPath;
     private PrintTemplate _currentPrintTemplate = PrintTemplate.Default;
@@ -47,23 +48,92 @@ public partial class AdminWindow : Window
     private string? _existingWatermarkPath;
     private string? _pendingGreenScreenBackgroundPath;
     private string? _existingGreenScreenBackgroundPath;
-    private string? _pendingAttendantClipPath;
 
-    // ScreenSettings has no editable UI in this phase (see BUILD_PLAN.md Phase 5,
-    // guest-facing screens) -- loaded and passed straight back through on save so
-    // it isn't clobbered back to defaults.
+    // Source of truth for the six Randomize toggles now embedded in the Virtual
+    // Attendant tile grid (see BuildAttendantStageCard) -- a plain dictionary
+    // rather than named CheckBox fields, since the cards themselves are rebuilt
+    // from scratch on every LoadAttendantClipsAsync call (add/delete/reorder),
+    // so there's no stable control instance across rebuilds to read from at
+    // save time the way BeautyFilterCheckBox etc. elsewhere in this file can.
+    private readonly Dictionary<BoothState, bool> _randomizeByStage = new();
+
+    /// <summary>The Virtual Attendant tile grid's stages, in guest-journey order,
+    /// with the friendly label shown on each card. Labels borrow dslrBooth's own
+    /// Virtual Attendant vocabulary (Start Screen/Select an Effect/Countdown
+    /// Video/After Capture/During Processing/End of Session) wherever this
+    /// app's actual BoothState flow lines up with it; stages dslrBooth's screen
+    /// has no equivalent for keep this app's own names. SupportsRandomize
+    /// mirrors exactly the six columns VirtualAttendantSettings has (Consent/
+    /// Countdown/Capturing/Reviewing/Printing/Complete) -- the other nine
+    /// stages (including FilterPicker) can still hold a clip pool, just always
+    /// played in SortOrder.</summary>
+    private static readonly (BoothState Stage, string Label, bool SupportsRandomize)[] AttendantStageDefinitions =
+    [
+        (BoothState.Setup, "Setup Screen", false),
+        (BoothState.Idle, "Start Screen", false),
+        (BoothState.Consent, "Before Countdown (Consent)", true),
+        (BoothState.Countdown, "Countdown Video", true),
+        (BoothState.Capturing, "Capturing", true),
+        (BoothState.FilterPicker, "Select an Effect (Filters)", false),
+        (BoothState.Reviewing, "After Capture (Reviewing)", true),
+        (BoothState.FramePicker, "Frame / Sticker Picker", false),
+        (BoothState.Payment, "Payment", false),
+        (BoothState.Printing, "During Processing (Printing)", true),
+        (BoothState.Complete, "End of Session (Complete)", true),
+        (BoothState.Guestbook, "Guestbook", false),
+        (BoothState.Feedback, "Feedback", false),
+        (BoothState.Survey, "Survey", false),
+        (BoothState.Error, "Error", false),
+    ];
+
+    // Loaded fresh in LoadAsync, then applied on top of via `with` in
+    // SaveParitySettingsButton_Click -- BoothIconsEnabled/ShowLiveView have no
+    // editable UI here (still only edited via ScreenTemplateEditorWindow's own
+    // Settings tab), so this is what keeps them from being clobbered back to
+    // defaults when Camera Settings' own fields (Mirror/Rotation/EnableWebcams/
+    // WebcamResolutionQuality/AudioInputDeviceName) get saved.
     private ScreenSettings _currentScreenSettings = ScreenSettings.Default;
 
-    public AdminWindow()
+    public AdminWindow(int? locationId = null, string initialSection = "General")
     {
         InitializeComponent();
+        _requestedLocationId = locationId;
         Loaded += async (_, _) => await LoadAsync();
-        Loaded += (_, _) => ShowSection("General");
+        Loaded += (_, _) => ShowSection(initialSection);
     }
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e) => await LoadAsync();
 
     private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
+
+    /// <summary>Flips an On/Off-labeled toggle CheckBox's own Content between
+    /// those two words as it's checked/unchecked -- the shared toggle-switch
+    /// CheckBox style (see Window.Resources) conveys state via thumb position
+    /// alone, so without this the "On" label set in XAML would keep reading
+    /// "On" even once switched off. Used by Camera Settings' Enable Webcams/
+    /// Mirror Live View toggles; also fires once during InitializeComponent for
+    /// their XAML-default IsChecked value, and again whenever LoadCameraSettings
+    /// sets IsChecked from the loaded event's real settings.</summary>
+    private void OnOffToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (sender is CheckBox checkBox)
+        {
+            checkBox.Content = checkBox.IsChecked == true ? "On" : "Off";
+        }
+    }
+
+    /// <summary>Sets an On/Off-labeled toggle CheckBox's value AND its Content
+    /// together -- used by the Load* methods instead of a bare `.IsChecked =`
+    /// assignment. Setting IsChecked alone only raises Checked/Unchecked (and
+    /// so only updates Content via OnOffToggle_Changed above) when the value
+    /// actually changes from what it already was; loading a value that happens
+    /// to match the control's current/XAML-default state would otherwise leave
+    /// a stale Content label, which this sidesteps by always setting both.</summary>
+    private static void SetOnOffToggle(CheckBox checkBox, bool value)
+    {
+        checkBox.IsChecked = value;
+        checkBox.Content = value ? "On" : "Off";
+    }
 
     // ---- Two-layer admin navigation (Layer 1 dropdown mega-menu + Layer 2
     // per-section wizard breadcrumb), replicated from dslrBooth's admin UI --
@@ -76,15 +146,16 @@ public partial class AdminWindow : Window
     /// the shared PlaceholderSectionPanel instead.</summary>
     private static readonly Dictionary<string, string> PlaceholderTitles = new()
     {
+        ["Slideshow"] = "Slideshow",
         ["SharingStatus"] = "Sharing Status",
         ["ExportEvent"] = "Export Event",
         ["EventFolder"] = "Event folder",
         ["RemoteControl"] = "Remote Control",
         ["ShowLockScreen"] = "Show Lock Screen",
         ["Language"] = "Language",
-        ["Help"] = "Help",
         ["Subscription"] = "Subscription",
         ["About"] = "About dslrBooth",
+        ["Help"] = "Help",
     };
 
     private Dictionary<string, FrameworkElement>? _sectionPanels;
@@ -104,14 +175,11 @@ public partial class AdminWindow : Window
     };
 
     /// <summary>Shows the named section (a wizard section key, or one of
-    /// PlaceholderTitles' keys) and hides every other section panel. Also
-    /// closes the Layer 1 dropdown menu, same "pick a destination, menu goes
-    /// away" behavior dslrBooth's own mega-menu has.</summary>
+    /// PlaceholderTitles' keys) and hides every other section panel. The
+    /// Layer 1 top nav bar stays visible throughout -- it's a persistent bar,
+    /// not a dropdown, matching dslrBooth's own always-on top nav.</summary>
     private void ShowSection(string key)
     {
-        MainMenuPanel.Visibility = Visibility.Collapsed;
-        MainMenuToggle.IsChecked = false;
-
         foreach (FrameworkElement panel in SectionPanels.Values)
         {
             panel.Visibility = Visibility.Collapsed;
@@ -131,11 +199,6 @@ public partial class AdminWindow : Window
         {
             GeneralSectionPanel.Visibility = Visibility.Visible;
         }
-    }
-
-    private void MainMenuToggle_Click(object sender, RoutedEventArgs e)
-    {
-        MainMenuPanel.Visibility = MainMenuToggle.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void MenuLink_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -325,11 +388,17 @@ public partial class AdminWindow : Window
     private async void EditScreenLayoutButton_Click(object sender, RoutedEventArgs e)
     {
         var existing = await new ScreenTemplateElementRepository().GetAllByLocationAsync(_locationId);
-        var editor = new ScreenTemplateEditorWindow(existing, _locationId) { Owner = this };
-        editor.ShowDialog();
-        // No LoadAsync() reload needed after this one -- ScreenTemplateElement
-        // isn't read into any of the fields LoadAsync populates (unlike
-        // _currentPrintTemplate above), it's read fresh by MainWindow itself.
+        var editor = new ScreenTemplateEditorWindow(existing, _locationId, _currentScreenSettings) { Owner = this };
+        if (editor.ShowDialog() == true)
+        {
+            // The editor's Settings tab can change ScreenSettings (Booth
+            // Icons/live view show-mirror-rotate), which LoadAsync populates
+            // into _currentScreenSettings -- reload so a second edit doesn't
+            // clobber that change back to what was loaded before this one.
+            // ScreenTemplateElement itself still needs no reload here (not
+            // read into any LoadAsync field, read fresh by KioskWindow).
+            await LoadAsync();
+        }
     }
 
     private async Task LoadAsync()
@@ -363,19 +432,24 @@ public partial class AdminWindow : Window
             var locations = await _locations.GetAllAsync();
             if (locations.Count > 0)
             {
-                _locationId = locations[0].LocationId;
-                CountdownSecondsBox.Text = locations[0].CountdownSeconds.ToString();
-                GlamFilterCheckBox.IsChecked = locations[0].GlamFilterEnabled;
-                AdminPinBox.Text = locations[0].AdminPin;
+                LocationRecord location = (_requestedLocationId is int requestedId
+                    ? locations.FirstOrDefault(l => l.LocationId == requestedId)
+                    : null) ?? locations[0];
 
-                _currentPrintTemplate = locations[0].PrintTemplate;
+                _locationId = location.LocationId;
+                TopNavEventNameText.Text = location.Name;
+                CountdownSecondsBox.Text = location.CountdownSeconds.ToString();
+                GlamFilterCheckBox.IsChecked = location.GlamFilterEnabled;
+                AdminPinBox.Text = location.AdminPin;
+
+                _currentPrintTemplate = location.PrintTemplate;
                 SingleLayoutRadio.IsChecked = _currentPrintTemplate.Layout != "Strip";
                 StripLayoutRadio.IsChecked = _currentPrintTemplate.Layout == "Strip";
                 PrintWidthBox.Text = _currentPrintTemplate.WidthInches.ToString();
                 PrintHeightBox.Text = _currentPrintTemplate.HeightInches.ToString();
                 StripCopiesBox.Text = _currentPrintTemplate.StripCopies.ToString();
 
-                BoothTheme theme = locations[0].Theme;
+                BoothTheme theme = location.Theme;
                 AccentColorBox.Text = theme.AccentColorHex;
                 CanvasColorBox.Text = theme.CanvasColorHex;
                 InkColorBox.Text = theme.InkColorHex;
@@ -386,9 +460,10 @@ public partial class AdminWindow : Window
                     ? "No logo selected."
                     : System.IO.Path.GetFileName(theme.LogoImagePath);
 
-                _currentScreenSettings = locations[0].Screen;
+                _currentScreenSettings = location.Screen;
+                LoadCameraSettings(location.Screen);
 
-                CaptureSettings capture = locations[0].Capture;
+                CaptureSettings capture = location.Capture;
                 CaptureModePhotoRadio.IsChecked = capture.Mode == "Photo";
                 CaptureModeGifRadio.IsChecked = capture.Mode == "GIF";
                 CaptureModeBoomerangRadio.IsChecked = capture.Mode == "Boomerang";
@@ -398,17 +473,23 @@ public partial class AdminWindow : Window
                 FrameDelayBox.Text = capture.FrameDelayMs.ToString();
                 VideoDurationBox.Text = capture.VideoDurationSeconds.ToString();
 
-                EffectsSettings effects = locations[0].Effects;
-                BeautyFilterCheckBox.IsChecked = effects.BeautyFilterEnabled;
+                EffectsSettings effects = location.Effects;
+                SetOnOffToggle(BeautyFilterCheckBox, effects.BeautyFilterEnabled);
+                SetOnOffToggle(BeautyFilterAlsoDuringCountdownCheckBox, effects.BeautyFilterAlsoDuringCountdown);
+                SetOnOffToggle(FiltersEnabledCheckBox, effects.FiltersEnabled);
                 FiltersModeAskRadio.IsChecked = effects.FiltersMode != "Auto";
                 FiltersModeAutoRadio.IsChecked = effects.FiltersMode == "Auto";
+                SetOnOffToggle(PostProcessingEnabledCheckBox, effects.PostProcessingEnabled);
+                PostProcessingApplicationPathBox.Text = effects.PostProcessingApplicationPath ?? string.Empty;
+                SetOnOffToggle(StickersEnabledCheckBox, effects.StickersEnabled);
+                SetOnOffToggle(WatermarkEnabledCheckBox, effects.WatermarkEnabled);
                 _existingWatermarkPath = effects.WatermarkImagePath;
                 _pendingWatermarkPath = null;
                 SelectedWatermarkText.Text = effects.WatermarkImagePath is null
                     ? "No watermark selected."
                     : System.IO.Path.GetFileName(effects.WatermarkImagePath);
 
-                GreenScreenSettings greenScreen = locations[0].GreenScreen;
+                GreenScreenSettings greenScreen = location.GreenScreen;
                 GreenScreenEnabledCheckBox.IsChecked = greenScreen.Enabled;
                 _existingGreenScreenBackgroundPath = greenScreen.BackgroundImagePath;
                 _pendingGreenScreenBackgroundPath = null;
@@ -416,29 +497,28 @@ public partial class AdminWindow : Window
                     ? "No background selected."
                     : System.IO.Path.GetFileName(greenScreen.BackgroundImagePath);
 
-                SurveyEnabledCheckBox.IsChecked = locations[0].Survey.Enabled;
+                SurveyEnabledCheckBox.IsChecked = location.Survey.Enabled;
 
-                VirtualAttendantSettings attendant = locations[0].VirtualAttendant;
+                VirtualAttendantSettings attendant = location.VirtualAttendant;
                 AttendantEnabledCheckBox.IsChecked = attendant.Enabled;
-                AttendantStyleFriendlyRadio.IsChecked = attendant.Style != "Formal";
-                AttendantStyleFormalRadio.IsChecked = attendant.Style == "Formal";
-                AttendantRandomizeConsentCheckBox.IsChecked = attendant.RandomizeConsent;
-                AttendantRandomizeCountdownCheckBox.IsChecked = attendant.RandomizeCountdown;
-                AttendantRandomizeCapturingCheckBox.IsChecked = attendant.RandomizeCapturing;
-                AttendantRandomizeReviewingCheckBox.IsChecked = attendant.RandomizeReviewing;
-                AttendantRandomizePrintingCheckBox.IsChecked = attendant.RandomizePrinting;
-                AttendantRandomizeCompleteCheckBox.IsChecked = attendant.RandomizeComplete;
+                AttendantStyleCombo.SelectedIndex = attendant.Style == "Formal" ? 1 : 0;
+                _randomizeByStage[BoothState.Consent] = attendant.RandomizeConsent;
+                _randomizeByStage[BoothState.Countdown] = attendant.RandomizeCountdown;
+                _randomizeByStage[BoothState.Capturing] = attendant.RandomizeCapturing;
+                _randomizeByStage[BoothState.Reviewing] = attendant.RandomizeReviewing;
+                _randomizeByStage[BoothState.Printing] = attendant.RandomizePrinting;
+                _randomizeByStage[BoothState.Complete] = attendant.RandomizeComplete;
 
-                DisclaimerSettings disclaimer = locations[0].Disclaimer;
+                DisclaimerSettings disclaimer = location.Disclaimer;
                 DisclaimerHeaderBox.Text = disclaimer.Header;
                 DisclaimerTextBox.Text = disclaimer.Text;
 
-                SharingSettings sharing = locations[0].Sharing;
+                SharingSettings sharing = location.Sharing;
                 EmailEnabledCheckBox.IsChecked = sharing.EmailEnabled;
                 SmsEnabledCheckBox.IsChecked = sharing.SmsEnabled;
                 QrEnabledCheckBox.IsChecked = sharing.QrEnabled;
 
-                PrintOptions printOptions = locations[0].PrintOptions;
+                PrintOptions printOptions = location.PrintOptions;
                 PrintAutomaticallyCheckBox.IsChecked = printOptions.PrintAutomatically;
                 ShowPrintButtonCheckBox.IsChecked = printOptions.ShowPrintButton;
                 PrintLimitPerEventBox.Text = printOptions.PrintLimitPerEvent.ToString();
@@ -461,6 +541,46 @@ public partial class AdminWindow : Window
         finally
         {
             RefreshButton.IsEnabled = true;
+        }
+    }
+
+    /// <summary>Populates Camera Settings' controls -- Enable Webcams/Webcam
+    /// Resolution/Audio Input are new here; Mirror/Rotation reuse the same
+    /// ScreenSettings fields ScreenTemplateEditorWindow's own Settings tab also
+    /// edits (two admin surfaces over the same two columns, same as dslrBooth's
+    /// own Camera Settings and Screen Editor both touching mirror/rotate). The
+    /// audio device list is re-enumerated on every load rather than cached --
+    /// it's a cheap winmm call and a USB mic could be plugged in between opens.</summary>
+    private void LoadCameraSettings(ScreenSettings screen)
+    {
+        SetOnOffToggle(EnableWebcamsCheckBox, screen.EnableWebcams);
+        WebcamResolutionSlider.Value = screen.WebcamResolutionQuality;
+        SetOnOffToggle(CameraMirrorLiveViewCheckBox, screen.MirrorLiveView);
+        CameraRotationCombo.SelectedIndex = screen.LiveViewRotation switch
+        {
+            90 => 1,
+            180 => 2,
+            270 => 3,
+            _ => 0,
+        };
+
+        AudioInputCombo.Items.Clear();
+        AudioInputCombo.Items.Add(new ComboBoxItem { Content = "System Default", Tag = null });
+        foreach (string deviceName in AudioInputDevices.EnumerateNames())
+        {
+            AudioInputCombo.Items.Add(new ComboBoxItem { Content = deviceName, Tag = deviceName });
+        }
+        AudioInputCombo.SelectedIndex = 0;
+        if (screen.AudioInputDeviceName is string savedDeviceName)
+        {
+            for (int i = 0; i < AudioInputCombo.Items.Count; i++)
+            {
+                if (((ComboBoxItem)AudioInputCombo.Items[i]).Tag as string == savedDeviceName)
+                {
+                    AudioInputCombo.SelectedIndex = i;
+                    break;
+                }
+            }
         }
     }
 
@@ -504,6 +624,106 @@ public partial class AdminWindow : Window
         var frames = await _frames.GetAllByLocationAsync(_locationId);
         FramesList.ItemsSource = frames;
         FramesEmptyText.Visibility = frames.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        // Same list, reused for the Effects & Stickers card's quick prev/next
+        // preview -- see the Stickers card's own comment for why this reuses
+        // the Frame library instead of a second asset store.
+        _stickerFrames = frames;
+        _stickerPreviewIndex = 0;
+        UpdateStickerPreviewText();
+    }
+
+    private void UpdateStickerPreviewText()
+    {
+        if (_stickerFrames.Count == 0)
+        {
+            StickerPreviewText.Text = "No stickers added yet -- dslrBooth-style built-in defaults are used instead.";
+            return;
+        }
+
+        _stickerPreviewIndex = ((_stickerPreviewIndex % _stickerFrames.Count) + _stickerFrames.Count) % _stickerFrames.Count;
+        FrameRecord current = _stickerFrames[_stickerPreviewIndex];
+        StickerPreviewText.Text = $"{_stickerPreviewIndex + 1} of {_stickerFrames.Count}: {current.Name}{(current.IsActive ? "" : " (inactive)")}";
+    }
+
+    private void PreviousStickerButton_Click(object sender, RoutedEventArgs e)
+    {
+        _stickerPreviewIndex--;
+        UpdateStickerPreviewText();
+    }
+
+    private void NextStickerButton_Click(object sender, RoutedEventArgs e)
+    {
+        _stickerPreviewIndex++;
+        UpdateStickerPreviewText();
+    }
+
+    /// <summary>Quick-add shortcut for the Effects & Stickers card: same copy-
+    /// into-Assets/Frames-then-insert behavior as AddFrameButton_Click, just
+    /// without a separate name field -- the file's own name stands in, and an
+    /// admin who wants to rename/reorder/retire it still has the full Frame
+    /// library further down in General.</summary>
+    private async void ChooseStickerButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Filter = "Transparent PNG (*.png)|*.png",
+            Title = "Choose a sticker/prop overlay image",
+        };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        ChooseStickerButton.IsEnabled = false;
+        try
+        {
+            string framesDirectory = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "Frames");
+            System.IO.Directory.CreateDirectory(framesDirectory);
+            string storedFileName = $"{Guid.NewGuid():N}{System.IO.Path.GetExtension(dialog.FileName)}";
+            string storedPath = System.IO.Path.Combine(framesDirectory, storedFileName);
+            System.IO.File.Copy(dialog.FileName, storedPath, overwrite: true);
+
+            var existing = await _frames.GetAllByLocationAsync(_locationId);
+            await _frames.InsertAsync(_locationId, System.IO.Path.GetFileNameWithoutExtension(dialog.FileName), storedPath, sortOrder: existing.Count);
+
+            await LoadFramesAsync();
+            _stickerPreviewIndex = _stickerFrames.Count - 1;
+            UpdateStickerPreviewText();
+        }
+        catch (Exception ex)
+        {
+            StickerPreviewText.Text = $"Couldn't add sticker: {ex.Message}";
+        }
+        finally
+        {
+            ChooseStickerButton.IsEnabled = true;
+        }
+    }
+
+    private void ConfigureBeautyFilterButton_Click(object sender, RoutedEventArgs e)
+    {
+        MessageBox.Show(
+            "Skin-smoothing intensity controls aren't built yet -- this toggle is saved but not yet applied to captured photos (real beauty filtering needs face detection, which is separate, unbuilt work).",
+            "Focus & Snap", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private void ConfigureFiltersButton_Click(object sender, RoutedEventArgs e)
+    {
+        new FilterLibraryWindow(_locationId) { Owner = this }.ShowDialog();
+    }
+
+    private void ChoosePostProcessingApplicationButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Filter = "Applications (*.exe)|*.exe|All files (*.*)|*.*",
+            Title = "Choose the post-processing application",
+        };
+        if (dialog.ShowDialog() == true)
+        {
+            PostProcessingApplicationPathBox.Text = dialog.FileName;
+        }
     }
 
     private void BrowseFrameImageButton_Click(object sender, RoutedEventArgs e)
@@ -722,8 +942,25 @@ public partial class AdminWindow : Window
         }
 
         var capture = new CaptureSettings(captureMode, AlsoCreateGifCheckBox.IsChecked == true, frameCount, frameDelayMs, videoDurationSeconds);
-        var screen = _currentScreenSettings;
-        var effects = new EffectsSettings(BeautyFilterCheckBox.IsChecked == true, filtersMode, watermarkPath);
+        int liveViewRotation = CameraRotationCombo.SelectedItem is ComboBoxItem { Tag: string rotationTag } ? int.Parse(rotationTag) : 0;
+        string? audioInputDeviceName = AudioInputCombo.SelectedItem is ComboBoxItem { Tag: string deviceName } ? deviceName : null;
+        var screen = _currentScreenSettings with
+        {
+            MirrorLiveView = CameraMirrorLiveViewCheckBox.IsChecked == true,
+            LiveViewRotation = liveViewRotation,
+            EnableWebcams = EnableWebcamsCheckBox.IsChecked == true,
+            WebcamResolutionQuality = (int)WebcamResolutionSlider.Value,
+            AudioInputDeviceName = audioInputDeviceName,
+        };
+        string? postProcessingApplicationPath = PostProcessingApplicationPathBox.Text.Trim() is { Length: > 0 } postProcessingPath ? postProcessingPath : null;
+        var effects = new EffectsSettings(
+            BeautyFilterCheckBox.IsChecked == true, filtersMode, watermarkPath,
+            BeautyFilterAlsoDuringCountdownCheckBox.IsChecked == true,
+            FiltersEnabledCheckBox.IsChecked == true,
+            PostProcessingEnabledCheckBox.IsChecked == true,
+            postProcessingApplicationPath,
+            StickersEnabledCheckBox.IsChecked == true,
+            WatermarkEnabledCheckBox.IsChecked == true);
         var greenScreen = new GreenScreenSettings(GreenScreenEnabledCheckBox.IsChecked == true, greenScreenBackgroundPath);
         var survey = new SurveySettings(SurveyEnabledCheckBox.IsChecked == true);
         var disclaimer = new DisclaimerSettings(DisclaimerHeaderBox.Text.Trim(), DisclaimerTextBox.Text);
@@ -736,6 +973,7 @@ public partial class AdminWindow : Window
         try
         {
             await _locations.UpdateDslrBoothParitySettingsAsync(_locationId, capture, screen, effects, greenScreen, survey, disclaimer, printOptions, sharing);
+            _currentScreenSettings = screen;
             _existingWatermarkPath = watermarkPath;
             _pendingWatermarkPath = null;
             _existingGreenScreenBackgroundPath = greenScreenBackgroundPath;
@@ -756,28 +994,28 @@ public partial class AdminWindow : Window
 
     private async void SaveAttendantSettingsButton_Click(object sender, RoutedEventArgs e)
     {
-        string style = AttendantStyleFormalRadio.IsChecked == true ? "Formal" : "Friendly";
+        string style = AttendantStyleCombo.SelectedItem is ComboBoxItem { Tag: "Formal" } ? "Formal" : "Friendly";
         var settings = new VirtualAttendantSettings(
             AttendantEnabledCheckBox.IsChecked == true,
             style,
-            AttendantRandomizeConsentCheckBox.IsChecked == true,
-            AttendantRandomizeCountdownCheckBox.IsChecked == true,
-            AttendantRandomizeCapturingCheckBox.IsChecked == true,
-            AttendantRandomizeReviewingCheckBox.IsChecked == true,
-            AttendantRandomizePrintingCheckBox.IsChecked == true,
-            AttendantRandomizeCompleteCheckBox.IsChecked == true);
+            _randomizeByStage.GetValueOrDefault(BoothState.Consent),
+            _randomizeByStage.GetValueOrDefault(BoothState.Countdown),
+            _randomizeByStage.GetValueOrDefault(BoothState.Capturing),
+            _randomizeByStage.GetValueOrDefault(BoothState.Reviewing),
+            _randomizeByStage.GetValueOrDefault(BoothState.Printing),
+            _randomizeByStage.GetValueOrDefault(BoothState.Complete));
 
         SaveAttendantSettingsButton.IsEnabled = false;
         try
         {
             await _locations.UpdateVirtualAttendantSettingsAsync(_locationId, settings);
             AttendantSettingsStatusText.Text = "Saved -- takes effect for the very next state transition.";
-            AttendantSettingsStatusText.Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush");
+            AttendantSettingsStatusText.Foreground = (Brush)FindResource("MutedBrush");
         }
         catch (Exception ex)
         {
             AttendantSettingsStatusText.Text = $"Couldn't save: {ex.Message}";
-            AttendantSettingsStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+            AttendantSettingsStatusText.Foreground = Brushes.Firebrick;
         }
         finally
         {
@@ -785,96 +1023,170 @@ public partial class AdminWindow : Window
         }
     }
 
+    /// <summary>Rebuilds the Virtual Attendant tile grid from scratch against the
+    /// current clip pool -- called after every load and after any add/delete/
+    /// reorder, same "just reload" simplicity FramesList/SurveyQuestionsList
+    /// etc. already use elsewhere in this file.</summary>
     private async Task LoadAttendantClipsAsync()
     {
-        var clips = await _attendantClips.GetAllByLocationAsync(_locationId);
-        AttendantClipsList.ItemsSource = clips
-            .Select(c => new AttendantClipRow(c.ClipId, c.Stage, System.IO.Path.GetFileName(c.FilePath)))
-            .ToList();
-        AttendantClipsEmptyText.Visibility = clips.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        List<VirtualAttendantClipRecord> clips = await _attendantClips.GetAllByLocationAsync(_locationId);
+
+        AttendantStageCardsPanel.Children.Clear();
+        foreach ((BoothState stage, string label, bool supportsRandomize) in AttendantStageDefinitions)
+        {
+            List<VirtualAttendantClipRecord> clipsForStage = clips
+                .Where(c => c.Stage == stage.ToString())
+                .OrderBy(c => c.SortOrder)
+                .ThenBy(c => c.ClipId)
+                .ToList();
+            AttendantStageCardsPanel.Children.Add(BuildAttendantStageCard(stage, label, supportsRandomize, clipsForStage));
+        }
     }
 
-    private void BrowseAttendantClipButton_Click(object sender, RoutedEventArgs e)
+    /// <summary>Builds one Virtual Attendant tile -- same "generate a tile per
+    /// item in code" pattern EventLauncherWindow.BuildTile already established
+    /// for its own event-picker grid, used here instead of an ItemsControl/
+    /// DataTemplate since each card needs its own local prev/next preview index
+    /// and (for six stages) a Randomize toggle backed by _randomizeByStage.</summary>
+    private Border BuildAttendantStageCard(BoothState stage, string label, bool supportsRandomize, List<VirtualAttendantClipRecord> clipsForStage)
+    {
+        var content = new StackPanel();
+
+        var headerRow = new Grid();
+        headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var labelText = new TextBlock
+        {
+            Text = label,
+            FontFamily = new FontFamily("Segoe UI"),
+            FontSize = 13,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = (Brush)FindResource("InkBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        Grid.SetColumn(labelText, 0);
+        headerRow.Children.Add(labelText);
+
+        if (supportsRandomize)
+        {
+            var randomizeCheckBox = new CheckBox
+            {
+                Content = "Randomize",
+                Foreground = (Brush)FindResource("InkBrush"),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(8, 0, 0, 0),
+                IsChecked = _randomizeByStage.GetValueOrDefault(stage),
+            };
+            randomizeCheckBox.Checked += (_, _) => _randomizeByStage[stage] = true;
+            randomizeCheckBox.Unchecked += (_, _) => _randomizeByStage[stage] = false;
+            Grid.SetColumn(randomizeCheckBox, 1);
+            headerRow.Children.Add(randomizeCheckBox);
+        }
+        content.Children.Add(headerRow);
+
+        var previewText = new TextBlock
+        {
+            FontFamily = new FontFamily("Segoe UI"),
+            FontSize = 11,
+            Foreground = (Brush)FindResource("MutedBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Margin = new Thickness(0, 8, 0, 8),
+        };
+        content.Children.Add(previewText);
+
+        int previewIndex = 0;
+        void UpdatePreviewText()
+        {
+            if (clipsForStage.Count == 0)
+            {
+                previewText.Text = "No clip added yet.";
+                return;
+            }
+            previewIndex = ((previewIndex % clipsForStage.Count) + clipsForStage.Count) % clipsForStage.Count;
+            previewText.Text = $"{previewIndex + 1} of {clipsForStage.Count}: {System.IO.Path.GetFileName(clipsForStage[previewIndex].FilePath)}";
+        }
+        UpdatePreviewText();
+
+        var buttonsRow = new WrapPanel();
+
+        var chooseButton = new Button { Content = "Choose", Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(0, 0, 6, 6) };
+        chooseButton.Click += async (_, _) => await ChooseAttendantClipAsync(stage);
+        buttonsRow.Children.Add(chooseButton);
+
+        if (clipsForStage.Count > 0)
+        {
+            var prevButton = new Button { Content = "<", Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(0, 0, 6, 6) };
+            prevButton.Click += (_, _) => { previewIndex--; UpdatePreviewText(); };
+            buttonsRow.Children.Add(prevButton);
+
+            var nextButton = new Button { Content = ">", Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(0, 0, 6, 6) };
+            nextButton.Click += (_, _) => { previewIndex++; UpdatePreviewText(); };
+            buttonsRow.Children.Add(nextButton);
+
+            var upButton = new Button { Content = "^", Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(0, 0, 6, 6) };
+            upButton.Click += async (_, _) => await MoveAttendantClipAsync(clipsForStage[previewIndex].ClipId, up: true);
+            buttonsRow.Children.Add(upButton);
+
+            var downButton = new Button { Content = "v", Padding = new Thickness(10, 4, 10, 4), Margin = new Thickness(0, 0, 6, 6) };
+            downButton.Click += async (_, _) => await MoveAttendantClipAsync(clipsForStage[previewIndex].ClipId, up: false);
+            buttonsRow.Children.Add(downButton);
+
+            var deleteButton = new Button { Content = "Delete", Padding = new Thickness(10, 4, 10, 4) };
+            deleteButton.Click += async (_, _) =>
+            {
+                await _attendantClips.DeleteAsync(clipsForStage[previewIndex].ClipId);
+                await LoadAttendantClipsAsync();
+            };
+            buttonsRow.Children.Add(deleteButton);
+        }
+        content.Children.Add(buttonsRow);
+
+        return new Border
+        {
+            Width = 240,
+            Padding = new Thickness(12),
+            Margin = new Thickness(0, 0, 12, 12),
+            CornerRadius = new CornerRadius(8),
+            Background = (Brush)FindResource("FieldBrush"),
+            BorderBrush = (Brush)FindResource("LineBrush"),
+            BorderThickness = new Thickness(1),
+            Child = content,
+        };
+    }
+
+    /// <summary>Copies the chosen clip into a local Assets/AttendantClips folder (same
+    /// "own local copy" reasoning AddFrameButton_Click already established) and inserts
+    /// the VirtualAttendantClip row at the end of that stage's existing pool -- the
+    /// stage comes from which card's Choose button was clicked, not a separate picker,
+    /// since the tile grid already has one card per stage.</summary>
+    private async Task ChooseAttendantClipAsync(BoothState stage)
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
             Filter = "Audio/video files (*.mp3;*.wav;*.mp4;*.wmv)|*.mp3;*.wav;*.mp4;*.wmv",
             Title = "Choose a Virtual Attendant clip",
         };
-        if (dialog.ShowDialog() == true)
+        if (dialog.ShowDialog() != true)
         {
-            _pendingAttendantClipPath = dialog.FileName;
-            SelectedAttendantClipText.Text = System.IO.Path.GetFileName(dialog.FileName);
-        }
-    }
-
-    /// <summary>Copies the chosen clip into a local Assets/AttendantClips folder (same
-    /// "own local copy" reasoning AddFrameButton_Click already established) and inserts
-    /// the VirtualAttendantClip row at the end of that stage's existing pool.</summary>
-    private async void AddAttendantClipButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_pendingAttendantClipPath is null || AttendantClipStageCombo.SelectedItem is not ComboBoxItem { Tag: string stageName })
-        {
-            AttendantClipStatusText.Text = "Choose a stage and a clip file first.";
-            AttendantClipStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
             return;
         }
 
-        AddAttendantClipButton.IsEnabled = false;
-        try
-        {
-            string clipsDirectory = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "AttendantClips");
-            System.IO.Directory.CreateDirectory(clipsDirectory);
-            string storedFileName = $"{Guid.NewGuid():N}{System.IO.Path.GetExtension(_pendingAttendantClipPath)}";
-            string storedPath = System.IO.Path.Combine(clipsDirectory, storedFileName);
-            System.IO.File.Copy(_pendingAttendantClipPath, storedPath, overwrite: true);
+        string clipsDirectory = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "AttendantClips");
+        System.IO.Directory.CreateDirectory(clipsDirectory);
+        string storedFileName = $"{Guid.NewGuid():N}{System.IO.Path.GetExtension(dialog.FileName)}";
+        string storedPath = System.IO.Path.Combine(clipsDirectory, storedFileName);
+        System.IO.File.Copy(dialog.FileName, storedPath, overwrite: true);
 
-            var stage = Enum.Parse<BoothState>(stageName);
-            var existingInStage = (await _attendantClips.GetAllByLocationAsync(_locationId))
-                .Where(c => c.Stage == stageName)
-                .ToList();
-            await _attendantClips.InsertAsync(_locationId, stage, storedPath, sortOrder: existingInStage.Count);
+        string stageName = stage.ToString();
+        var existingInStage = (await _attendantClips.GetAllByLocationAsync(_locationId))
+            .Where(c => c.Stage == stageName)
+            .ToList();
+        await _attendantClips.InsertAsync(_locationId, stage, storedPath, sortOrder: existingInStage.Count);
 
-            _pendingAttendantClipPath = null;
-            SelectedAttendantClipText.Text = "No clip selected.";
-            AttendantClipStatusText.Text = "Clip added -- available for the next guest.";
-            AttendantClipStatusText.Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush");
-            await LoadAttendantClipsAsync();
-        }
-        catch (Exception ex)
-        {
-            AttendantClipStatusText.Text = $"Couldn't add clip: {ex.Message}";
-            AttendantClipStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
-        }
-        finally
-        {
-            AddAttendantClipButton.IsEnabled = true;
-        }
-    }
-
-    private async void DeleteAttendantClipButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button { Tag: int clipId })
-        {
-            await _attendantClips.DeleteAsync(clipId);
-            await LoadAttendantClipsAsync();
-        }
-    }
-
-    private async void MoveAttendantClipUpButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button { Tag: int clipId })
-        {
-            await MoveAttendantClipAsync(clipId, up: true);
-        }
-    }
-
-    private async void MoveAttendantClipDownButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button { Tag: int clipId })
-        {
-            await MoveAttendantClipAsync(clipId, up: false);
-        }
+        await LoadAttendantClipsAsync();
     }
 
     /// <summary>Swaps the given clip's SortOrder with whichever clip is adjacent to it

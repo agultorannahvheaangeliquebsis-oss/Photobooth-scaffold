@@ -239,6 +239,49 @@ public class BoothStateMachine
             {
                 LastCapturedImagePath = await _services.Camera.CaptureAsync(ct);
 
+                // Filters (see PhotoFilterPreset/GdiFilterPresetService,
+                // BoothState.FilterPicker) run first in the effects chain -- a
+                // foundational photographic treatment the rest (green screen
+                // background swap, branding caption, frame/sticker overlay,
+                // watermark) layer on top of. Skipped entirely when the
+                // Filters toggle is off or no preset is enabled, same
+                // "disabled/empty pool = feature invisible" reasoning
+                // FramePicker/Stickers already established.
+                if (settings.Effects.FiltersEnabled)
+                {
+                    List<PhotoFilterPreset> enabledPresets = PhotoFilterPresets.Parse(settings.Effects.EnabledFilterPresetIds);
+                    if (enabledPresets.Count > 0)
+                    {
+                        if (settings.Effects.FiltersMode == "Auto")
+                        {
+                            // Silent -- no guest interaction, no FilterPicker state.
+                            LastCapturedImagePath = await _services.FilterPreset.ApplyPresetAsync(LastCapturedImagePath, enabledPresets[0], ct);
+                        }
+                        else
+                        {
+                            // Ask: render every enabled preset against the actual
+                            // capture up front -- each candidate is a real,
+                            // fully-rendered result (not a generic stock
+                            // thumbnail), so whichever one the guest taps is
+                            // already the final file, no second apply pass needed.
+                            var filterOptions = new List<FilterOption>();
+                            foreach (PhotoFilterPreset preset in enabledPresets)
+                            {
+                                string previewPath = await _services.FilterPreset.ApplyPresetAsync(LastCapturedImagePath, preset, ct);
+                                filterOptions.Add(new FilterOption(preset, PhotoFilterPresets.DisplayName(preset), previewPath));
+                            }
+
+                            SetState(BoothState.FilterPicker);
+                            FilterOption? chosenFilter = await WithGuestIdleTimeoutAsync(
+                                _services.FilterSelection.SelectFilterAsync(filterOptions, ct), (FilterOption?)null, ct);
+                            if (chosenFilter is not null)
+                            {
+                                LastCapturedImagePath = chosenFilter.PreviewImagePath;
+                            }
+                        }
+                    }
+                }
+
                 // Green screen composites first, before the glam filter --
                 // its green-dominance threshold needs the plain camera
                 // colors, and a background composited after a B&W pass would
@@ -272,13 +315,14 @@ public class BoothStateMachine
             SetState(BoothState.Reviewing);
             await Task.Delay(2000, ct); // guest sees the shot before it prints
 
-            // Frame picker is a single-still GDI+ overlay too (see the
+            // Frame/sticker picker is a single-still GDI+ overlay too (see the
             // isNonPrintableCapture comment above) -- skipped for GIF/
-            // Boomerang/Video for the same reason. Also skipped entirely
-            // when no admin-configured frames are active -- a fresh booth
-            // with an empty Frame table behaves exactly as it did before
-            // this feature existed.
-            IReadOnlyList<FrameOption> frames = isNonPrintableCapture
+            // Boomerang/Video for the same reason. Also skipped entirely when
+            // no admin-configured frames are active, or when the Effects &
+            // Stickers screen's Stickers toggle is off -- either way, a fresh/
+            // stickers-disabled booth behaves exactly as it did before this
+            // feature existed.
+            IReadOnlyList<FrameOption> frames = isNonPrintableCapture || !settings.Effects.StickersEnabled
                 ? []
                 : await _services.FrameLibrary.GetActiveFramesAsync(ct);
             if (frames.Count > 0)
@@ -291,6 +335,32 @@ public class BoothStateMachine
                     LastCapturedImagePath = await _services.FrameOverlay.ApplyFrameAsync(
                         LastCapturedImagePath, LastSelectedFrame.ImagePath, ct);
                 }
+            }
+
+            // Watermark stamps last, on top of everything else (branding,
+            // filter, frame/sticker) -- same "a logo overlay sits above
+            // everything" semantics dslrBooth's own Watermark setting
+            // describes ("a full overlay ... to each individual photo").
+            // Reuses IFrameOverlayService rather than a dedicated watermark
+            // service -- compositing a transparent PNG over the photo is the
+            // exact same GDI+ operation a frame/sticker already is. Skipped
+            // for GIF/Boomerang/Video, same single-still limitation as the
+            // rest of this pipeline.
+            if (!isNonPrintableCapture && settings.Effects is { WatermarkEnabled: true, WatermarkImagePath: not null })
+            {
+                LastCapturedImagePath = await _services.FrameOverlay.ApplyFrameAsync(
+                    LastCapturedImagePath, settings.Effects.WatermarkImagePath, ct);
+            }
+
+            // Post-Processing hook -- see IPostProcessingService's doc for why
+            // this is fire-and-forget (doesn't await or gate the guest flow on
+            // an arbitrary external app). Runs against the final composited
+            // path, same "final version" reasoning the upload/print below
+            // already need. Skipped for GIF/Boomerang/Video, same single-still
+            // framing "post-processing on each photo" implies.
+            if (!isNonPrintableCapture && settings.Effects is { PostProcessingEnabled: true, PostProcessingApplicationPath: { Length: > 0 } postProcessingApp })
+            {
+                _services.PostProcessing.Run(postProcessingApp, LastCapturedImagePath);
             }
 
             // Fire-and-forget, and deliberately started only now (after any

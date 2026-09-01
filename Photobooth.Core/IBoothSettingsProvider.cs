@@ -46,16 +46,65 @@ public record CaptureSettings(string Mode = "Photo", bool AlsoCreateGif = false,
     public static CaptureSettings Default { get; } = new();
 }
 
-/// <summary>Welcome/Capture screen behavior, see dslrBooth's Screen Editor settings panels.</summary>
-public record ScreenSettings(bool BoothIconsEnabled = false, bool ShowLiveView = true, bool MirrorLiveView = true, int LiveViewRotation = 0)
+/// <summary>Welcome/Capture screen behavior plus camera hardware selection, see
+/// dslrBooth's Screen Editor settings panels and its Camera Settings screen.
+/// EnableWebcams mirrors dslrBooth's "if disabled, only Canon/Nikon are used" --
+/// it gates the camera bridge's DSLR-then-webcam fallback (see
+/// BoothCompositionRoot.EnsureCameraBridgeRunning), same effect as the existing
+/// PHOTOBOOTH_REQUIRE_DSLR env var but per-event instead of machine-wide.
+/// WebcamResolutionQuality is a 0-100 slider value (0 = fastest framerate, 100 =
+/// highest quality) -- interpretation is left to whichever webcam capture path
+/// reads it, same "store the admin's choice, let the consuming service decide
+/// what to do with it" pattern PrintSharpening already uses. AudioInputDeviceName
+/// is null for "use the system default device" (see AudioInputDevices.EnumerateNames).</summary>
+public record ScreenSettings(
+    bool BoothIconsEnabled = false, bool ShowLiveView = true, bool MirrorLiveView = true, int LiveViewRotation = 0,
+    bool EnableWebcams = true, int WebcamResolutionQuality = 70, string? AudioInputDeviceName = null)
 {
     public static ScreenSettings Default { get; } = new();
 }
 
-/// <summary>Beauty filter / filter mode / watermark, see dslrBooth's Effects & Stickers screen.</summary>
-public record EffectsSettings(bool BeautyFilterEnabled = false, string FiltersMode = "Ask", string? WatermarkImagePath = null)
+/// <summary>Beauty filter / filters / post-processing / stickers / watermark,
+/// see dslrBooth's Effects &amp; Stickers screen. BeautyFilterEnabled and
+/// BeautyFilterAlsoDuringCountdown are stored but not yet consumed anywhere --
+/// real skin smoothing needs face detection (IPhotoFilterService's own doc
+/// comment already flags this as separate, unbuilt work); nothing here
+/// regresses that, it just lets the admin's choice round-trip instead of
+/// being silently dropped. Filters itself IS real now (see PhotoFilterPreset/
+/// GdiFilterPresetService, BoothStateMachine's FilterPicker step): FiltersMode
+/// picks Ask (guest chooses, see BoothState.FilterPicker) vs Auto (first
+/// enabled preset applied silently), and EnabledFilterPresetIds (below) is
+/// which presets are offered. PostProcessing/Stickers/Watermark are also real:
+/// see BoothStateMachine's capture step (post-processing hook, FramePicker
+/// gate, watermark composite via IFrameOverlayService -- the same
+/// transparent-PNG-overlay operation a frame/sticker already is).
+/// FiltersEnabled defaults to false, unlike StickersEnabled's true default --
+/// Stickers is harmless-by-emptiness on a fresh booth (no frames added yet, so
+/// FramePicker never shows regardless), but Filters always has all nine
+/// built-in presets ready to go, so leaving it on by default would silently
+/// add a brand-new guest-facing screen (FilterPicker) to every fresh install's
+/// session. Same "new behavior-changing feature starts off" reasoning
+/// PostProcessing/WatermarkEnabled/BeautyFilterEnabled already default to
+/// false for.</summary>
+public record EffectsSettings(
+    bool BeautyFilterEnabled = false,
+    string FiltersMode = "Ask",
+    string? WatermarkImagePath = null,
+    bool BeautyFilterAlsoDuringCountdown = false,
+    bool FiltersEnabled = false,
+    bool PostProcessingEnabled = false,
+    string? PostProcessingApplicationPath = null,
+    bool StickersEnabled = true,
+    bool WatermarkEnabled = false)
 {
     public static EffectsSettings Default { get; } = new();
+
+    /// <summary>Comma-separated PhotoFilterPreset names the Filters grid offers
+    /// (see PhotoFilterPresets.Parse). An init property, not a positional
+    /// parameter, since its default (every built-in preset) isn't a compile-time
+    /// constant -- same reasoning BoothSettings.Theme already established for
+    /// the same problem.</summary>
+    public string EnabledFilterPresetIds { get; init; } = PhotoFilterPresets.DefaultEnabledIds;
 }
 
 /// <summary>See dslrBooth's Green Screen screen.</summary>

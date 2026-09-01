@@ -26,6 +26,10 @@ public enum KioskScreen
     /// (mock-only, auto-accepts), template stitching, spooling.</summary>
     Processing,
 
+    /// <summary>Guest picks a filter (or "Original") from previews of their own
+    /// just-captured photo -- only reached when Filters is on and set to Ask.</summary>
+    FilterPicker,
+
     /// <summary>Guest picks a photo frame (or none) from the active frame library.</summary>
     FramePicker,
 

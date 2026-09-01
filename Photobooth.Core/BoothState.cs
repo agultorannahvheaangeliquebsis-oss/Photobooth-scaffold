@@ -16,6 +16,14 @@ public enum BoothState
     Consent,
     Countdown,
     Capturing,
+
+    /// <summary>Guest picks a filter (or "Original") from previews of their own
+    /// just-captured photo -- see IFilterSelectionService, EffectsSettings.FiltersMode.
+    /// Only reached when Filters is enabled and FiltersMode is "Ask"; Auto mode applies
+    /// the first enabled preset silently instead, same "empty pool/disabled = feature
+    /// invisible" reasoning FramePicker already established.</summary>
+    FilterPicker,
+
     Reviewing,
     FramePicker,
     Payment,

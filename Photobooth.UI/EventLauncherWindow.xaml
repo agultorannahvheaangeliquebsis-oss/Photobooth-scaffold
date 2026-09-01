@@ -1,0 +1,177 @@
+<Window x:Class="Photobooth.UI.EventLauncherWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Photobooth" Background="{DynamicResource CanvasBrush}"
+        WindowStartupLocation="CenterScreen"
+        WindowState="Maximized"
+        Width="1180" Height="760" MinWidth="900" MinHeight="600">
+    <Window.Resources>
+        <!-- Same locally-scoped dark palette AdminWindow already established
+             (see its own Window.Resources comment); this is the app's
+             front door, so it gets the identical look rather than pulling in
+             DarkPalette.xaml's separate copy (that one's tuned for the two
+             editor windows, see its own TODO about unifying these someday). -->
+        <SolidColorBrush x:Key="CanvasBrush" Color="#17181A" />
+        <SolidColorBrush x:Key="InkBrush" Color="#F2F2F0" />
+        <SolidColorBrush x:Key="MutedBrush" Color="#9A9C9F" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#4FBFAE" />
+        <SolidColorBrush x:Key="LineBrush" Color="#2C2E31" />
+        <SolidColorBrush x:Key="FieldBrush" Color="#1F2023" />
+        <SolidColorBrush x:Key="OnAccentBrush" Color="#0B0C0D" />
+
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="{StaticResource FieldBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="CaretBrush" Value="{StaticResource InkBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,7" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="16">
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource FieldBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+            <Setter Property="Padding" Value="14,8" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="18">
+                            <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.85" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource OnAccentBrush}" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+
+        <Style x:Key="QuickLink" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="28">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- ================= Header: title + toolbar ================= -->
+        <Grid Grid.Row="0" Margin="0,0,0,18">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="Your events" FontFamily="Segoe UI" FontSize="22" FontWeight="SemiBold"
+                           Foreground="{StaticResource InkBrush}" VerticalAlignment="Center" Margin="0,0,24,0" />
+                <Button x:Name="NewEventButton" Content="+ New event" Margin="0,0,8,0" Click="NewEventButton_Click" />
+                <Button x:Name="DuplicateButton" Content="Duplicate" Margin="0,0,8,0" IsEnabled="False" Click="DuplicateButton_Click" />
+                <Button x:Name="RenameButton" Content="Rename event" Margin="0,0,8,0" IsEnabled="False" Click="RenameButton_Click" />
+                <Button x:Name="DeleteButton" Content="Delete" IsEnabled="False" Click="DeleteButton_Click" />
+            </StackPanel>
+
+            <Button Grid.Column="1" x:Name="LaunchEventButton" Content="⚡ Launch event" Style="{StaticResource PrimaryButton}"
+                    Padding="20,10" IsEnabled="False" Click="LaunchEventButton_Click" />
+        </Grid>
+
+        <!-- ================= Search / sort ================= -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,16">
+            <TextBox x:Name="SearchBox" Width="260" Tag="Find your event" TextChanged="SearchBox_TextChanged" />
+        </StackPanel>
+
+        <!-- ================= Body: tile grid + preview ================= -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="320" />
+            </Grid.ColumnDefinitions>
+
+            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
+                <WrapPanel x:Name="TilesPanel" />
+            </ScrollViewer>
+
+            <TextBlock x:Name="EmptyStateText" Grid.Column="0" Text="No events yet -- create one to get started."
+                       Foreground="{StaticResource MutedBrush}" FontFamily="Segoe UI" FontSize="14"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
+
+            <!-- ================= Right: selected-event preview ================= -->
+            <Border Grid.Column="1" Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}"
+                    BorderThickness="1" CornerRadius="10" Padding="20" Margin="20,0,0,0">
+                <StackPanel>
+                    <TextBlock Text="Preview" FontFamily="Segoe UI" FontSize="12" FontWeight="Bold"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,0,0,10" />
+
+                    <Border x:Name="PreviewSwatch" Height="140" CornerRadius="8" Background="{StaticResource LineBrush}">
+                        <TextBlock x:Name="PreviewInitialText" FontFamily="Segoe UI" FontSize="42" FontWeight="Bold"
+                                   Foreground="{StaticResource OnAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+
+                    <TextBlock x:Name="PreviewNameText" Text="Select an event" FontFamily="Segoe UI" FontSize="17" FontWeight="SemiBold"
+                               Foreground="{StaticResource InkBrush}" TextWrapping="Wrap" Margin="0,14,0,2" />
+                    <TextBlock x:Name="PreviewCaptionText" FontFamily="Segoe UI" FontSize="12"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,0,0,16" />
+
+                    <StackPanel x:Name="PreviewActionsPanel" Visibility="Collapsed">
+                        <Button Content="⚡ Launch event" Style="{StaticResource PrimaryButton}" Margin="0,0,0,10" Click="LaunchEventButton_Click" />
+                        <Button Content="Open full settings" Click="OpenSettingsButton_Click" Margin="0,0,0,20" />
+
+                        <TextBlock Text="QUICK SETTINGS" FontFamily="Segoe UI" FontSize="11" FontWeight="Bold"
+                                   Foreground="{StaticResource MutedBrush}" Margin="0,0,0,10" />
+                        <TextBlock Text="Capture Settings" Style="{StaticResource QuickLink}" Tag="CaptureSettings" MouseLeftButtonDown="QuickLink_Click" />
+                        <TextBlock Text="Effects &amp; Stickers" Style="{StaticResource QuickLink}" Tag="EffectsStickers" MouseLeftButtonDown="QuickLink_Click" />
+                        <TextBlock Text="Green Screen" Style="{StaticResource QuickLink}" Tag="GreenScreen" MouseLeftButtonDown="QuickLink_Click" />
+                        <TextBlock Text="Survey" Style="{StaticResource QuickLink}" Tag="Survey" MouseLeftButtonDown="QuickLink_Click" />
+                        <TextBlock Text="Sharing Settings" Style="{StaticResource QuickLink}" Tag="SharingSettings" MouseLeftButtonDown="QuickLink_Click" />
+                        <TextBlock Text="Print Setup" Style="{StaticResource QuickLink}" Tag="PrintSetup" MouseLeftButtonDown="QuickLink_Click" />
+                    </StackPanel>
+
+                    <TextBlock x:Name="PreviewEmptyText" Text="Tap an event on the left to preview, launch, or edit its settings."
+                               Foreground="{StaticResource MutedBrush}" FontFamily="Segoe UI" FontSize="13" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

@@ -34,9 +34,20 @@ CREATE TABLE Location (
     ShowLiveView        BIT          NOT NULL DEFAULT 1,
     MirrorLiveView      BIT          NOT NULL DEFAULT 1,
     LiveViewRotation    INT          NOT NULL DEFAULT 0,
+    EnableWebcams       BIT          NOT NULL DEFAULT 1,   -- if 0, only Canon/Nikon are used -- see AdminWindow's Camera Settings section
+    WebcamResolutionQuality INT      NOT NULL DEFAULT 70,  -- 0 (fastest framerate) - 100 (highest quality)
+    AudioInputDeviceName NVARCHAR(200) NULL,                -- NULL = system default device
     BeautyFilterEnabled BIT          NOT NULL DEFAULT 0,
+    BeautyFilterAlsoDuringCountdown BIT NOT NULL DEFAULT 0,
     FiltersMode         NVARCHAR(20) NOT NULL DEFAULT 'Ask' CHECK (FiltersMode IN ('Ask', 'Auto')),
+    FiltersEnabled      BIT          NOT NULL DEFAULT 0,
+    -- Comma-separated PhotoFilterPreset names -- must match PhotoFilterPresets.All (Photobooth.Core).
+    EnabledFilterPresetIds NVARCHAR(300) NOT NULL DEFAULT 'Original,BlackAndWhiteGlam,BlackAndWhite,Filter1977,Brannan,Gotham,Hefe,LordKelvin,Nashville',
+    PostProcessingEnabled BIT        NOT NULL DEFAULT 0,
+    PostProcessingApplicationPath NVARCHAR(500) NULL,
+    StickersEnabled     BIT          NOT NULL DEFAULT 1,
     WatermarkImagePath  NVARCHAR(500) NULL,
+    WatermarkEnabled    BIT          NOT NULL DEFAULT 0,
     GreenScreenEnabled  BIT          NOT NULL DEFAULT 0,
     GreenScreenBackgroundPath NVARCHAR(500) NULL,
     SurveyEnabled       BIT          NOT NULL DEFAULT 0,
@@ -212,7 +223,7 @@ CREATE TABLE PrintTemplateElement (
 CREATE TABLE VirtualAttendantClip (
     ClipId          INT IDENTITY(1,1) PRIMARY KEY,
     LocationId      INT             NOT NULL REFERENCES Location(LocationId),
-    Stage           NVARCHAR(20)    NOT NULL CHECK (Stage IN ('Setup', 'Idle', 'Consent', 'Countdown', 'Capturing', 'Reviewing', 'FramePicker', 'Payment', 'Printing', 'Complete', 'Guestbook', 'Feedback', 'Survey', 'Error')),
+    Stage           NVARCHAR(20)    NOT NULL CONSTRAINT CK_VirtualAttendantClip_Stage CHECK (Stage IN ('Setup', 'Idle', 'Consent', 'Countdown', 'Capturing', 'FilterPicker', 'Reviewing', 'FramePicker', 'Payment', 'Printing', 'Complete', 'Guestbook', 'Feedback', 'Survey', 'Error')),
     FilePath        NVARCHAR(500)   NOT NULL,
     SortOrder       INT             NOT NULL DEFAULT 0,
     CreatedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()

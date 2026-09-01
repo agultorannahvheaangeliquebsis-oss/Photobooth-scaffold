@@ -54,6 +54,7 @@ public class KioskViewModel : ObservableObject, IDisposable
     // resolves on its own without needing a tap -- see e.g.
     // MockFeedbackService), it just has no guest-facing controls to submit
     // through, same as before that screen existed here.
+    private readonly UiFilterSelectionService? _filterSelection;
     private readonly UiFrameSelectionService? _frameSelection;
     private readonly UiFeedbackService? _feedback;
     private readonly UiGuestbookPromptService? _guestbookPrompt;
@@ -85,7 +86,8 @@ public class KioskViewModel : ObservableObject, IDisposable
         UiFeedbackService? feedback = null,
         UiGuestbookPromptService? guestbookPrompt = null,
         SqlSurveyService? survey = null,
-        int? locationId = null)
+        int? locationId = null,
+        UiFilterSelectionService? filterSelection = null)
     {
         _dispatcher = Dispatcher.CurrentDispatcher;
         _liveView = liveView;
@@ -108,6 +110,7 @@ public class KioskViewModel : ObservableObject, IDisposable
         SendSmsCommand = new AsyncRelayCommand(SendSmsAsync, () => CanSendSms);
         DoneCommand = new RelayCommand(FinishSharing);
         OpenAdminCommand = new RelayCommand(Admin.Open);
+        SelectFilterCommand = new RelayCommand(SelectFilter);
         SelectFrameCommand = new RelayCommand(SelectFrame);
         RecordGuestbookMessageCommand = new RelayCommand(() => _guestbookPrompt?.SubmitRecordDecision(true));
         SkipGuestbookMessageCommand = new RelayCommand(() => _guestbookPrompt?.SubmitRecordDecision(false));
@@ -144,6 +147,12 @@ public class KioskViewModel : ObservableObject, IDisposable
         });
         _stateMachine.PhotoUploaded += url => OnUi(() => ApplyUploadedPhoto(url));
         _stateMachine.AttendantCueChanged += clip => OnUi(() => AttendantCueRequested?.Invoke(clip));
+
+        _filterSelection = filterSelection;
+        if (_filterSelection is not null)
+        {
+            _filterSelection.SelectionRequested += options => OnUi(() => ShowFilterOptions(options));
+        }
 
         _frameSelection = frameSelection;
         if (_frameSelection is not null)
@@ -219,6 +228,9 @@ public class KioskViewModel : ObservableObject, IDisposable
         {
             Sms = new MockSmsDeliveryService(),
             GreenScreen = new MockGreenScreenService(),
+            PostProcessing = new MockPostProcessingService(),
+            FilterPreset = new MockFilterPresetService(),
+            FilterSelection = new MockFilterSelectionService(),
         },
         new MockLiveViewService());
 
@@ -372,6 +384,29 @@ public class KioskViewModel : ObservableObject, IDisposable
     {
         get => _errorMessage;
         private set => SetProperty(ref _errorMessage, value);
+    }
+
+    // ======================================================== filter picker ==
+
+    /// <summary>Populated when <see cref="_filterSelection"/> raises SelectionRequested
+    /// (i.e. right as BoothStateMachine enters FilterPicker). Empty in mock mode or
+    /// before that screen is reached -- MockFilterSelectionService resolves on its
+    /// own without ever raising the event, same reasoning FrameOptions/
+    /// MockFrameSelectionService already give.</summary>
+    public ObservableCollection<FilterOption> FilterOptions { get; } = new();
+
+    public RelayCommand SelectFilterCommand { get; }
+
+    /// <summary>Bound to each filter preview's CommandParameter.</summary>
+    private void SelectFilter(object? parameter) => _filterSelection?.SubmitSelection(parameter as FilterOption);
+
+    private void ShowFilterOptions(IReadOnlyList<FilterOption> options)
+    {
+        FilterOptions.Clear();
+        foreach (FilterOption option in options)
+        {
+            FilterOptions.Add(option);
+        }
     }
 
     // ========================================================= frame picker ==
@@ -682,6 +717,13 @@ public class KioskViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref _shareSecondsRemaining, value);
     }
 
+    /// <summary>Which event/location this kiosk is running -- null in mock/
+    /// designer mode. Lets KioskWindow open AdminWindow scoped to the same
+    /// event it's actually running, rather than AdminWindow guessing at
+    /// "the first Location row" once more than one event can exist (see
+    /// EventLauncherWindow).</summary>
+    public int? LocationId => _locationId;
+
     // ============================================================ commands ==
 
     public RelayCommand StartSessionCommand { get; }
@@ -903,11 +945,12 @@ public class KioskViewModel : ObservableObject, IDisposable
     /// or printed yet; it is the "stitching your photo strip" beat, not the
     /// sharing beat.
     ///
-    /// FramePicker/Payment/Guestbook/Feedback/Survey each get their own screen:
-    /// unlike Consent/Reviewing/Printing, a guest genuinely acts on these (pick
-    /// a frame, scan a QR to pay, decide whether to record a message, rate the
-    /// experience, answer a question) -- see FrameOptions/PaymentInstructions/
-    /// GuestbookSubScreen/SelectedFeedbackRating/SurveyAnswers.
+    /// FilterPicker/FramePicker/Payment/Guestbook/Feedback/Survey each get their
+    /// own screen: unlike Consent/Reviewing/Printing, a guest genuinely acts on
+    /// these (pick a filter, pick a frame, scan a QR to pay, decide whether to
+    /// record a message, rate the experience, answer a question) -- see
+    /// FilterOptions/FrameOptions/PaymentInstructions/GuestbookSubScreen/
+    /// SelectedFeedbackRating/SurveyAnswers.
     ///
     /// Complete is the sharing beat: the photo exists, the print (if any) has
     /// spooled, and the upload has usually landed, so the QR, email and reprint
@@ -922,6 +965,7 @@ public class KioskViewModel : ObservableObject, IDisposable
         BoothState.Countdown => KioskScreen.Countdown,
         BoothState.Capturing => KioskScreen.Capture,
         BoothState.Consent or BoothState.Reviewing or BoothState.Printing => KioskScreen.Processing,
+        BoothState.FilterPicker => KioskScreen.FilterPicker,
         BoothState.FramePicker => KioskScreen.FramePicker,
         BoothState.Payment => KioskScreen.Payment,
         BoothState.Guestbook => KioskScreen.Guestbook,
@@ -950,6 +994,7 @@ public class KioskViewModel : ObservableObject, IDisposable
         SharePhone = string.Empty;
         ErrorMessage = null;
         LiveViewStream = null;
+        FilterOptions.Clear();
         FrameOptions.Clear();
         PaymentInstructions = null;
         PaymentQrCode = null;

@@ -27,7 +27,11 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
                    AccentColorHex, CanvasColorHex, InkColorHex, LogoImagePath, EventName, AdminPin,
                    CaptureMode, AlsoCreateGif, GifFrameCount, GifFrameDelayMs, VideoDurationSeconds,
                    BoothIconsEnabled, ShowLiveView, MirrorLiveView, LiveViewRotation,
+                   EnableWebcams, WebcamResolutionQuality, AudioInputDeviceName,
                    BeautyFilterEnabled, FiltersMode, WatermarkImagePath,
+                   BeautyFilterAlsoDuringCountdown, FiltersEnabled, EnabledFilterPresetIds,
+                   PostProcessingEnabled, PostProcessingApplicationPath,
+                   StickersEnabled, WatermarkEnabled,
                    GreenScreenEnabled, GreenScreenBackgroundPath,
                    SurveyEnabled,
                    DisclaimerHeader, DisclaimerText,
@@ -76,16 +80,24 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
                 reader.GetString(10));
             adminPin = reader.GetString(11);
             capture = new CaptureSettings(reader.GetString(12), reader.GetBoolean(13), reader.GetInt32(14), reader.GetInt32(15), reader.GetInt32(16));
-            screen = new ScreenSettings(reader.GetBoolean(17), reader.GetBoolean(18), reader.GetBoolean(19), reader.GetInt32(20));
-            effects = new EffectsSettings(reader.GetBoolean(21), reader.GetString(22), reader.IsDBNull(23) ? null : reader.GetString(23));
-            greenScreen = new GreenScreenSettings(reader.GetBoolean(24), reader.IsDBNull(25) ? null : reader.GetString(25));
-            survey = new SurveySettings(reader.GetBoolean(26));
-            disclaimer = new DisclaimerSettings(reader.GetString(27), reader.GetString(28));
-            printOptions = new PrintOptions(reader.GetBoolean(29), reader.GetBoolean(30), reader.GetInt32(31), reader.GetInt32(32), reader.GetString(33));
-            sharing = new SharingSettings(reader.GetBoolean(34), reader.GetBoolean(35), reader.GetBoolean(36));
+            screen = new ScreenSettings(
+                reader.GetBoolean(17), reader.GetBoolean(18), reader.GetBoolean(19), reader.GetInt32(20),
+                reader.GetBoolean(21), reader.GetInt32(22), reader.IsDBNull(23) ? null : reader.GetString(23));
+            effects = new EffectsSettings(
+                reader.GetBoolean(24), reader.GetString(25), reader.IsDBNull(26) ? null : reader.GetString(26),
+                reader.GetBoolean(27), reader.GetBoolean(28), reader.GetBoolean(30),
+                reader.IsDBNull(31) ? null : reader.GetString(31), reader.GetBoolean(32), reader.GetBoolean(33))
+            {
+                EnabledFilterPresetIds = reader.GetString(29),
+            };
+            greenScreen = new GreenScreenSettings(reader.GetBoolean(34), reader.IsDBNull(35) ? null : reader.GetString(35));
+            survey = new SurveySettings(reader.GetBoolean(36));
+            disclaimer = new DisclaimerSettings(reader.GetString(37), reader.GetString(38));
+            printOptions = new PrintOptions(reader.GetBoolean(39), reader.GetBoolean(40), reader.GetInt32(41), reader.GetInt32(42), reader.GetString(43));
+            sharing = new SharingSettings(reader.GetBoolean(44), reader.GetBoolean(45), reader.GetBoolean(46));
             virtualAttendant = new VirtualAttendantSettings(
-                reader.GetBoolean(37), reader.GetString(38), reader.GetBoolean(39), reader.GetBoolean(40),
-                reader.GetBoolean(41), reader.GetBoolean(42), reader.GetBoolean(43), reader.GetBoolean(44));
+                reader.GetBoolean(47), reader.GetString(48), reader.GetBoolean(49), reader.GetBoolean(50),
+                reader.GetBoolean(51), reader.GetBoolean(52), reader.GetBoolean(53), reader.GetBoolean(54));
         }
 
         // A separate connection (not this method's `connection` above), so
