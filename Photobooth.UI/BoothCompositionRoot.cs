@@ -189,6 +189,7 @@ public static class BoothCompositionRoot
         {
             // Not found -- PtpCameraService will surface a clear "is the bridge
             // process running?" error on first capture instead of failing here.
+            Serilog.Log.Warning("Camera bridge host executable not found; capture will fail until PHOTOBOOTH_CAMERA_BRIDGE_EXE is set or it's placed at the expected build output path");
             return null;
         }
 
@@ -209,9 +210,10 @@ public static class BoothCompositionRoot
         {
             process = Process.Start(startInfo);
         }
-        catch
+        catch (Exception ex)
         {
             // Swallow -- same reasoning as the exePath-not-found case above.
+            Serilog.Log.Warning(ex, "Failed to start camera bridge host at {ExePath}", exePath);
             return null;
         }
 

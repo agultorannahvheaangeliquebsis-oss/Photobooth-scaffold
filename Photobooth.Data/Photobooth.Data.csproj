@@ -11,14 +11,27 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="dbup-sqlserver" Version="6.0.0" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
+    <PackageReference Include="Serilog" Version="4.2.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- schema.sql is the single source of truth for the schema (also
-         referenced directly by anyone reading the repo); DatabaseInitializer
-         runs this copy at startup to create the DB the first time. -->
-    <None Include="..\schema.sql" Link="schema.sql" CopyToOutputDirectory="PreserveNewest" />
+    <!-- schema.sql documents the resulting shape for anyone reading the repo,
+         but is no longer executed directly: DatabaseInitializer now applies
+         the numbered scripts under Migrations/ via DbUp instead, so a schema
+         change and its upgrade path can't drift apart the way schema.sql and
+         the old ad-hoc Ensure* patches could. -->
+    <None Include="..\schema.sql" Link="schema.sql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- DbUp discovers and orders these by embedded resource name, hence the
+         zero-padded numeric prefix (Script0001, Script0002, ...): applied
+         once each, in that order, and recorded in a SchemaVersions table so a
+         database already at a given script never re-runs it. -->
+    <EmbeddedResource Include="Migrations\*.sql" />
   </ItemGroup>
 
 </Project>

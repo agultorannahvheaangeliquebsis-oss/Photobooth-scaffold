@@ -37,10 +37,20 @@ public partial class EventLauncherWindow : Window
     // App.xaml.cs's original KillCameraBridgeIfOwned had.
     private Process? _cameraBridgeProcess;
 
+    // Guards kiosk.Closed's Show()/Activate() below against firing after this
+    // window itself has already closed (e.g. the whole app shutting down
+    // while a kiosk session is still open) -- confirmed via a crash log
+    // (System.InvalidOperationException: "Cannot ... call Show ... after a
+    // Window has closed", thrown from this exact handler) that this race is
+    // real, not hypothetical, and previously took the whole process down
+    // with it since nothing upstream catches it.
+    private bool _closed;
+
     public EventLauncherWindow()
     {
         InitializeComponent();
         AppDomain.CurrentDomain.ProcessExit += KillCameraBridgeIfOwned;
+        Closed += (_, _) => _closed = true;
         Loaded += async (_, _) => await LoadAsync();
     }
 
@@ -60,6 +70,7 @@ public partial class EventLauncherWindow : Window
         }
         catch (Exception ex)
         {
+            Serilog.Log.Fatal(ex, "Database unavailable at startup");
             MessageBox.Show(
                 $"Couldn't reach the booth database and can't start.\n\n{ex.Message}\n\n" +
                 "Check that SQL Server LocalDB is installed and the MSSQLLocalDB instance is running, then restart the app.",
@@ -390,6 +401,10 @@ public partial class EventLauncherWindow : Window
             var kiosk = new KioskWindow(viewModel);
             kiosk.Closed += (_, _) =>
             {
+                if (_closed)
+                {
+                    return;
+                }
                 Show();
                 Activate();
                 _ = RefreshEventsAsync();

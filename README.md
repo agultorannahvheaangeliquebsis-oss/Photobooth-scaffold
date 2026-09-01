@@ -556,6 +556,52 @@ instance auto-restarts in ~1s (LocalDB's normal "automatic instance"
 behavior), and the running WPF app reaches an idle, near-zero-CPU state
 within ~8s when LocalDB is stopped at launch.
 
+## Configuration, schema migrations, and logging
+
+Three pieces of deployment hardening, aimed at running on a kiosk machine
+that isn't this dev box:
+
+- **Connection string** (`Photobooth.Data/BoothConfiguration.cs`): no
+  longer hardcoded. Resolution order is the `PHOTOBOOTH_DB_CONNECTION`
+  env var (unchanged dev override) → `ConnectionStringEncrypted` in
+  `%LocalAppData%\Photobooth\appsettings.json` (DPAPI, current-user
+  scope — for a connection string carrying a SQL login password) →
+  plain `ConnectionString` in that same file → the original LocalDB
+  default. `BoothConfiguration.WriteConnectionString(...)` is a small
+  setup-time helper for writing either form; nothing at booth runtime
+  calls it.
+- **Schema migrations** (`Photobooth.Data/Migrations/*.sql`): the ad-hoc
+  `Ensure*Async` patches that used to live in `DatabaseInitializer.cs`
+  are now versioned DbUp scripts (`Script0001`...`Script0015`,
+  applied in order, tracked in a `SchemaVersions` table DbUp manages
+  itself) instead of hand-rolled idempotency checks run unconditionally
+  on every startup. `schema.sql` stays in the repo as a
+  human-readable snapshot of the resulting shape, but is no longer
+  executed directly.
+- **Logging** (`Serilog`, rolling daily file under
+  `%LocalAppData%\Photobooth\logs`, 14-day retention): `App.xaml.cs`
+  wires it into `DispatcherUnhandledException` plus
+  `AppDomain.UnhandledException`/`TaskScheduler.UnobservedTaskException`,
+  and `DatabaseInitializer`/`EventLauncherWindow`/`BoothCompositionRoot`
+  log the failure paths that used to fail silently (DB unreachable,
+  camera bridge host not found or failed to start) — so a field issue
+  leaves a trail on the machine without a debugger attached.
+
+**Verified: solution builds clean (0 warnings) and the full test suite
+still passes (171 + 44 tests) after these changes.** *Not yet verified
+here*: an actual DbUp run against a live LocalDB instance — the sandboxed
+CLI environment this was built in can't complete a named-pipe connection
+to `(localdb)\MSSQLLocalDB` (`SqlException`/`Win32Exception 121`,
+semaphore timeout, reproduced identically via both the Bash and
+PowerShell tool paths) even though `sqllocaldb info` reports the instance
+running, so the migration path itself hasn't been exercised against a
+real database yet. Next step: launch the app (or the small scratch
+console harness this was built with) on an interactive desktop session
+to confirm `DatabaseInitializer.InitializeAsync()` actually applies the
+15 scripts against a fresh database, and again against the existing dev
+`Photobooth` LocalDB to confirm it recognizes that database's
+already-applied history as up to date.
+
 ## Printer: Windows print spooler
 
 `SpoolerPrinterService : IPrinterService` (in `Photobooth.Core`) sends
