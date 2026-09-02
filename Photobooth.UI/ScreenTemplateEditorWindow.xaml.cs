@@ -31,8 +31,16 @@ namespace Photobooth.UI;
 /// rendered or clicked through -- same interactive-desktop gap every WPF
 /// screen in this project has.
 /// </summary>
-public partial class ScreenTemplateEditorWindow : Window
+public partial class ScreenTemplateEditorWindow : UserControl
 {
+    /// <summary>Raised when the admin is done with this editor -- true if Save
+    /// succeeded, false on Cancel or a breadcrumb navigation (see
+    /// RequestedNavigation). AdminWindow (which now hosts this as an embedded
+    /// child view, not a separate Window/ShowDialog) subscribes to swap back
+    /// to whatever section should show next, mirroring exactly what it used
+    /// to do with ShowDialog's own return value.</summary>
+    public event Action<bool>? RequestClose;
+
     private const int CanvasWidth = 640;
     private const int CanvasHeight = 400;
     private const double HandleSize = 12;
@@ -47,6 +55,16 @@ public partial class ScreenTemplateEditorWindow : Window
     /// copy rather than re-fetched, same reasoning _screenSettings below
     /// already follows.</summary>
     private readonly BoothTheme _theme;
+
+    /// <summary>Read-only context for the Sharing chrome mockup's QR/Email/
+    /// SMS/Print visibility (see UpdateScreenChrome) -- these live in
+    /// SharingSettings/PrintOptions, not ScreenSettings, and are edited via
+    /// AdminWindow's separate Sharing Settings section (see
+    /// SharingSettingsLink_MouseLeftButtonDown), never written back by this
+    /// editor. Same "read-only context passed in" precedent _theme above
+    /// already sets.</summary>
+    private readonly SharingSettings _sharing;
+    private readonly PrintOptions _printOptions;
 
     /// <summary>Working copy of the screen-chrome toggles edited by the
     /// SETTINGS tab (see ScreenSettingsCheckBox_Click/RotationRadio_Click/
@@ -117,13 +135,16 @@ public partial class ScreenTemplateEditorWindow : Window
     private bool _suppressPropertyEvents;
     private bool _suppressLayerListEvents;
 
-    public ScreenTemplateEditorWindow(IReadOnlyList<ScreenTemplateElement> existingElements, int locationId, ScreenSettings screenSettings, BoothTheme theme)
+    public ScreenTemplateEditorWindow(IReadOnlyList<ScreenTemplateElement> existingElements, int locationId,
+        ScreenSettings screenSettings, BoothTheme theme, SharingSettings sharing, PrintOptions printOptions)
     {
         InitializeComponent();
 
         _locationId = locationId;
         _screenSettings = screenSettings;
         _theme = theme;
+        _sharing = sharing;
+        _printOptions = printOptions;
         foreach (ScreenTemplateElement element in existingElements)
         {
             _elementsByScreen[element.Screen].Add(element);
@@ -142,6 +163,11 @@ public partial class ScreenTemplateEditorWindow : Window
         try
         {
             // Welcome
+            WelcomeBackgroundColorBox.Text = _screenSettings.WelcomeBackgroundColorHex;
+            WelcomeBackgroundColorSwatch.Background = HexToBrush(_screenSettings.WelcomeBackgroundColorHex);
+            WelcomeBackgroundImageNameText.Text = _screenSettings.WelcomeBackgroundImagePath is string welcomeBgPath
+                ? IoPath.GetFileName(welcomeBgPath)
+                : "No image selected.";
             BoothIconsEnabledCheckBox.IsChecked = _screenSettings.BoothIconsEnabled;
             BoothIconLabelsEnabledCheckBox.IsChecked = _screenSettings.BoothIconLabelsEnabled;
             WelcomeShowLiveViewCheckBox.IsChecked = _screenSettings.WelcomeShowLiveView;
@@ -165,6 +191,11 @@ public partial class ScreenTemplateEditorWindow : Window
             GuestQrCodeEnabledCheckBox.IsChecked = _screenSettings.GuestQrCodeEnabled;
 
             // Capture
+            CaptureBackgroundColorBox.Text = _screenSettings.CaptureBackgroundColorHex;
+            CaptureBackgroundColorSwatch.Background = HexToBrush(_screenSettings.CaptureBackgroundColorHex);
+            CaptureBackgroundImageNameText.Text = _screenSettings.CaptureBackgroundImagePath is string captureBgPath
+                ? IoPath.GetFileName(captureBgPath)
+                : "No image selected.";
             ShowLiveViewCheckBox.IsChecked = _screenSettings.ShowLiveView;
             CropLiveViewCheckBox.IsChecked = _screenSettings.CropLiveView;
             MirrorLiveViewCheckBox.IsChecked = _screenSettings.MirrorLiveView;
@@ -197,6 +228,11 @@ public partial class ScreenTemplateEditorWindow : Window
             poseStripRadio.IsChecked = true;
 
             // Sharing
+            SharingBackgroundColorBox.Text = _screenSettings.SharingBackgroundColorHex;
+            SharingBackgroundColorSwatch.Background = HexToBrush(_screenSettings.SharingBackgroundColorHex);
+            SharingBackgroundImageNameText.Text = _screenSettings.SharingBackgroundImagePath is string sharingBgPath
+                ? IoPath.GetFileName(sharingBgPath)
+                : "No image selected.";
             SkipSharingScreenCheckBox.IsChecked = _screenSettings.SkipSharingScreen;
             ShowDoneButtonCheckBox.IsChecked = _screenSettings.ShowDoneButton;
             SharingIconsLocationCombo.SelectedIndex = _screenSettings.SharingIconsLocation switch
@@ -251,6 +287,7 @@ public partial class ScreenTemplateEditorWindow : Window
             ShowOriginalPhotos = ShowOriginalPhotosCheckBox.IsChecked == true,
             ShowRetakeButton = ShowRetakeButtonCheckBox.IsChecked == true,
         };
+        UpdateScreenChrome();
     }
 
     private void StretchLiveViewCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -342,6 +379,82 @@ public partial class ScreenTemplateEditorWindow : Window
 
         _screenSettings = _screenSettings with { CountdownColorHex = CountdownColorBox.Text };
         CountdownColorSwatch.Background = HexToBrush(CountdownColorBox.Text);
+        UpdateScreenChrome();
+    }
+
+    private void WelcomeBackgroundColorBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressScreenSettingsEvents)
+        {
+            return;
+        }
+
+        _screenSettings = _screenSettings with { WelcomeBackgroundColorHex = WelcomeBackgroundColorBox.Text };
+        WelcomeBackgroundColorSwatch.Background = HexToBrush(WelcomeBackgroundColorBox.Text);
+        UpdateScreenChrome();
+    }
+
+    private void ChooseWelcomeBackgroundImageButton_Click(object sender, RoutedEventArgs e)
+    {
+        string? storedPath = PickAndStoreImage();
+        if (storedPath is null)
+        {
+            return;
+        }
+
+        _screenSettings = _screenSettings with { WelcomeBackgroundImagePath = storedPath };
+        WelcomeBackgroundImageNameText.Text = IoPath.GetFileName(storedPath);
+        UpdateScreenChrome();
+    }
+
+    private void CaptureBackgroundColorBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressScreenSettingsEvents)
+        {
+            return;
+        }
+
+        _screenSettings = _screenSettings with { CaptureBackgroundColorHex = CaptureBackgroundColorBox.Text };
+        CaptureBackgroundColorSwatch.Background = HexToBrush(CaptureBackgroundColorBox.Text);
+        UpdateScreenChrome();
+    }
+
+    private void ChooseCaptureBackgroundImageButton_Click(object sender, RoutedEventArgs e)
+    {
+        string? storedPath = PickAndStoreImage();
+        if (storedPath is null)
+        {
+            return;
+        }
+
+        _screenSettings = _screenSettings with { CaptureBackgroundImagePath = storedPath };
+        CaptureBackgroundImageNameText.Text = IoPath.GetFileName(storedPath);
+        UpdateScreenChrome();
+    }
+
+    private void SharingBackgroundColorBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressScreenSettingsEvents)
+        {
+            return;
+        }
+
+        _screenSettings = _screenSettings with { SharingBackgroundColorHex = SharingBackgroundColorBox.Text };
+        SharingBackgroundColorSwatch.Background = HexToBrush(SharingBackgroundColorBox.Text);
+        UpdateScreenChrome();
+    }
+
+    private void ChooseSharingBackgroundImageButton_Click(object sender, RoutedEventArgs e)
+    {
+        string? storedPath = PickAndStoreImage();
+        if (storedPath is null)
+        {
+            return;
+        }
+
+        _screenSettings = _screenSettings with { SharingBackgroundImagePath = storedPath };
+        SharingBackgroundImageNameText.Text = IoPath.GetFileName(storedPath);
+        UpdateScreenChrome();
     }
 
     private void ChooseStartScreenVideoButton_Click(object sender, RoutedEventArgs e)
@@ -397,7 +510,7 @@ public partial class ScreenTemplateEditorWindow : Window
     private void CloseAndNavigate(string target)
     {
         RequestedNavigation = target;
-        DialogResult = false;
+        RequestClose?.Invoke(false);
     }
 
     private void RotationRadio_Click(object sender, RoutedEventArgs e)
@@ -456,16 +569,63 @@ public partial class ScreenTemplateEditorWindow : Window
         RefreshLayerList();
         SelectElement(-1);
         UpdateBrandingLayer();
+        UpdateScreenChrome();
     }
 
-    /// <summary>Shows the event's real logo/name behind the overlay elements --
-    /// Welcome gets the big centered logo+name KioskWindow's IdleScreen shows,
-    /// Capture/Sharing get the small top-center "brand bar" KioskWindow shows
-    /// during Countdown/Capture/Processing/Review (see KioskWindow.xaml's own
-    /// CHROME: BRAND BAR block). Only these two fields are actually applied to
-    /// the live guest screens today -- Theme's accent/canvas/ink colors aren't
-    /// (see BoothTheme), so they're deliberately not painted here either; doing
-    /// so would make this preview claim a fidelity it doesn't have.</summary>
+    /// <summary>Applies current state to the three non-interactive chrome
+    /// mockups (WelcomeChromeLayer/CaptureChromeLayer/SharingChromeLayer) and
+    /// shows only the active screen's layer -- this is what makes the canvas
+    /// an actual WYSIWYG preview of KioskWindow instead of a dead box: called
+    /// from LoadActiveScreen (tab switch) and from every settings handler
+    /// that touches a field the chrome reflects (background color/image,
+    /// ShowCancelButton, CountdownColorHex, ShowRetakeButton, ShowDoneButton,
+    /// SharingTextLabelsEnabled).</summary>
+    private void UpdateScreenChrome()
+    {
+        WelcomeChromeLayer.Visibility = _activeScreen == ScreenTemplateScreen.Welcome ? Visibility.Visible : Visibility.Collapsed;
+        CaptureChromeLayer.Visibility = _activeScreen == ScreenTemplateScreen.Capture ? Visibility.Visible : Visibility.Collapsed;
+        SharingChromeLayer.Visibility = _activeScreen == ScreenTemplateScreen.Sharing ? Visibility.Visible : Visibility.Collapsed;
+
+        WelcomeBackgroundFill.Background = HexToBrush(_screenSettings.WelcomeBackgroundColorHex);
+        WelcomeBackgroundImageElement.Source = LoadImageOrNull(_screenSettings.WelcomeBackgroundImagePath);
+        CaptureBackgroundFill.Background = HexToBrush(_screenSettings.CaptureBackgroundColorHex);
+        CaptureBackgroundImageElement.Source = LoadImageOrNull(_screenSettings.CaptureBackgroundImagePath);
+        SharingBackgroundFill.Background = HexToBrush(_screenSettings.SharingBackgroundColorHex);
+        SharingBackgroundImageElement.Source = LoadImageOrNull(_screenSettings.SharingBackgroundImagePath);
+
+        CaptureChromeCountdownText.Foreground = HexToBrush(_screenSettings.CountdownColorHex);
+        CaptureChromeCancelPill.Visibility = _screenSettings.ShowCancelButton ? Visibility.Visible : Visibility.Collapsed;
+
+        // Same sources KioskViewModel itself reads for IsQrEnabled/IsEmailEnabled/
+        // IsSmsEnabled/IsPrintButtonVisible -- SharingSettings/PrintOptions, not
+        // ScreenSettings (see _sharing/_printOptions doc comment above).
+        SharingChromeQrBox.Visibility = _sharing.QrEnabled ? Visibility.Visible : Visibility.Collapsed;
+        SharingChromeEmailRow.Visibility = _sharing.EmailEnabled ? Visibility.Visible : Visibility.Collapsed;
+        SharingChromeSmsRow.Visibility = _sharing.SmsEnabled ? Visibility.Visible : Visibility.Collapsed;
+        SharingChromePrintPill.Visibility = _printOptions.ShowPrintButton ? Visibility.Visible : Visibility.Collapsed;
+        SharingChromeRetakePill.Visibility = _screenSettings.ShowRetakeButton ? Visibility.Visible : Visibility.Collapsed;
+        SharingChromeDonePill.Visibility = _screenSettings.ShowDoneButton ? Visibility.Visible : Visibility.Collapsed;
+
+        // ScreenSettings.SharingTextLabelsEnabled hides just the captions,
+        // same as KioskWindow.xaml's own IsSharingTextLabelsEnabled bindings --
+        // the QR box/email+SMS fields themselves stay up.
+        Visibility labelVisibility = _screenSettings.SharingTextLabelsEnabled ? Visibility.Visible : Visibility.Collapsed;
+        SharingChromeQrLabel.Visibility = labelVisibility;
+        SharingChromeEmailLabel.Visibility = labelVisibility;
+        SharingChromeSmsLabel.Visibility = labelVisibility;
+    }
+
+    private static ImageSource? LoadImageOrNull(string? path) => path is string p && File.Exists(p)
+        ? new BitmapImage(new Uri(IoPath.GetFullPath(p)))
+        : null;
+
+    /// <summary>Shows the event's real logo/name over the chrome mockup --
+    /// Welcome gets the big centered logo+name inside WelcomeChromeLayer
+    /// (WelcomeChromeLayer's own Visibility, set by UpdateScreenChrome, already
+    /// gates these), Capture/Sharing get the small top-center "brand bar"
+    /// KioskWindow shows during Countdown/Capture/Processing/Review (see
+    /// KioskWindow.xaml's own CHROME: BRAND BAR block) -- one shared element
+    /// since both chrome layers use the same position.</summary>
     private void UpdateBrandingLayer()
     {
         ImageSource? logo = _theme.LogoImagePath is string path && File.Exists(path)
@@ -473,7 +633,6 @@ public partial class ScreenTemplateEditorWindow : Window
             : null;
 
         bool isWelcome = _activeScreen == ScreenTemplateScreen.Welcome;
-        WelcomeBrandingLayer.Visibility = isWelcome ? Visibility.Visible : Visibility.Collapsed;
         BrandBarBrandingLayer.Visibility = isWelcome ? Visibility.Collapsed : Visibility.Visible;
 
         WelcomeBrandingLogo.Source = logo;
@@ -1034,7 +1193,7 @@ public partial class ScreenTemplateEditorWindow : Window
             await new ScreenTemplateElementRepository().ReplaceAllAsync(_locationId, all);
             await new LocationRepository().UpdateScreenSettingsAsync(_locationId, _screenSettings);
             BoothSettingsChanged.Publish(_locationId);
-            DialogResult = true;
+            RequestClose?.Invoke(true);
         }
         catch (Exception ex)
         {
@@ -1046,6 +1205,6 @@ public partial class ScreenTemplateEditorWindow : Window
 
     private void CancelButton_Click(object sender, RoutedEventArgs e)
     {
-        DialogResult = false;
+        RequestClose?.Invoke(false);
     }
 }

@@ -58,7 +58,14 @@
         <!-- ============================ [1] IDLE ============================ -->
         <Grid x:Name="IdleScreen"
               Style="{StaticResource KioskScreenRoot}"
+              Background="{Binding WelcomeBackgroundBrush}"
               Visibility="{Binding CurrentScreenState, Converter={StaticResource ScreenVisibility}, ConverterParameter=Idle}">
+
+            <!-- ScreenSettings.WelcomeBackgroundImagePath: an optional image
+                 layered over WelcomeBackgroundBrush. Null means no image,
+                 just the color. -->
+            <Image Source="{Binding WelcomeBackgroundImage}" Stretch="UniformToFill"
+                   Visibility="{Binding WelcomeBackgroundImage, Converter={StaticResource NullToVisibility}}" />
 
             <!-- Full-bleed touch-to-start target sitting behind the content, so
                  a tap anywhere on empty canvas starts a session while the mode
@@ -189,7 +196,14 @@
         <!-- ========================== [2] COUNTDOWN ========================== -->
         <Grid x:Name="CountdownScreen"
               Style="{StaticResource KioskScreenRoot}"
+              Background="{Binding CaptureBackgroundBrush}"
               Visibility="{Binding CurrentScreenState, Converter={StaticResource ScreenVisibility}, ConverterParameter=Countdown}">
+
+            <!-- ScreenSettings.CaptureBackgroundImagePath: only actually
+                 visible when the live feed below doesn't already cover it
+                 (i.e. ShowLiveView off). -->
+            <Image Source="{Binding CaptureBackgroundImage}" Stretch="UniformToFill"
+                   Visibility="{Binding CaptureBackgroundImage, Converter={StaticResource NullToVisibility}}" />
 
             <!-- Full-bleed camera feed. UniformToFill so the preview fills the
                  kiosk the way the guest expects a mirror to; the saved capture
@@ -275,7 +289,11 @@
         <!-- ======================= [3] CAPTURE / SMILE ======================= -->
         <Grid x:Name="CaptureScreen"
               Style="{StaticResource KioskScreenRoot}"
+              Background="{Binding CaptureBackgroundBrush}"
               Visibility="{Binding CurrentScreenState, Converter={StaticResource ScreenVisibility}, ConverterParameter=Capture}">
+
+            <Image Source="{Binding CaptureBackgroundImage}" Stretch="UniformToFill"
+                   Visibility="{Binding CaptureBackgroundImage, Converter={StaticResource NullToVisibility}}" />
 
             <Image Source="{Binding LiveViewStream}" Stretch="{Binding LiveViewStretch}"
                    LayoutTransform="{Binding LiveViewTransform}" Opacity="0.35" />
@@ -347,14 +365,16 @@
             </StackPanel>
         </Grid>
 
-        <!-- ========================= [5] FRAME PICKER ========================= -->
+        <!-- ================ [5] FRAME / LAYOUT PICKER (now the guest's very
+             first interactive step; see BoothStateMachine.RunSessionAsync -
+             not a post-capture sticker overlay pick) ================ -->
         <Grid x:Name="FramePickerScreen"
               Style="{StaticResource KioskScreenRoot}"
               Visibility="{Binding CurrentScreenState, Converter={StaticResource ScreenVisibility}, ConverterParameter=FramePicker}"
               Margin="72">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                <TextBlock Text="Pick a frame" Style="{StaticResource KioskH1}" Margin="0,0,0,36" />
-                <ItemsControl ItemsSource="{Binding FrameOptions}" HorizontalAlignment="Center">
+                <TextBlock Text="Choose your frame" Style="{StaticResource KioskH1}" Margin="0,0,0,36" />
+                <ItemsControl ItemsSource="{Binding TemplateOptions}" HorizontalAlignment="Center">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
                             <WrapPanel Orientation="Horizontal" HorizontalAlignment="Center" MaxWidth="1100" />
@@ -363,21 +383,31 @@
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
                             <Button Style="{StaticResource KioskModeTile}"
-                                    Command="{Binding DataContext.SelectFrameCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    Command="{Binding DataContext.SelectTemplateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                     CommandParameter="{Binding}">
                                 <StackPanel>
-                                    <Image Width="150" Height="90" Stretch="Uniform" Source="{Binding Option.ImagePath, Converter={StaticResource PathToImageSource}}" />
-                                    <TextBlock Text="{Binding Option.Name}" FontFamily="{StaticResource KioskFont}" FontSize="16"
+                                    <TextBlock Text="{Binding Option.Name}" FontFamily="{StaticResource KioskFont}" FontSize="18"
                                                FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}"
-                                               HorizontalAlignment="Center" Margin="0,10,0,0" />
+                                               HorizontalAlignment="Center" />
+                                    <TextBlock FontFamily="{StaticResource KioskFont}" FontSize="13"
+                                               Foreground="{StaticResource KioskInkBrush}" Opacity="0.7"
+                                               HorizontalAlignment="Center" Margin="0,6,0,0">
+                                        <TextBlock.Text>
+                                            <MultiBinding StringFormat="{}{0} · {1:0.#}x{2:0.#} in">
+                                                <Binding Path="Option.Layout" />
+                                                <Binding Path="Option.WidthInches" />
+                                                <Binding Path="Option.HeightInches" />
+                                            </MultiBinding>
+                                        </TextBlock.Text>
+                                    </TextBlock>
                                 </StackPanel>
                             </Button>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
-                <Button Style="{StaticResource KioskGhostButton}" Content="NO FRAME" Margin="0,24,0,0"
+                <Button Style="{StaticResource KioskGhostButton}" Content="USE DEFAULT LAYOUT" Margin="0,24,0,0"
                         HorizontalAlignment="Center"
-                        Command="{Binding SelectFrameCommand}" CommandParameter="{Binding FrameRequestToken}" />
+                        Command="{Binding SelectTemplateCommand}" CommandParameter="{Binding TemplateRequestToken}" />
             </StackPanel>
         </Grid>
 
@@ -495,8 +525,15 @@
         <!-- ====================== [10] REVIEW &amp; SHARE ====================== -->
         <Grid x:Name="ReviewScreen"
               Style="{StaticResource KioskScreenRoot}"
-              Visibility="{Binding CurrentScreenState, Converter={StaticResource ScreenVisibility}, ConverterParameter=Review}"
-              Margin="72,110,72,72">
+              Background="{Binding SharingBackgroundBrush}"
+              Visibility="{Binding CurrentScreenState, Converter={StaticResource ScreenVisibility}, ConverterParameter=Review}">
+            <!-- Full-bleed, sibling to (not inside) the Margin="72,110,72,72"
+                 Grid below, so the background image isn't inset the way the
+                 actual content columns are. See ScreenSettings.SharingBackgroundImagePath. -->
+            <Image Source="{Binding SharingBackgroundImage}" Stretch="UniformToFill"
+                   Visibility="{Binding SharingBackgroundImage, Converter={StaticResource NullToVisibility}}" />
+
+            <Grid Margin="72,110,72,72">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="3*" />
                 <ColumnDefinition Width="28" />
@@ -645,6 +682,7 @@
                     </StackPanel>
                 </StackPanel>
             </ScrollViewer>
+            </Grid>
         </Grid>
 
         <!-- ============================= ERROR ============================= -->

@@ -13,6 +13,7 @@ namespace Photobooth.UI.ViewModels;
 
 public sealed record FrameSelectionItem(FrameOption Option, Guid RequestToken);
 public sealed record FilterSelectionItem(FilterOption Option, Guid RequestToken);
+public sealed record TemplateSelectionItem(PrintTemplate Option, Guid RequestToken);
 
 /// <summary>
 /// Drives KioskWindow. Owns a <see cref="BoothStateMachine"/> and projects it
@@ -67,6 +68,7 @@ public class KioskViewModel : ObservableObject, IDisposable
     // through, same as before that screen existed here.
     private readonly UiFilterSelectionService? _filterSelection;
     private readonly UiFrameSelectionService? _frameSelection;
+    private readonly UiTemplateSelectionService? _templateSelection;
     private readonly UiFeedbackService? _feedback;
     private readonly UiGuestbookPromptService? _guestbookPrompt;
     private readonly SqlSurveyService? _survey;
@@ -104,7 +106,8 @@ public class KioskViewModel : ObservableObject, IDisposable
         UiGuestbookPromptService? guestbookPrompt = null,
         SqlSurveyService? survey = null,
         int? locationId = null,
-        UiFilterSelectionService? filterSelection = null)
+        UiFilterSelectionService? filterSelection = null,
+        UiTemplateSelectionService? templateSelection = null)
     {
         // Application.Current.Dispatcher, not Dispatcher.CurrentDispatcher: this
         // constructor runs inside BoothCompositionRoot.BuildKioskViewModel, which
@@ -149,6 +152,7 @@ public class KioskViewModel : ObservableObject, IDisposable
         ShareOnTwitterCommand = new RelayCommand(ShareOnTwitter);
         SelectFilterCommand = new RelayCommand(SelectFilter);
         SelectFrameCommand = new RelayCommand(SelectFrame);
+        SelectTemplateCommand = new RelayCommand(SelectTemplate);
         RecordGuestbookMessageCommand = new RelayCommand(parameter =>
         {
             if (parameter is Guid requestToken)
@@ -243,6 +247,12 @@ public class KioskViewModel : ObservableObject, IDisposable
         if (_frameSelection is not null)
         {
             _frameSelection.SelectionRequestedWithToken += (options, token) => OnUi(() => ShowFrameOptions(options, token));
+        }
+
+        _templateSelection = templateSelection;
+        if (_templateSelection is not null)
+        {
+            _templateSelection.SelectionRequestedWithToken += (options, token) => OnUi(() => ShowTemplateOptions(options, token));
         }
 
         _feedback = feedback;
@@ -554,6 +564,69 @@ public class KioskViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref _countdownColorBrush, value);
     }
 
+    private Brush _welcomeBackgroundBrush = HexToBrush("#17181A");
+
+    /// <summary>ScreenSettings.WelcomeBackgroundColorHex -- IdleScreen's own
+    /// Background, replacing the fixed KioskCanvasBrush it inherited from the
+    /// root Grid before this setting existed.</summary>
+    public Brush WelcomeBackgroundBrush
+    {
+        get => _welcomeBackgroundBrush;
+        private set => SetProperty(ref _welcomeBackgroundBrush, value);
+    }
+
+    private ImageSource? _welcomeBackgroundImage;
+
+    /// <summary>ScreenSettings.WelcomeBackgroundImagePath -- an optional
+    /// full-bleed image layered over WelcomeBackgroundBrush on IdleScreen.
+    /// Null means no image (the color alone shows).</summary>
+    public ImageSource? WelcomeBackgroundImage
+    {
+        get => _welcomeBackgroundImage;
+        private set => SetProperty(ref _welcomeBackgroundImage, value);
+    }
+
+    private Brush _captureBackgroundBrush = HexToBrush("#17181A");
+
+    /// <summary>ScreenSettings.CaptureBackgroundColorHex -- CountdownScreen
+    /// and CaptureScreen's shared Background (both map to the Screen
+    /// Editor's single "Capture" tab).</summary>
+    public Brush CaptureBackgroundBrush
+    {
+        get => _captureBackgroundBrush;
+        private set => SetProperty(ref _captureBackgroundBrush, value);
+    }
+
+    private ImageSource? _captureBackgroundImage;
+
+    /// <summary>ScreenSettings.CaptureBackgroundImagePath. Only actually
+    /// visible when the live camera feed doesn't already cover it (i.e.
+    /// ShowLiveView off), since the feed is drawn on top of it.</summary>
+    public ImageSource? CaptureBackgroundImage
+    {
+        get => _captureBackgroundImage;
+        private set => SetProperty(ref _captureBackgroundImage, value);
+    }
+
+    private Brush _sharingBackgroundBrush = HexToBrush("#17181A");
+
+    /// <summary>ScreenSettings.SharingBackgroundColorHex -- ReviewScreen's
+    /// own Background.</summary>
+    public Brush SharingBackgroundBrush
+    {
+        get => _sharingBackgroundBrush;
+        private set => SetProperty(ref _sharingBackgroundBrush, value);
+    }
+
+    private ImageSource? _sharingBackgroundImage;
+
+    /// <summary>ScreenSettings.SharingBackgroundImagePath.</summary>
+    public ImageSource? SharingBackgroundImage
+    {
+        get => _sharingBackgroundImage;
+        private set => SetProperty(ref _sharingBackgroundImage, value);
+    }
+
     private bool _isCancelButtonVisible;
 
     /// <summary>ScreenSettings.ShowCancelButton, shown only while a session is
@@ -677,6 +750,50 @@ public class KioskViewModel : ObservableObject, IDisposable
     {
         get => _frameRequestToken;
         private set => SetProperty(ref _frameRequestToken, value);
+    }
+
+    // ====================================================== template picker ==
+
+    /// <summary>Populated when <see cref="_templateSelection"/> raises
+    /// SelectionRequested (i.e. right as BoothStateMachine enters its now-first
+    /// FramePicker state). Empty in mock mode, before that screen is reached, or
+    /// whenever the admin has no favorited saved templates -- same reasoning
+    /// FrameOptions/MockTemplateSelectionService already give. This is the
+    /// guest's "which layout am I getting" choice -- replaces the old sticker-
+    /// overlay frame picker as the only source of "frame" choices.</summary>
+    public ObservableCollection<TemplateSelectionItem> TemplateOptions { get; } = new();
+
+    public RelayCommand SelectTemplateCommand { get; }
+
+    /// <summary>Bound to each layout tile's CommandParameter, and to the
+    /// "Use default layout" button with a null parameter.</summary>
+    private void SelectTemplate(object? parameter)
+    {
+        if (parameter is TemplateSelectionItem item)
+        {
+            _templateSelection?.SubmitSelection(item.Option, item.RequestToken);
+        }
+        else if (parameter is Guid requestToken)
+        {
+            _templateSelection?.SubmitSelection(null, requestToken);
+        }
+    }
+
+    private void ShowTemplateOptions(IReadOnlyList<PrintTemplate> options, Guid requestToken)
+    {
+        TemplateRequestToken = requestToken;
+        TemplateOptions.Clear();
+        foreach (PrintTemplate option in options)
+        {
+            TemplateOptions.Add(new TemplateSelectionItem(option, requestToken));
+        }
+    }
+
+    private Guid? _templateRequestToken;
+    public Guid? TemplateRequestToken
+    {
+        get => _templateRequestToken;
+        private set => SetProperty(ref _templateRequestToken, value);
     }
 
     private Guid? _filterRequestToken;
@@ -1193,7 +1310,12 @@ public class KioskViewModel : ObservableObject, IDisposable
         try
         {
             var context = new PrintRenderContext(_stateMachine.LastPhotoUrl, _settings.Theme.EventName, DateTime.Now);
-            await _services.Printer.PrintAsync(_stateMachine.LastCapturedImagePaths, _settings.PrintTemplate, context);
+            // A guest reprint uses whatever template this session actually printed
+            // with (see BoothStateMachine's now-first FramePicker step), not always
+            // the location's default -- otherwise a guest who picked a different
+            // saved layout would get a reprint that doesn't match their first print.
+            PrintTemplate reprintTemplate = _stateMachine.LastSelectedTemplate ?? _settings.PrintTemplate;
+            await _services.Printer.PrintAsync(_stateMachine.LastCapturedImagePaths, reprintTemplate, context);
             PrintsRemaining = Math.Max(0, PrintsRemaining - 1);
             Admin.PrintsThisSession++;
             Admin.PrintsThisEvent++;
@@ -1416,10 +1538,12 @@ public class KioskViewModel : ObservableObject, IDisposable
     {
         _filterSelection?.CancelPending();
         _frameSelection?.CancelPending();
+        _templateSelection?.CancelPending();
         _feedback?.CancelPending();
         _guestbookPrompt?.CancelPending();
         FilterRequestToken = null;
         FrameRequestToken = null;
+        TemplateRequestToken = null;
         FeedbackRequestToken = null;
         GuestbookAskRequestToken = null;
         GuestbookStopRequestToken = null;
@@ -1437,6 +1561,7 @@ public class KioskViewModel : ObservableObject, IDisposable
         LiveViewStream = null;
         FilterOptions.Clear();
         FrameOptions.Clear();
+        TemplateOptions.Clear();
         PaymentInstructions = null;
         PaymentQrCode = null;
         GuestbookSubScreen = GuestbookSubScreen.Ask;
@@ -1511,6 +1636,12 @@ public class KioskViewModel : ObservableObject, IDisposable
             LiveViewTransform = BuildLiveViewTransform(settings.Screen);
             LiveViewStretch = settings.Screen.CropLiveView ? Stretch.UniformToFill : Stretch.Uniform;
             CountdownColorBrush = HexToBrush(settings.Screen.CountdownColorHex);
+            WelcomeBackgroundBrush = HexToBrush(settings.Screen.WelcomeBackgroundColorHex);
+            WelcomeBackgroundImage = LoadImageFromPath(settings.Screen.WelcomeBackgroundImagePath);
+            CaptureBackgroundBrush = HexToBrush(settings.Screen.CaptureBackgroundColorHex);
+            CaptureBackgroundImage = LoadImageFromPath(settings.Screen.CaptureBackgroundImagePath);
+            SharingBackgroundBrush = HexToBrush(settings.Screen.SharingBackgroundColorHex);
+            SharingBackgroundImage = LoadImageFromPath(settings.Screen.SharingBackgroundImagePath);
             IsTouchStartEnabled = settings.Screen.SessionTriggerTouchScreen;
             UnlockButtonOpacity = Math.Clamp(settings.Screen.UnlockButtonOpacityPercent, 0, 100) / 100.0;
             ShareSecondsTotal = settings.Screen.FinalScreenTimeoutSeconds;
@@ -1756,7 +1887,11 @@ public class KioskViewModel : ObservableObject, IDisposable
             return;
         }
 
-        PrintTemplate template = _settings.PrintTemplate;
+        // Same "whatever this session actually used" reasoning as PrintAsync's
+        // reprintTemplate above -- a guest who picked a different saved layout
+        // during FramePicker should see that layout previewed here, not the
+        // location's default.
+        PrintTemplate template = _stateMachine.LastSelectedTemplate ?? _settings.PrintTemplate;
         try
         {
             ImageSource preview = await Task.Run(() =>

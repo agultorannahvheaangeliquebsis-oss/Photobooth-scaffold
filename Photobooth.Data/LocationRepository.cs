@@ -62,7 +62,10 @@ public class LocationRepository
                    CountdownColorHex, PhotoThumbnailsEnabled, SayCheeseImagePath,
                    SkipSharingScreen, ShowDoneButton, SharingIconsLocation, SharingTextLabelsEnabled,
                    FinalScreenTimeoutSeconds, ShowOriginalPhotos, ShowRetakeButton,
-                   TwitterEnabled, PrintEnabled
+                   TwitterEnabled, PrintEnabled,
+                   WelcomeBackgroundColorHex, WelcomeBackgroundImagePath,
+                   CaptureBackgroundColorHex, CaptureBackgroundImagePath,
+                   SharingBackgroundColorHex, SharingBackgroundImagePath
             FROM Location ORDER BY LocationId;
             """,
             connection);
@@ -122,6 +125,12 @@ public class LocationRepository
                     FinalScreenTimeoutSeconds = reader.GetInt32(101),
                     ShowOriginalPhotos = reader.GetBoolean(102),
                     ShowRetakeButton = reader.GetBoolean(103),
+                    WelcomeBackgroundColorHex = reader.GetString(106),
+                    WelcomeBackgroundImagePath = reader.IsDBNull(107) ? null : reader.GetString(107),
+                    CaptureBackgroundColorHex = reader.GetString(108),
+                    CaptureBackgroundImagePath = reader.IsDBNull(109) ? null : reader.GetString(109),
+                    SharingBackgroundColorHex = reader.GetString(110),
+                    SharingBackgroundImagePath = reader.IsDBNull(111) ? null : reader.GetString(111),
                 },
                 new EffectsSettings(
                     reader.GetBoolean(28), reader.GetString(29), reader.IsDBNull(30) ? null : reader.GetString(30),
@@ -248,7 +257,10 @@ public class LocationRepository
                 SkipSharingScreen = @SkipSharingScreen, ShowDoneButton = @ShowDoneButton,
                 SharingIconsLocation = @SharingIconsLocation, SharingTextLabelsEnabled = @SharingTextLabelsEnabled,
                 FinalScreenTimeoutSeconds = @FinalScreenTimeoutSeconds, ShowOriginalPhotos = @ShowOriginalPhotos,
-                ShowRetakeButton = @ShowRetakeButton
+                ShowRetakeButton = @ShowRetakeButton,
+                WelcomeBackgroundColorHex = @WelcomeBackgroundColorHex, WelcomeBackgroundImagePath = @WelcomeBackgroundImagePath,
+                CaptureBackgroundColorHex = @CaptureBackgroundColorHex, CaptureBackgroundImagePath = @CaptureBackgroundImagePath,
+                SharingBackgroundColorHex = @SharingBackgroundColorHex, SharingBackgroundImagePath = @SharingBackgroundImagePath
             WHERE LocationId = @LocationId;
             """,
             connection);
@@ -297,6 +309,12 @@ public class LocationRepository
         command.Parameters.AddWithValue("@FinalScreenTimeoutSeconds", screen.FinalScreenTimeoutSeconds);
         command.Parameters.AddWithValue("@ShowOriginalPhotos", screen.ShowOriginalPhotos);
         command.Parameters.AddWithValue("@ShowRetakeButton", screen.ShowRetakeButton);
+        command.Parameters.AddWithValue("@WelcomeBackgroundColorHex", screen.WelcomeBackgroundColorHex);
+        command.Parameters.AddWithValue("@WelcomeBackgroundImagePath", (object?)screen.WelcomeBackgroundImagePath ?? DBNull.Value);
+        command.Parameters.AddWithValue("@CaptureBackgroundColorHex", screen.CaptureBackgroundColorHex);
+        command.Parameters.AddWithValue("@CaptureBackgroundImagePath", (object?)screen.CaptureBackgroundImagePath ?? DBNull.Value);
+        command.Parameters.AddWithValue("@SharingBackgroundColorHex", screen.SharingBackgroundColorHex);
+        command.Parameters.AddWithValue("@SharingBackgroundImagePath", (object?)screen.SharingBackgroundImagePath ?? DBNull.Value);
     }
 
     /// <summary>Updates the admin-editable brand identity for a location -- colors,
@@ -430,7 +448,10 @@ public class LocationRepository
                 SkipSharingScreen = @SkipSharingScreen, ShowDoneButton = @ShowDoneButton,
                 SharingIconsLocation = @SharingIconsLocation, SharingTextLabelsEnabled = @SharingTextLabelsEnabled,
                 FinalScreenTimeoutSeconds = @FinalScreenTimeoutSeconds, ShowOriginalPhotos = @ShowOriginalPhotos,
-                ShowRetakeButton = @ShowRetakeButton
+                ShowRetakeButton = @ShowRetakeButton,
+                WelcomeBackgroundColorHex = @WelcomeBackgroundColorHex, WelcomeBackgroundImagePath = @WelcomeBackgroundImagePath,
+                CaptureBackgroundColorHex = @CaptureBackgroundColorHex, CaptureBackgroundImagePath = @CaptureBackgroundImagePath,
+                SharingBackgroundColorHex = @SharingBackgroundColorHex, SharingBackgroundImagePath = @SharingBackgroundImagePath
             WHERE LocationId = @LocationId;
             """,
             connection);

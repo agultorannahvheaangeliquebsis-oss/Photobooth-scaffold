@@ -160,6 +160,15 @@ public record ScreenSettings(
     /// choice without yet wiring a phone-facing endpoint.</summary>
     public bool GuestQrCodeEnabled { get; init; }
 
+    /// <summary>#RRGGBB behind the Welcome screen, and an optional image
+    /// layered on top of it (see KioskWindow's IdleScreen Background/first
+    /// child Image, and ScreenTemplateEditorWindow's WelcomeChromeLayer).
+    /// "#17181A" matches KioskDark.xaml's previously-fixed KioskCanvasBrush,
+    /// so an existing install renders identically until an admin changes
+    /// this.</summary>
+    public string WelcomeBackgroundColorHex { get; init; } = "#17181A";
+    public string? WelcomeBackgroundImagePath { get; init; }
+
     // ===================== Capture screen =====================
     // Beyond ShowLiveView/MirrorLiveView/LiveViewRotation/PoseStripPosition
     // above -- see ScreenTemplateEditorWindow's Capture settings panel.
@@ -181,11 +190,24 @@ public record ScreenSettings(
     /// image (blank/last-frame passthrough).</summary>
     public string? SayCheeseImagePath { get; init; }
 
+    /// <summary>Same idea as WelcomeBackgroundColorHex/ImagePath above, for
+    /// the Countdown+Capture screens (KioskWindow's CountdownScreen and
+    /// CaptureScreen both map to this editor's single "Capture" tab). Only
+    /// visible where the live camera feed doesn't already cover it (i.e.
+    /// when ShowLiveView is off), same layering as the existing scrim.</summary>
+    public string CaptureBackgroundColorHex { get; init; } = "#17181A";
+    public string? CaptureBackgroundImagePath { get; init; }
+
     // ===================== Sharing screen =====================
     // See ScreenTemplateEditorWindow's Sharing settings panel, which
     // previously had no settings at all.
     public bool SkipSharingScreen { get; init; }
     public bool ShowDoneButton { get; init; } = true;
+
+    /// <summary>Same idea as WelcomeBackgroundColorHex/ImagePath above, for
+    /// KioskWindow's ReviewScreen.</summary>
+    public string SharingBackgroundColorHex { get; init; } = "#17181A";
+    public string? SharingBackgroundImagePath { get; init; }
 
     /// <summary>One of "Custom" (icons placed via the Design tab's canvas,
     /// the only layout this build's canvas-based Sharing screen actually

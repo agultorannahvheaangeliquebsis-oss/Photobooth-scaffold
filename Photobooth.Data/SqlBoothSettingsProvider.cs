@@ -51,7 +51,10 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
                    CountdownColorHex, PhotoThumbnailsEnabled, SayCheeseImagePath,
                    SkipSharingScreen, ShowDoneButton, SharingIconsLocation, SharingTextLabelsEnabled,
                    FinalScreenTimeoutSeconds, ShowOriginalPhotos, ShowRetakeButton,
-                   TwitterEnabled, PrintEnabled
+                   TwitterEnabled, PrintEnabled,
+                   WelcomeBackgroundColorHex, WelcomeBackgroundImagePath,
+                   CaptureBackgroundColorHex, CaptureBackgroundImagePath,
+                   SharingBackgroundColorHex, SharingBackgroundImagePath
             FROM Location WHERE LocationId = @LocationId;
             """,
             connection);
@@ -127,6 +130,12 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
                 FinalScreenTimeoutSeconds = reader.GetInt32(96),
                 ShowOriginalPhotos = reader.GetBoolean(97),
                 ShowRetakeButton = reader.GetBoolean(98),
+                WelcomeBackgroundColorHex = reader.GetString(101),
+                WelcomeBackgroundImagePath = reader.IsDBNull(102) ? null : reader.GetString(102),
+                CaptureBackgroundColorHex = reader.GetString(103),
+                CaptureBackgroundImagePath = reader.IsDBNull(104) ? null : reader.GetString(104),
+                SharingBackgroundColorHex = reader.GetString(105),
+                SharingBackgroundImagePath = reader.IsDBNull(106) ? null : reader.GetString(106),
             };
             effects = new EffectsSettings(
                 reader.GetBoolean(24), reader.GetString(25), reader.IsDBNull(26) ? null : reader.GetString(26),

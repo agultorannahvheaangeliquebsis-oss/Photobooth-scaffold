@@ -56,6 +56,13 @@ public partial class AdminWindow : Window
     private PrintTemplate _currentPrintTemplate = PrintTemplate.Default;
     private BoothTheme _currentTheme = BoothTheme.Default;
 
+    /// <summary>Cached at LoadAsync alongside _currentScreenSettings/_currentTheme
+    /// so EditScreenLayoutButtonAsync can hand them to ScreenTemplateEditorWindow
+    /// as read-only context for its Sharing chrome mockup (QR/Email/SMS/Print
+    /// visibility) -- neither is edited by that editor.</summary>
+    private SharingSettings _currentSharing = SharingSettings.Default;
+    private PrintOptions _currentPrintOptions = PrintOptions.Default;
+
     private string? _pendingWatermarkPath;
     private string? _existingWatermarkPath;
     private string? _pendingGreenScreenBackgroundPath;
@@ -495,7 +502,7 @@ public partial class AdminWindow : Window
         string sectionKeyBeforeEditor = _currentSectionKey;
 
         var existing = await new ScreenTemplateElementRepository().GetAllByLocationAsync(_locationId);
-        var editor = new ScreenTemplateEditorWindow(existing, _locationId, _currentScreenSettings, _currentTheme);
+        var editor = new ScreenTemplateEditorWindow(existing, _locationId, _currentScreenSettings, _currentTheme, _currentSharing, _currentPrintOptions);
         editor.RequestClose += async saved =>
         {
             string? requestedNavigation = editor.RequestedNavigation;
@@ -644,6 +651,7 @@ public partial class AdminWindow : Window
                 DisclaimerTextBox.Text = disclaimer.Text;
 
                 SharingSettings sharing = location.Sharing;
+                _currentSharing = sharing;
                 EmailEnabledCheckBox.IsChecked = sharing.EmailEnabled;
                 SmsEnabledCheckBox.IsChecked = sharing.SmsEnabled;
                 QrEnabledCheckBox.IsChecked = sharing.QrEnabled;
@@ -673,6 +681,7 @@ public partial class AdminWindow : Window
                     : "No auth token saved yet.";
 
                 PrintOptions printOptions = location.PrintOptions;
+                _currentPrintOptions = printOptions;
                 PrintAutomaticallyCheckBox.IsChecked = printOptions.PrintAutomatically;
                 ShowPrintButtonCheckBox.IsChecked = printOptions.ShowPrintButton;
                 PrintLimitPerEventBox.Text = printOptions.PrintLimitPerEvent.ToString();
