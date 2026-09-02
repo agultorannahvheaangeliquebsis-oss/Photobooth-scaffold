@@ -14,6 +14,8 @@ var settings = new MockBoothSettingsProvider();
 var frameLibrary = new MockFrameLibraryService();
 var frameSelection = new MockFrameSelectionService();
 var frameOverlay = new MockFrameOverlayService();
+var templateLibrary = new MockPrintTemplateLibraryService();
+var templateSelection = new MockTemplateSelectionService();
 var feedback = new MockFeedbackService();
 var guestbookPrompt = new MockGuestbookPromptService();
 var videoGuestbook = new MockVideoGuestbookService();
@@ -31,7 +33,11 @@ void PrintNewEmails(MockEmailDeliveryService service)
     }
 }
 
-var services = new BoothServices(camera, printer, cloudUpload, sessions, payment, uploadQueue, consent, email, branding, filter, settings, frameLibrary, frameSelection, frameOverlay, feedback, guestbookPrompt, videoGuestbook, gifComposer, boothVideo, attendantCue, survey);
+var services = new BoothServices(camera, printer, cloudUpload, sessions, payment, uploadQueue, consent, email, branding, filter, settings, frameLibrary, frameSelection, frameOverlay, feedback, guestbookPrompt, videoGuestbook, gifComposer, boothVideo, attendantCue, survey)
+{
+    TemplateLibrary = templateLibrary,
+    TemplateSelection = templateSelection,
+};
 var eventMachine = new BoothStateMachine(services, mode: "event");
 
 eventMachine.StateChanged += state => Console.WriteLine($"  [STATE]     {state}");
@@ -154,23 +160,24 @@ Console.WriteLine();
 // Frame library is admin-managed and off by default (an empty Frame table,
 // same as this MockFrameLibraryService's default) -- simulating an admin
 // adding two frames here, same as flipping settings.Settings above.
-Console.WriteLine("--- Session 10 (event, frame library has two frames) ---");
-Console.WriteLine("  (simulating an admin adding frame overlays -- guest picks the first one)");
-frameLibrary.Frames = new List<FrameOption>
+Console.WriteLine("--- Session 10 (event, two favorited print-layout templates) ---");
+Console.WriteLine("  (simulating an admin favoriting saved templates and turning on Choose Template -- guest picks the first one)");
+settings.Settings = settings.Settings with { Screen = settings.Settings.Screen with { ChooseTemplateEnabled = true } };
+templateLibrary.Templates = new List<PrintTemplate>
 {
-    new(1, "Classic Gold Border", "./frames/gold_border.png"),
-    new(2, "Confetti", "./frames/confetti.png"),
+    new("Single", 4, 6, 1) { Id = 1, Name = "Classic Gold Border", IsFavorite = true },
+    new("Single", 2, 6, 1) { Id = 2, Name = "Confetti Strip", IsFavorite = true },
 };
 await eventMachine.RunSessionAsync();
-Console.WriteLine($"  Frame picked: {eventMachine.LastSelectedFrame?.Name ?? "(none)"}");
+Console.WriteLine($"  Layout picked: {eventMachine.LastSelectedTemplate?.Name ?? "(default)"}");
 Console.WriteLine($"  Final photo path: {eventMachine.LastCapturedImagePath}");
 PrintNewEmails(email);
 Console.WriteLine();
 
-Console.WriteLine("--- Session 11 (event, guest skips the frame) ---");
-frameSelection.SkipNext = true;
+Console.WriteLine("--- Session 11 (event, guest skips the layout choice) ---");
+templateSelection.SkipNext = true;
 await eventMachine.RunSessionAsync();
-Console.WriteLine($"  Frame picked: {eventMachine.LastSelectedFrame?.Name ?? "(none)"}");
+Console.WriteLine($"  Layout picked: {eventMachine.LastSelectedTemplate?.Name ?? "(default)"}");
 Console.WriteLine($"  Final photo path: {eventMachine.LastCapturedImagePath}");
 PrintNewEmails(email);
 Console.WriteLine();

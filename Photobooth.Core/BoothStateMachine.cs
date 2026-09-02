@@ -57,8 +57,16 @@ public class BoothStateMachine
     /// <summary>Outcome of the current/most recent session's disclaimer+opt-in prompt, set right after the Consent state shows.</summary>
     public ConsentResult? LastConsent { get; private set; }
 
-    /// <summary>The frame the guest picked during FramePicker, or null if they skipped it (or no active frames were configured, in which case FramePicker never shows at all).</summary>
+    /// <summary>The frame the guest picked during FramePicker, or null if they skipped it (or no active frames were configured, in which case FramePicker never shows at all). Unused now that FramePicker picks a print layout instead (see LastSelectedTemplate) -- kept so callers that still read it (e.g. Photobooth.ConsoleDemo) keep compiling.</summary>
     public FrameOption? LastSelectedFrame { get; private set; }
+
+    /// <summary>The saved print-layout template the guest picked during FramePicker (now the
+    /// very first guest-interactive state, before Consent), or null if they picked "use the
+    /// default layout" -- in which case BoothSettings.PrintTemplate (the location's live setup)
+    /// governs this session, same as before this feature existed. Also null whenever FramePicker
+    /// is skipped entirely (ScreenSettings.ChooseTemplateEnabled is off, or no templates are
+    /// favorited -- same "empty pool = feature invisible" reasoning the old frame picker used).</summary>
+    public PrintTemplate? LastSelectedTemplate { get; private set; }
 
     public event Action<BoothState>? StateChanged;
     public event Action<int>? CountdownTick;
@@ -198,6 +206,60 @@ public class BoothStateMachine
             sessionId = await _services.Sessions.CreateAsync(_mode, ct);
             LastSessionId = sessionId;
 
+            LastPhotoUrl = null;
+            PaymentQrPng = null;
+            PaymentInstructions = null;
+            LastSelectedTemplate = null;
+
+            // GIF/Boomerang/Video: none of the three produce a printable
+            // single still, so none of them go through Printing below --
+            // see BUILD_PLAN.md's "dslrBooth feature-parity plan", Phase 2.
+            // Photo mode (the default, and the only mode that existed
+            // before this feature) is unchanged below. GIF/Boomerang also
+            // deliberately skip the green screen/glam filter/branding/
+            // frame-overlay pipeline entirely: those are all single-still
+            // GDI+ operations (see GdiGreenScreenService/
+            // GdiPhotoBrandingService/GdiPhotoFilterService/
+            // GdiFrameOverlayService) that would either only touch the
+            // first frame or corrupt the animation outright if pointed at a
+            // multi-frame GIF -- a real fix means compositing each effect
+            // onto every frame before assembly, not attempted here. Neither
+            // mode has a notion of multiple print poses either -- PhotoSlot
+            // templates only apply to Photo mode below. A saved print-layout
+            // template means nothing to any of the three either, for the
+            // same reason -- see the FramePicker step immediately below.
+            bool isNonPrintableCapture = settings.Capture.Mode is "GIF" or "Boomerang" or "Video";
+
+            // Frame/Layout picker is now the guest's very first interactive
+            // step, before Consent -- guests pick which saved, favorited
+            // print-layout template they want for this session (paper size +
+            // photo slots + any logo/text/QR the admin placed on it), rather
+            // than a separate sticker-overlay "frame" -- the Print Layout
+            // library is the only source of "frame" choices now. Skipped
+            // entirely (no state shown at all) when the admin has "Choose
+            // Template" off, or nothing is favorited yet, same "empty pool =
+            // feature invisible" reasoning the old frame/sticker picker (and
+            // FilterPicker/Survey) already established. A guest who skips or
+            // times out gets effectiveTemplate == settings.PrintTemplate,
+            // i.e. exactly today's fixed-template behavior.
+            PrintTemplate effectiveTemplate = settings.PrintTemplate;
+            if (!isNonPrintableCapture && settings.Screen.ChooseTemplateEnabled)
+            {
+                IReadOnlyList<PrintTemplate> favoriteTemplates = await _services.TemplateLibrary.GetFavoriteTemplatesAsync(ct);
+                if (favoriteTemplates.Count > 0)
+                {
+                    SetState(BoothState.FramePicker);
+                    PrintTemplate? chosenTemplate = await WithGuestIdleTimeoutAsync(
+                        _services.TemplateSelection.SelectTemplateAsync(favoriteTemplates, ct), (PrintTemplate?)null, ct,
+                        () => (_services.TemplateSelection as UiTemplateSelectionService)?.CancelPending());
+                    LastSelectedTemplate = chosenTemplate;
+                    if (chosenTemplate is not null)
+                    {
+                        effectiveTemplate = chosenTemplate;
+                    }
+                }
+            }
+
             SetState(BoothState.Consent);
             ConsentResult consent = await WithGuestIdleTimeoutAsync(
                 _services.Consent.CollectAsync(ct), new ConsentResult(false, false, null), ct);
@@ -214,27 +276,6 @@ public class BoothStateMachine
                 return;
             }
 
-            LastPhotoUrl = null;
-            PaymentQrPng = null;
-            PaymentInstructions = null;
-            LastSelectedFrame = null;
-
-            // GIF/Boomerang/Video: none of the three produce a printable
-            // single still, so none of them go through Printing below --
-            // see BUILD_PLAN.md's "dslrBooth feature-parity plan", Phase 2.
-            // Photo mode (the default, and the only mode that existed
-            // before this feature) is unchanged below. GIF/Boomerang also
-            // deliberately skip the green screen/glam filter/branding/
-            // frame-overlay pipeline entirely: those are all single-still
-            // GDI+ operations (see GdiGreenScreenService/
-            // GdiPhotoBrandingService/GdiPhotoFilterService/
-            // GdiFrameOverlayService) that would either only touch the
-            // first frame or corrupt the animation outright if pointed at a
-            // multi-frame GIF -- a real fix means compositing each effect
-            // onto every frame before assembly, not attempted here. Neither
-            // mode has a notion of multiple print poses either -- PhotoSlot
-            // templates only apply to Photo mode below.
-            bool isNonPrintableCapture = settings.Capture.Mode is "GIF" or "Boomerang" or "Video";
             if (settings.Capture.Mode is "GIF" or "Boomerang")
             {
                 SetState(BoothState.Countdown);
@@ -296,12 +337,15 @@ public class BoothStateMachine
             else
             {
                 // One Countdown/Capturing/effects cycle per required pose.
-                // PrintTemplate.RequiredPhotoCount is 1 for every template
-                // that predates PhotoSlot elements, so this loop runs
-                // exactly once -- identical to the single-capture behavior
-                // that existed before true multi-pose templates -- for
-                // every template in use before this feature.
-                int requiredPhotoCount = settings.PrintTemplate.RequiredPhotoCount;
+                // RequiredPhotoCount is 1 for every template that predates
+                // PhotoSlot elements, so this loop runs exactly once --
+                // identical to the single-capture behavior that existed
+                // before true multi-pose templates -- for every template in
+                // use before this feature. Reads effectiveTemplate (the
+                // guest's own FramePicker pick, if any -- see above), not
+                // settings.PrintTemplate directly, so a guest who picked a
+                // different saved layout gets that layout's own pose count.
+                int requiredPhotoCount = effectiveTemplate.RequiredPhotoCount;
                 var poses = new List<string>();
                 for (int poseIndex = 0; poseIndex < requiredPhotoCount; poseIndex++)
                 {
@@ -420,35 +464,14 @@ public class BoothStateMachine
             SetState(BoothState.Reviewing);
             await Task.Delay(2000, ct); // guest sees the shot before it prints
 
-            // Frame/sticker picker is a single-still GDI+ overlay too (see the
-            // isNonPrintableCapture comment above) -- skipped for GIF/
-            // Boomerang/Video for the same reason. Also skipped entirely when
-            // no admin-configured frames are active, or when the Effects &
-            // Stickers screen's Stickers toggle is off -- either way, a fresh/
-            // stickers-disabled booth behaves exactly as it did before this
-            // feature existed.
-            // Applied to every captured pose (usually just the one), not only the
-            // last -- every pose in the final print gets the same treatment.
+            // The old sticker-overlay frame picker used to run here, after
+            // Reviewing -- it's been retired in favor of the print-layout-
+            // template picker at the very start of the session (see above):
+            // the guest's "frame" is now the saved template itself, not a
+            // second PNG overlay layered on top of it. Applied to every
+            // captured pose (usually just the one), not only the last --
+            // every pose in the final print gets the same treatment.
             List<string> processedPoses = LastCapturedImagePaths.ToList();
-
-            IReadOnlyList<FrameOption> frames = isNonPrintableCapture || !settings.Effects.StickersEnabled
-                ? []
-                : await _services.FrameLibrary.GetActiveFramesAsync(ct);
-            if (frames.Count > 0)
-            {
-                SetState(BoothState.FramePicker);
-                LastSelectedFrame = await WithGuestIdleTimeoutAsync(
-                    _services.FrameSelection.SelectFrameAsync(frames, ct), (FrameOption?)null, ct,
-                    () => (_services.FrameSelection as UiFrameSelectionService)?.CancelPending());
-                if (LastSelectedFrame is not null)
-                {
-                    for (int i = 0; i < processedPoses.Count; i++)
-                    {
-                        processedPoses[i] = await _services.FrameOverlay.ApplyFrameAsync(
-                            processedPoses[i], LastSelectedFrame.ImagePath, ct);
-                    }
-                }
-            }
 
             // Watermark stamps last, on top of everything else (branding,
             // filter, frame/sticker) -- same "a logo overlay sits above
@@ -532,14 +555,14 @@ public class BoothStateMachine
                 // never stall on a slow or dead network). A template without
                 // one keeps today's fully fire-and-forget upload -- printing
                 // never waits on it at all.
-                if (settings.PrintTemplate.Elements.Any(e => e.Kind == PrintTemplateElementKind.QrCode))
+                if (effectiveTemplate.Elements.Any(e => e.Kind == PrintTemplateElementKind.QrCode))
                 {
                     await Task.WhenAny(uploadTask, Task.Delay(TimeSpan.FromSeconds(10), ct));
                 }
 
                 SetState(BoothState.Printing);
                 var printContext = new PrintRenderContext(LastPhotoUrl, settings.Theme.EventName, DateTime.Now);
-                await _services.Printer.PrintAsync(LastCapturedImagePaths, settings.PrintTemplate, printContext, ct);
+                await _services.Printer.PrintAsync(LastCapturedImagePaths, effectiveTemplate, printContext, ct);
                 await _services.Sessions.RecordPrintAsync(sessionId.Value, LastCapturedImagePath, ct);
             }
 

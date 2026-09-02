@@ -49,8 +49,16 @@ namespace Photobooth.UI;
 /// PrintCompositorTests) since mouse-event wiring itself isn't something a
 /// unit test can exercise.
 /// </summary>
-public partial class PrintTemplateEditorWindow : Window
+public partial class PrintTemplateEditorWindow : UserControl
 {
+    /// <summary>Raised when the admin is done with this editor -- true if Save
+    /// succeeded, false on Cancel or a breadcrumb navigation (see
+    /// CloseAndNavigate/RequestedNavigation). AdminWindow (which now hosts this
+    /// as an embedded child view, not a separate Window/ShowDialog) subscribes
+    /// to swap back to whatever section should show next, mirroring exactly
+    /// what it used to do with ShowDialog's own return value.</summary>
+    public event Action<bool>? RequestClose;
+
     private const int PreviewWidthPx = 500;
     private const double HandleSize = 12;
     private const double MinElementSizePx = 20;
@@ -65,17 +73,6 @@ public partial class PrintTemplateEditorWindow : Window
     private readonly PrintTemplateElementRepository _elementRepository = new();
     private readonly PrintTemplateRepository _templateRepository = new();
     private readonly LocationRepository _locations = new();
-
-    // Frame library: independent of _elementRepository/_templateRepository above
-    // (frames aren't part of a print template, they're a per-location asset
-    // list guests pick from in FramePicker) -- kept here rather than shared
-    // with AdminWindow's own _frames field, matching this window's existing
-    // "duplicated resources so it still opens standalone" convention (see the
-    // XAML Window.Resources comment). AdminWindow keeps its own _frames field
-    // too, for the Effects & Stickers card's preview, which this window's Save/
-    // Cancel flow has no bearing on.
-    private readonly FrameRepository _frames = new();
-    private string? _pendingFrameImagePath;
 
     private readonly List<PrintTemplateElement> _elements;
     private readonly List<Border> _containers = new();
@@ -153,94 +150,6 @@ public partial class PrintTemplateEditorWindow : Window
         _suppressPaperSizeEvents = false;
 
         Loaded += async (_, _) => await LoadTemplateLibraryAsync();
-        Loaded += async (_, _) => await LoadFramesAsync();
-    }
-
-    /// <summary>Refreshes the Frame library list from the database -- called on
-    /// load and after every add/delete/toggle-active, same "just reload rather
-    /// than patch the in-memory list" pattern this window's LoadTemplateLibraryAsync
-    /// already uses.</summary>
-    private async Task LoadFramesAsync()
-    {
-        var frames = await _frames.GetAllByLocationAsync(_locationId);
-        FramesList.ItemsSource = frames;
-        FramesEmptyText.Visibility = frames.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    private void BrowseFrameImageButton_Click(object sender, RoutedEventArgs e)
-    {
-        var dialog = new Microsoft.Win32.OpenFileDialog
-        {
-            Filter = "Image files (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg",
-            Title = "Choose a frame overlay image",
-        };
-        if (dialog.ShowDialog() == true)
-        {
-            _pendingFrameImagePath = dialog.FileName;
-            SelectedFrameImageText.Text = IoPath.GetFileName(dialog.FileName);
-        }
-    }
-
-    /// <summary>Copies the chosen image into a local Assets/Frames folder (same
-    /// "own local copy, not a reference to wherever the admin picked it from"
-    /// reasoning this window's ChangeLogoImageButton_Click/logo-copy code
-    /// already establishes) and inserts the Frame row.</summary>
-    private async void AddFrameButton_Click(object sender, RoutedEventArgs e)
-    {
-        string name = NewFrameNameBox.Text.Trim();
-        if (name.Length == 0 || _pendingFrameImagePath is null)
-        {
-            FrameStatusText.Text = "Enter a name and choose an image first.";
-            FrameStatusText.Foreground = Brushes.Firebrick;
-            return;
-        }
-
-        AddFrameButton.IsEnabled = false;
-        try
-        {
-            string framesDirectory = IoPath.Combine(AppContext.BaseDirectory, "Assets", "Frames");
-            Directory.CreateDirectory(framesDirectory);
-            string storedFileName = $"{Guid.NewGuid():N}{IoPath.GetExtension(_pendingFrameImagePath)}";
-            string storedPath = IoPath.Combine(framesDirectory, storedFileName);
-            File.Copy(_pendingFrameImagePath, storedPath, overwrite: true);
-
-            var existing = await _frames.GetAllByLocationAsync(_locationId);
-            await _frames.InsertAsync(_locationId, name, storedPath, sortOrder: existing.Count);
-
-            NewFrameNameBox.Text = string.Empty;
-            _pendingFrameImagePath = null;
-            SelectedFrameImageText.Text = "No image selected.";
-            FrameStatusText.Text = "Frame added -- available to the next guest.";
-            FrameStatusText.Foreground = (Brush)FindResource("MutedBrush");
-            await LoadFramesAsync();
-        }
-        catch (Exception ex)
-        {
-            FrameStatusText.Text = $"Couldn't add frame: {ex.Message}";
-            FrameStatusText.Foreground = Brushes.Firebrick;
-        }
-        finally
-        {
-            AddFrameButton.IsEnabled = true;
-        }
-    }
-
-    private async void FrameActiveCheckBox_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is CheckBox { Tag: int frameId } checkBox)
-        {
-            await _frames.SetActiveAsync(frameId, checkBox.IsChecked == true);
-            await LoadFramesAsync();
-        }
-    }
-
-    private async void DeleteFrameButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button { Tag: int frameId })
-        {
-            await _frames.DeleteAsync(frameId);
-            await LoadFramesAsync();
-        }
     }
 
     /// <summary>Applies an edited paper-size field (layout/width/height/strip
@@ -1277,7 +1186,7 @@ public partial class PrintTemplateEditorWindow : Window
     private async Task DeleteLibraryTemplateAsync(PrintTemplateRecord record)
     {
         MessageBoxResult result = MessageBox.Show(
-            this, $"Delete “{record.Name}”? This can't be undone.", "Delete Template",
+            Window.GetWindow(this), $"Delete “{record.Name}”? This can't be undone.", "Delete Template",
             MessageBoxButton.YesNo, MessageBoxImage.Warning);
         if (result != MessageBoxResult.Yes)
         {
@@ -1368,7 +1277,7 @@ public partial class PrintTemplateEditorWindow : Window
 
     private async void NewTemplateButton_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new NewPrintTemplateWindow($"Untitled-{_libraryTemplates.Count + 1}") { Owner = this };
+        var dialog = new NewPrintTemplateWindow($"Untitled-{_libraryTemplates.Count + 1}") { Owner = Window.GetWindow(this) };
         if (dialog.ShowDialog() != true)
         {
             return;
@@ -1411,7 +1320,7 @@ public partial class PrintTemplateEditorWindow : Window
     /// saves it to the library.</summary>
     private async void SaveAsNewButton_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new TextPromptWindow("Save as New", $"{_templateName} copy", "Saves the current canvas to the template library under a new name.") { Owner = this };
+        var dialog = new TextPromptWindow("Save as New", $"{_templateName} copy", "Saves the current canvas to the template library under a new name.") { Owner = Window.GetWindow(this) };
         if (dialog.ShowDialog() != true)
         {
             return;
@@ -1458,7 +1367,7 @@ public partial class PrintTemplateEditorWindow : Window
     private void CloseAndNavigate(string target)
     {
         RequestedNavigation = target;
-        DialogResult = false;
+        RequestClose?.Invoke(false);
     }
 
     private async void SaveButton_Click(object sender, RoutedEventArgs e)
@@ -1493,7 +1402,7 @@ public partial class PrintTemplateEditorWindow : Window
             BoothSettingsChanged.Publish(_locationId);
 
             _isDirty = false;
-            DialogResult = true;
+            RequestClose?.Invoke(true);
         }
         catch (Exception ex)
         {
@@ -1505,6 +1414,6 @@ public partial class PrintTemplateEditorWindow : Window
 
     private void CancelButton_Click(object sender, RoutedEventArgs e)
     {
-        DialogResult = false;
+        RequestClose?.Invoke(false);
     }
 }

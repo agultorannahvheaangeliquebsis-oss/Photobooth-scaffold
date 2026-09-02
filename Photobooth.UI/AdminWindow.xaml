@@ -4,10 +4,10 @@
         Title="Admin Dashboard"
         Background="{DynamicResource CanvasBrush}"
         WindowStartupLocation="CenterOwner"
-        Width="920"
-        Height="800"
-        MinWidth="760"
-        MinHeight="600">
+        Width="1200"
+        Height="820"
+        MinWidth="1040"
+        MinHeight="640">
     <Window.Resources>
         <!-- Dark admin theme, scoped to this window only (shadows App.xaml's
              light CanvasBrush/InkBrush/etc. via nearest-scope StaticResource
@@ -337,9 +337,13 @@
 
                     <StackPanel Grid.Column="0" Margin="0,0,12,0">
                         <TextBlock Text="SETUP" Style="{StaticResource MenuColumnHeader}" />
-                        <!-- Opens PrintTemplateEditorWindow directly, not a ShowSection
-                             panel; see PrintLayoutMenuLink_MouseLeftButtonDown. -->
+                        <!-- Both load as an embedded child view inside this same
+                             window's "PrintLayout"/"ScreenEditor" section panels,
+                             not a separate Window/ShowDialog; see
+                             PrintLayoutMenuLink_MouseLeftButtonDown/
+                             ScreenEditorMenuLink_MouseLeftButtonDown. -->
                         <TextBlock Text="Print Layout" Style="{StaticResource MenuLink}" MouseLeftButtonDown="PrintLayoutMenuLink_MouseLeftButtonDown" />
+                        <TextBlock Text="Screen Editor" Style="{StaticResource MenuLink}" MouseLeftButtonDown="ScreenEditorMenuLink_MouseLeftButtonDown" />
                         <TextBlock Text="General" Style="{StaticResource MenuLink}" Tag="General" MouseLeftButtonDown="MenuLink_Click" />
                         <TextBlock Text="Capture Settings" Style="{StaticResource MenuLink}" Tag="CaptureSettings" MouseLeftButtonDown="MenuLink_Click" />
                         <TextBlock Text="Camera Settings" Style="{StaticResource MenuLink}" Tag="CameraSettings" MouseLeftButtonDown="MenuLink_Click" />
@@ -390,6 +394,19 @@
         <ScrollViewer Grid.Row="1" Margin="0,8,0,0">
             <StackPanel>
 
+                <!-- ===== Print Layout (embedded editor; see OpenPrintTemplateEditorAsync,
+                     which sets PrintLayoutHost.Content and calls ShowSection("PrintLayout")
+                     instead of opening a separate Window/ShowDialog) ===== -->
+                <Grid x:Name="PrintLayoutSectionPanel" Visibility="Collapsed">
+                    <ContentControl x:Name="PrintLayoutHost" />
+                </Grid>
+
+                <!-- ===== Screen Editor (embedded editor; see EditScreenLayoutButtonAsync,
+                     same "host + ShowSection" pattern as PrintLayoutSectionPanel above) ===== -->
+                <Grid x:Name="ScreenEditorSectionPanel" Visibility="Collapsed">
+                    <ContentControl x:Name="ScreenEditorHost" />
+                </Grid>
+
                 <!-- ===== General ===== -->
                 <StackPanel x:Name="GeneralSectionPanel" Visibility="Collapsed">
                     <Grid Margin="0,4,0,12">
@@ -398,10 +415,9 @@
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <!-- Opens PrintTemplateEditorWindow directly (see
-                             PrintLayoutBreadcrumbLink_MouseLeftButtonDown); Print Layout
-                             is its own full-screen editor window now, not a section panel
-                             in this wizard stack, so this can't just ShowSection anymore. -->
+                        <!-- Loads the embedded Print Layout editor (see
+                             PrintLayoutBreadcrumbLink_MouseLeftButtonDown) into this same
+                             window's PrintLayout section; no separate Window anymore. -->
                         <TextBlock Grid.Column="0" Text="&lt; Print Layout" Style="{StaticResource WizardLink}"
                                    HorizontalAlignment="Left" MouseLeftButtonDown="PrintLayoutBreadcrumbLink_MouseLeftButtonDown" />
                         <TextBlock Grid.Column="1" Text="General" FontSize="15" FontWeight="Bold"
@@ -838,44 +854,15 @@
                             </Border>
                         </StackPanel>
 
-                        <!-- ===== Right column: Stickers / Watermark ===== -->
+                        <!-- ===== Right column: Watermark ===== -->
                         <StackPanel Grid.Column="1">
 
-                            <!-- ===== Stickers card ===== -->
-                            <Border Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}"
-                                    BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,16">
-                                <StackPanel>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="Stickers" FontSize="14" FontWeight="Bold"
-                                                   Foreground="{StaticResource InkBrush}" VerticalAlignment="Center" />
-                                        <CheckBox Grid.Column="1" x:Name="StickersEnabledCheckBox" Content="On" VerticalAlignment="Center"
-                                                  Checked="OnOffToggle_Changed" Unchecked="OnOffToggle_Changed" />
-                                    </Grid>
-                                    <TextBlock Text="Allow guests to add graphics such as hats, moustaches, or custom graphics to their photos." Style="{StaticResource Row}"
-                                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,8,0,0" />
-
-                                    <Grid Margin="0,12,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-                                        <Button Grid.Column="0" x:Name="ChooseStickerButton" Content="Choose (Transparent PNG)" Padding="14,6"
-                                                VerticalAlignment="Top" Click="ChooseStickerButton_Click" />
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                            <Button x:Name="PreviousStickerButton" Content="&lt;" Padding="10,4" Margin="0,0,6,0" Click="PreviousStickerButton_Click" />
-                                            <Button x:Name="NextStickerButton" Content="&gt;" Padding="10,4" Click="NextStickerButton_Click" />
-                                        </StackPanel>
-                                    </Grid>
-                                    <TextBlock x:Name="StickerPreviewText" Text="No stickers added yet." Style="{StaticResource Row}"
-                                               Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" />
-                                    <TextBlock Text="Manage the full sticker/frame library from the General section below. Clearing every sticker falls back to no overlay." Style="{StaticResource Row}"
-                                               Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" />
-                                </StackPanel>
-                            </Border>
+                            <!-- The old Stickers card (a per-location "sticker overlay"
+                                 library, plus a redundant Add-Frame entry point duplicating
+                                 the Print Layout editor's own) has been retired: a guest's
+                                 "frame" is now the Print Layout template itself, picked (if
+                                 "Choose Template" is on) at the very start of the session.
+                                 See BoothStateMachine.RunSessionAsync's FramePicker step. -->
 
                             <!-- ===== Watermark card ===== -->
                             <Border Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}"

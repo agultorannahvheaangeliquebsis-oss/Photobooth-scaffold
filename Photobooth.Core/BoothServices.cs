@@ -74,4 +74,17 @@ public record BoothServices(
     /// FilterPreset/FilterSelection's own "apply the effect" vs "know what's
     /// offered" split.</summary>
     public ICustomFilterService CustomFilter { get; init; } = new MockCustomFilterService();
+
+    /// <summary>Reads the booth's favorited saved print-layout templates (see
+    /// BoothStateMachine's now-first FramePicker step) -- an init property here
+    /// for the same reason Sms/GreenScreen/PostProcessing are. Replaces
+    /// FrameLibrary as the source of the guest-facing "frame/layout" picker;
+    /// FrameLibrary/FrameSelection stay above (still required, and still used
+    /// by FrameOverlay's watermark compositing path) so every existing
+    /// `new BoothServices(...)` call site keeps compiling unchanged.</summary>
+    public IPrintTemplateLibraryService TemplateLibrary { get; init; } = new MockPrintTemplateLibraryService();
+
+    /// <summary>Collects the guest's layout pick during FramePicker -- an init
+    /// property here for the same reason TemplateLibrary is.</summary>
+    public ITemplateSelectionService TemplateSelection { get; init; } = new MockTemplateSelectionService();
 }

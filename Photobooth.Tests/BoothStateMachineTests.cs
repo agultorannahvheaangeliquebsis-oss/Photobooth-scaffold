@@ -715,7 +715,7 @@ public class BoothStateMachineTests
     }
 
     [Fact]
-    public async Task RunSessionAsync_ActiveFramesConfigured_ShowsFramePickerAndAppliesChosenFrameBeforePrintingAndUpload()
+    public async Task RunSessionAsync_FavoritedTemplatesConfigured_ShowsFramePickerBeforeConsentAndPrintsChosenTemplate()
     {
         var camera = new MockCameraService();
         var printer = new MockPrinterService();
@@ -728,10 +728,15 @@ public class BoothStateMachineTests
         var branding = new MockPhotoBrandingService();
         var filter = new MockPhotoFilterService();
         var settings = new MockBoothSettingsProvider();
-        var frameLibrary = new MockFrameLibraryService { Frames = new List<FrameOption> { new(1, "Gold Border", "./frames/gold.png") } };
-        var frameSelection = new MockFrameSelectionService();
-        var frameOverlay = new MockFrameOverlayService();
-        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, frameLibrary, frameSelection, frameOverlay, new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
+        settings.Settings = settings.Settings with { Screen = settings.Settings.Screen with { ChooseTemplateEnabled = true } };
+        var favoriteTemplate = new PrintTemplate("Single", 5, 7, 1) { Id = 1, Name = "Gold Border", IsFavorite = true };
+        var templateLibrary = new MockPrintTemplateLibraryService { Templates = new List<PrintTemplate> { favoriteTemplate } };
+        var templateSelection = new MockTemplateSelectionService();
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService())
+        {
+            TemplateLibrary = templateLibrary,
+            TemplateSelection = templateSelection,
+        };
         var machine = new BoothStateMachine(services, mode: "event");
 
         var states = new List<BoothState>();
@@ -740,26 +745,23 @@ public class BoothStateMachineTests
         await machine.RunSessionAsync();
 
         Assert.Contains(BoothState.FramePicker, states);
-        // FramePicker comes after Reviewing (the guest sees the raw shot
-        // first) and before Printing (the frame has to be in the file that
-        // actually gets printed).
-        Assert.True(states.IndexOf(BoothState.Reviewing) < states.IndexOf(BoothState.FramePicker));
+        // FramePicker is now the guest's very first interactive step -- before
+        // Consent, well before Printing -- not a post-capture overlay pick.
+        Assert.True(states.IndexOf(BoothState.FramePicker) < states.IndexOf(BoothState.Consent));
         Assert.True(states.IndexOf(BoothState.FramePicker) < states.IndexOf(BoothState.Printing));
 
-        Assert.NotNull(machine.LastSelectedFrame);
-        Assert.Equal("Gold Border", machine.LastSelectedFrame!.Name);
-        Assert.Contains("_framed", machine.LastCapturedImagePath);
+        Assert.NotNull(machine.LastSelectedTemplate);
+        Assert.Equal("Gold Border", machine.LastSelectedTemplate!.Name);
 
-        // The framed (not pre-frame) path is what got printed and uploaded --
-        // same "everything downstream sees the same final photo" invariant
-        // branding/filter already established.
-        var print = Assert.Single(sessions.RecordedPrints);
-        Assert.Equal(machine.LastCapturedImagePath, print.FilePath);
-        Assert.Contains("_framed", machine.LastPhotoUrl!.ToString());
+        // The guest's chosen template (5x7), not the location's default
+        // (PrintTemplate.Default, 4x6), is what actually got printed.
+        PrintTemplate printedTemplate = Assert.Single(printer.PrintedTemplates);
+        Assert.Equal(5, printedTemplate.WidthInches);
+        Assert.Equal(7, printedTemplate.HeightInches);
     }
 
     [Fact]
-    public async Task RunSessionAsync_GuestSkipsTheFrame_NoFrameApplied()
+    public async Task RunSessionAsync_GuestSkipsTheLayoutChoice_DefaultTemplatePrinted()
     {
         var camera = new MockCameraService();
         var printer = new MockPrinterService();
@@ -772,10 +774,15 @@ public class BoothStateMachineTests
         var branding = new MockPhotoBrandingService();
         var filter = new MockPhotoFilterService();
         var settings = new MockBoothSettingsProvider();
-        var frameLibrary = new MockFrameLibraryService { Frames = new List<FrameOption> { new(1, "Gold Border", "./frames/gold.png") } };
-        var frameSelection = new MockFrameSelectionService { SkipNext = true };
-        var frameOverlay = new MockFrameOverlayService();
-        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, frameLibrary, frameSelection, frameOverlay, new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
+        settings.Settings = settings.Settings with { Screen = settings.Settings.Screen with { ChooseTemplateEnabled = true } };
+        var favoriteTemplate = new PrintTemplate("Single", 5, 7, 1) { Id = 1, Name = "Gold Border", IsFavorite = true };
+        var templateLibrary = new MockPrintTemplateLibraryService { Templates = new List<PrintTemplate> { favoriteTemplate } };
+        var templateSelection = new MockTemplateSelectionService { SkipNext = true };
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService())
+        {
+            TemplateLibrary = templateLibrary,
+            TemplateSelection = templateSelection,
+        };
         var machine = new BoothStateMachine(services, mode: "event");
 
         var states = new List<BoothState>();
@@ -783,15 +790,16 @@ public class BoothStateMachineTests
 
         await machine.RunSessionAsync();
 
-        // FramePicker still shows (there were frames to offer), but the
-        // guest declined all of them.
+        // FramePicker still shows (there was a favorite to offer), but the
+        // guest declined it, so the location's default template governs.
         Assert.Contains(BoothState.FramePicker, states);
-        Assert.Null(machine.LastSelectedFrame);
-        Assert.DoesNotContain("_framed", machine.LastCapturedImagePath);
+        Assert.Null(machine.LastSelectedTemplate);
+        PrintTemplate printedTemplate = Assert.Single(printer.PrintedTemplates);
+        Assert.Equal(PrintTemplate.Default.WidthInches, printedTemplate.WidthInches);
     }
 
     [Fact]
-    public async Task RunSessionAsync_NoActiveFrames_SkipsFramePickerEntirely()
+    public async Task RunSessionAsync_NoFavoritedTemplates_SkipsFramePickerEntirely()
     {
         var camera = new MockCameraService();
         var printer = new MockPrinterService();
@@ -804,12 +812,10 @@ public class BoothStateMachineTests
         var branding = new MockPhotoBrandingService();
         var filter = new MockPhotoFilterService();
         var settings = new MockBoothSettingsProvider();
-        // Default MockFrameLibraryService.Frames is empty, matching a fresh
-        // Frame table nothing's been added to yet.
-        var frameLibrary = new MockFrameLibraryService();
-        var frameSelection = new MockFrameSelectionService();
-        var frameOverlay = new MockFrameOverlayService();
-        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, frameLibrary, frameSelection, frameOverlay, new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
+        settings.Settings = settings.Settings with { Screen = settings.Settings.Screen with { ChooseTemplateEnabled = true } };
+        // Default MockPrintTemplateLibraryService.Templates is empty, matching
+        // a fresh booth where nothing's been favorited yet.
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
         var machine = new BoothStateMachine(services, mode: "event");
 
         var states = new List<BoothState>();
@@ -818,7 +824,7 @@ public class BoothStateMachineTests
         await machine.RunSessionAsync();
 
         Assert.DoesNotContain(BoothState.FramePicker, states);
-        Assert.Null(machine.LastSelectedFrame);
+        Assert.Null(machine.LastSelectedTemplate);
     }
 
     [Fact]

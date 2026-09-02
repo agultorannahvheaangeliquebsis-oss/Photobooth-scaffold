@@ -44,7 +44,8 @@ public static class BoothCompositionRoot
         UiFeedbackService Feedback,
         UiGuestbookPromptService GuestbookPrompt,
         SqlSurveyService Survey,
-        UiFilterSelectionService FilterSelection);
+        UiFilterSelectionService FilterSelection,
+        UiTemplateSelectionService TemplateSelection);
 
     /// <summary>Blocking -- callers must invoke this off the UI thread's
     /// synchronous continuation via <c>Task.Run(() =&gt; Build())...GetAwaiter().GetResult()</c>
@@ -96,6 +97,7 @@ public static class BoothCompositionRoot
         var guestbookPrompt = new UiGuestbookPromptService();
         var survey = new SqlSurveyService(seedIds.LocationId);
         var filterSelection = new UiFilterSelectionService();
+        var templateSelection = new UiTemplateSelectionService();
 
         Process? cameraBridgeProcess = EnsureCameraBridgeRunning(target.Screen.EnableWebcams);
 
@@ -135,6 +137,8 @@ public static class BoothCompositionRoot
             FilterSelection = filterSelection,
             CustomFilterLibrary = new SqlCustomFilterLibraryService(seedIds.LocationId),
             CustomFilter = new GdiCubeLutFilterService(),
+            TemplateLibrary = new SqlPrintTemplateLibraryService(seedIds.LocationId),
+            TemplateSelection = templateSelection,
         };
 
         return new RealBooth(
@@ -146,7 +150,8 @@ public static class BoothCompositionRoot
             feedback,
             guestbookPrompt,
             survey,
-            filterSelection);
+            filterSelection,
+            templateSelection);
     }
 
     /// <summary>Builds a real <see cref="KioskViewModel"/> for a real booth --
@@ -167,7 +172,8 @@ public static class BoothCompositionRoot
             booth.GuestbookPrompt,
             booth.Survey,
             booth.SeedIds.LocationId,
-            booth.FilterSelection);
+            booth.FilterSelection,
+            booth.TemplateSelection);
         return (viewModel, booth);
     }
 

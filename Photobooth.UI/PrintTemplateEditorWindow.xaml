@@ -1,14 +1,10 @@
-<Window x:Class="Photobooth.UI.PrintTemplateEditorWindow"
+<UserControl x:Class="Photobooth.UI.PrintTemplateEditorWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Edit Print Template"
         Background="{DynamicResource CanvasBrush}"
-        WindowStartupLocation="CenterOwner"
-        Width="1160"
-        Height="720"
         MinWidth="1000"
         MinHeight="620">
-    <Window.Resources>
+    <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="Themes/DarkPalette.xaml" />
@@ -328,7 +324,7 @@
                 </Setter>
             </Style>
         </ResourceDictionary>
-    </Window.Resources>
+    </UserControl.Resources>
 
     <Grid Margin="18,16,18,18">
         <Grid.RowDefinitions>
@@ -583,43 +579,13 @@
                     <TextBlock Text="Only applies when Strip is selected -- e.g. 2 photos stacked on a 2x6." Style="{StaticResource EditorLabel}"
                                Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,0" />
 
-                    <!-- Frame library: frames an admin adds here show up in the
-                         guest-facing FramePicker screen. Independent of this
-                         window's own Save/Cancel; add/delete/toggle apply
-                         immediately, same as before in AdminWindow. -->
-                    <TextBlock Text="Frame library" Style="{StaticResource EditorSectionHeader}" />
-                    <ItemsControl x:Name="FramesList">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Margin="0,4">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="{Binding Name}" Style="{StaticResource EditorLabel}"
-                                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0" />
-                                        <Button Grid.Column="1" Content="Delete" Padding="8,4" Tag="{Binding FrameId}" Click="DeleteFrameButton_Click" />
-                                    </Grid>
-                                    <CheckBox IsChecked="{Binding IsActive, Mode=OneWay}" Content="Active" Tag="{Binding FrameId}"
-                                              Margin="0,4,0,0" Click="FrameActiveCheckBox_Click" />
-                                </StackPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                    <TextBlock x:Name="FramesEmptyText" Text="No frames added yet -- FramePicker won't show for guests until one exists."
-                               Style="{StaticResource EditorLabel}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Visibility="Collapsed" />
-
-                    <TextBlock Text="New frame name" Style="{StaticResource EditorLabel}" Margin="0,10,0,2" />
-                    <TextBox x:Name="NewFrameNameBox" />
-                    <Button x:Name="BrowseFrameImageButton" Content="Browse..." Padding="8,4" Margin="0,6,0,0"
-                            HorizontalAlignment="Left" Click="BrowseFrameImageButton_Click" />
-                    <TextBlock x:Name="SelectedFrameImageText" Text="No image selected." Style="{StaticResource EditorLabel}"
-                               Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
-                    <Button x:Name="AddFrameButton" Content="Add Frame" Style="{StaticResource PrimaryButton}" Padding="14,7"
-                            HorizontalAlignment="Left" Margin="0,8,0,0" Click="AddFrameButton_Click" />
-                    <TextBlock x:Name="FrameStatusText" Style="{StaticResource EditorLabel}"
-                               Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                    <!-- The old per-location Frame ("sticker overlay") library that used
+                         to live here has been retired; a guest's "frame" is now the
+                         Print Layout template itself (favorite one or more templates
+                         below/in the switcher and turn on "Choose Template" in the
+                         Screen Editor's Settings tab to offer guests a pick), not a
+                         second PNG overlay layered on top of the photo. See
+                         BoothStateMachine.RunSessionAsync's FramePicker step. -->
                 </StackPanel>
             </ScrollViewer>
 
@@ -769,4 +735,4 @@
             </StackPanel>
         </Grid>
     </Grid>
-</Window>
+</UserControl>

@@ -25,7 +25,6 @@ public partial class AdminWindow : Window
 {
     private readonly AdminDashboardRepository _repository = new();
     private readonly LocationRepository _locations = new();
-    private readonly FrameRepository _frames = new();
     private readonly SurveyRepository _survey = new();
     private readonly VirtualAttendantClipRepository _attendantClips = new();
     private readonly SharingLogRepository _sharingLog = new();
@@ -52,8 +51,6 @@ public partial class AdminWindow : Window
     /// this isn't simply relative to this window's own process directory.</summary>
     public static string CapturesDirectory { get; } = BoothCompositionRoot.ResolveCapturesDirectory();
 
-    private List<FrameRecord> _stickerFrames = new();
-    private int _stickerPreviewIndex;
     private string? _pendingThemeLogoPath;
     private string? _existingThemeLogoPath;
     private PrintTemplate _currentPrintTemplate = PrintTemplate.Default;
@@ -100,12 +97,15 @@ public partial class AdminWindow : Window
     [
         (BoothState.Setup, "Setup Screen", false),
         (BoothState.Idle, "Start Screen", false),
+        // FramePicker is now the guest's very first interactive step -- they
+        // pick a saved/favorited print-layout template here, before Consent --
+        // not a post-capture sticker overlay pick. See BoothStateMachine.
+        (BoothState.FramePicker, "Choose Frame / Layout", false),
         (BoothState.Consent, "Before Countdown (Consent)", true),
         (BoothState.Countdown, "Countdown Video", true),
         (BoothState.Capturing, "Capturing", true),
         (BoothState.FilterPicker, "Select an Effect (Filters)", false),
         (BoothState.Reviewing, "After Capture (Reviewing)", true),
-        (BoothState.FramePicker, "Frame / Sticker Picker", false),
         (BoothState.Payment, "Payment", false),
         (BoothState.Printing, "During Processing (Printing)", true),
         (BoothState.Complete, "End of Session (Complete)", true),
@@ -183,6 +183,13 @@ public partial class AdminWindow : Window
     private Dictionary<string, FrameworkElement> SectionPanels => _sectionPanels ??= new()
     {
         ["General"] = GeneralSectionPanel,
+        // Print Layout / Screen Editor load as embedded child views (see
+        // PrintLayoutHost/ScreenEditorHost, populated by OpenPrintTemplateEditorAsync/
+        // EditScreenLayoutButtonAsync) inside this same Admin Settings window, rather
+        // than each spawning its own separate Window/ShowDialog -- same section-panel
+        // mechanism every other wizard section already uses.
+        ["PrintLayout"] = PrintLayoutSectionPanel,
+        ["ScreenEditor"] = ScreenEditorSectionPanel,
         ["CaptureSettings"] = CaptureSettingsSectionPanel,
         ["CameraSettings"] = CameraSettingsSectionPanel,
         ["VirtualAttendant"] = VirtualAttendantSectionPanel,
@@ -204,6 +211,13 @@ public partial class AdminWindow : Window
         ["Help"] = HelpSectionPanel,
     };
 
+    /// <summary>The section key ShowSection most recently switched to -- read by
+    /// OpenPrintTemplateEditorAsync/EditScreenLayoutButtonAsync just before they
+    /// switch into "PrintLayout"/"ScreenEditor", so a Cancel with no specific
+    /// breadcrumb target (see RequestClose) can return to wherever the admin
+    /// actually came from instead of always falling back to General.</summary>
+    private string _currentSectionKey = "General";
+
     /// <summary>Shows the named section (a wizard section key, or one of
     /// PlaceholderTitles' keys) and hides every other section panel. The
     /// Layer 1 nav lives in a dropdown (NavMenuToggle/NavMenuPopup) rather
@@ -220,15 +234,18 @@ public partial class AdminWindow : Window
         if (SectionPanels.TryGetValue(key, out FrameworkElement? sectionPanel))
         {
             sectionPanel.Visibility = Visibility.Visible;
+            _currentSectionKey = key;
         }
         else if (PlaceholderTitles.TryGetValue(key, out string? title))
         {
             PlaceholderTitleText.Text = title;
             PlaceholderSectionPanel.Visibility = Visibility.Visible;
+            _currentSectionKey = key;
         }
         else
         {
             GeneralSectionPanel.Visibility = Visibility.Visible;
+            _currentSectionKey = "General";
         }
     }
 
@@ -241,9 +258,6 @@ public partial class AdminWindow : Window
         }
     }
 
-    /// <summary>Print Layout is its own full-screen editor window
-    /// (PrintTemplateEditorWindow), not a ShowSection panel -- see
-    /// OpenPrintTemplateEditorAsync's own doc comment.</summary>
     private async void PrintLayoutMenuLink_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         NavMenuToggle.IsChecked = false;
@@ -252,6 +266,12 @@ public partial class AdminWindow : Window
 
     private async void PrintLayoutBreadcrumbLink_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
         => await OpenPrintTemplateEditorAsync();
+
+    private async void ScreenEditorMenuLink_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        NavMenuToggle.IsChecked = false;
+        await EditScreenLayoutButtonAsync();
+    }
 
     private void PreviousSection_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
@@ -412,78 +432,108 @@ public partial class AdminWindow : Window
         }
     }
 
-    /// <summary>Opens the merged Print Layout editor (paper size, print
-    /// template elements, and the Frame library) -- reached from the nav menu
-    /// (PrintLayoutMenuLink_MouseLeftButtonDown), General's own breadcrumb
-    /// (PrintLayoutBreadcrumbLink_MouseLeftButtonDown), and chained into from
-    /// the Screen Editor's "Print Layout &gt;" breadcrumb below.</summary>
+    /// <summary>Loads the merged Print Layout editor (paper size, print
+    /// template elements) into PrintLayoutHost and switches to it -- reached
+    /// from the nav menu (PrintLayoutMenuLink_MouseLeftButtonDown), General's
+    /// own breadcrumb (PrintLayoutBreadcrumbLink_MouseLeftButtonDown), and
+    /// chained into from the Screen Editor's "Print Layout &gt;" breadcrumb
+    /// below. Embedded as a child UserControl inside this same Admin Settings
+    /// window rather than a separate Window/ShowDialog -- see
+    /// PrintTemplateEditorWindow.RequestClose.</summary>
     private async Task OpenPrintTemplateEditorAsync()
     {
+        string sectionKeyBeforeEditor = _currentSectionKey;
+
         // _currentPrintTemplate.Elements is always empty here -- LocationRepository.
         // GetAllAsync never queries PrintTemplateElement, only SqlBoothSettingsProvider
         // does that for the live BoothStateMachine path -- so the editor needs its own
         // fetch here or it would always open showing a blank canvas regardless of what
         // was last saved.
         List<PrintTemplateElement> liveElements = await new PrintTemplateElementRepository().GetAllByLocationAsync(_locationId);
-        var editor = new PrintTemplateEditorWindow(_currentPrintTemplate with { Elements = liveElements }, _locationId) { Owner = this };
-        bool saved = editor.ShowDialog() == true;
-        string? requestedNavigation = editor.RequestedNavigation;
-        if (saved)
+        var editor = new PrintTemplateEditorWindow(_currentPrintTemplate with { Elements = liveElements }, _locationId);
+        editor.RequestClose += async saved =>
         {
-            // The editor already persisted the elements itself on Save --
-            // reload from source of truth same as the Frame section already
-            // does after add/delete, rather than trust the in-memory copy.
-            await LoadAsync();
-        }
+            string? requestedNavigation = editor.RequestedNavigation;
+            if (saved)
+            {
+                // The editor already persisted the elements itself on Save --
+                // reload from source of truth same as the Frame section already
+                // did after add/delete, rather than trust the in-memory copy.
+                await LoadAsync();
+            }
+            PrintLayoutHost.Content = null;
 
-        if (requestedNavigation == "ScreenEditor")
-        {
-            await EditScreenLayoutButtonAsync();
-        }
-        else if (requestedNavigation is not null)
-        {
-            ShowSection(requestedNavigation);
-        }
+            if (requestedNavigation == "ScreenEditor")
+            {
+                await EditScreenLayoutButtonAsync();
+            }
+            else if (requestedNavigation is not null)
+            {
+                ShowSection(requestedNavigation);
+            }
+            else
+            {
+                // Plain Cancel (no breadcrumb target) -- return to wherever the
+                // admin actually came from, same as a modal dialog closing back
+                // onto an unchanged AdminWindow used to do.
+                ShowSection(sectionKeyBeforeEditor);
+            }
+        };
+        PrintLayoutHost.Content = editor;
+        ShowSection("PrintLayout");
     }
 
-    /// <summary>Opens the Screen Editor -- chained into from
-    /// OpenPrintTemplateEditorAsync when the print editor's own "&lt; Screen
-    /// Editor" breadcrumb is clicked, and this method's own chain back the other
-    /// direction via requestedNavigation == "PrintLayout" below.</summary>
+    /// <summary>Loads the Screen Editor into ScreenEditorHost and switches to
+    /// it -- chained into from OpenPrintTemplateEditorAsync when the print
+    /// editor's own "&lt; Screen Editor" breadcrumb is clicked, reachable
+    /// directly via ScreenEditorMenuLink_MouseLeftButtonDown, and this
+    /// method's own chain back the other direction via requestedNavigation ==
+    /// "PrintLayout" below. Embedded the same way OpenPrintTemplateEditorAsync
+    /// is -- see ScreenTemplateEditorWindow.RequestClose.</summary>
     private async Task EditScreenLayoutButtonAsync()
     {
-        var existing = await new ScreenTemplateElementRepository().GetAllByLocationAsync(_locationId);
-        var editor = new ScreenTemplateEditorWindow(existing, _locationId, _currentScreenSettings, _currentTheme) { Owner = this };
-        bool saved = editor.ShowDialog() == true;
-        string? requestedNavigation = editor.RequestedNavigation;
-        if (saved)
-        {
-            // The editor's Settings tab can change ScreenSettings (Booth
-            // Icons/live view show-mirror-rotate), which LoadAsync populates
-            // into _currentScreenSettings -- reload so a second edit doesn't
-            // clobber that change back to what was loaded before this one.
-            // ScreenTemplateElement itself still needs no reload here (not
-            // read into any LoadAsync field, read fresh by KioskWindow).
-            await LoadAsync();
-        }
+        string sectionKeyBeforeEditor = _currentSectionKey;
 
-        if (requestedNavigation == "PrintLayout")
+        var existing = await new ScreenTemplateElementRepository().GetAllByLocationAsync(_locationId);
+        var editor = new ScreenTemplateEditorWindow(existing, _locationId, _currentScreenSettings, _currentTheme);
+        editor.RequestClose += async saved =>
         {
-            // Chains straight into the separate Print Layout editor, same
-            // "Print Layout >" breadcrumb dslrBooth's own Screen Editor
-            // carries -- the two remain distinct windows/pages, this just
-            // avoids making the admin close this one and hunt for the menu
-            // link themselves.
-            await OpenPrintTemplateEditorAsync();
-        }
-        else if (requestedNavigation is not null)
-        {
-            // Virtual Attendant / Countdown settings (-> CaptureSettings) /
-            // Sharing Settings breadcrumbs -- these sections already live in
-            // this same AdminWindow, so no new window is needed, just a
-            // section switch (see ShowSection).
-            ShowSection(requestedNavigation);
-        }
+            string? requestedNavigation = editor.RequestedNavigation;
+            if (saved)
+            {
+                // The editor's Settings tab can change ScreenSettings (Booth
+                // Icons/live view show-mirror-rotate), which LoadAsync populates
+                // into _currentScreenSettings -- reload so a second edit doesn't
+                // clobber that change back to what was loaded before this one.
+                // ScreenTemplateElement itself still needs no reload here (not
+                // read into any LoadAsync field, read fresh by KioskWindow).
+                await LoadAsync();
+            }
+            ScreenEditorHost.Content = null;
+
+            if (requestedNavigation == "PrintLayout")
+            {
+                // Chains straight into the Print Layout editor, same
+                // "Print Layout >" breadcrumb dslrBooth's own Screen Editor
+                // carries -- the two remain distinct child views, this just
+                // avoids making the admin hunt for the menu link themselves.
+                await OpenPrintTemplateEditorAsync();
+            }
+            else if (requestedNavigation is not null)
+            {
+                // Virtual Attendant / Countdown settings (-> CaptureSettings) /
+                // Sharing Settings breadcrumbs -- these sections already live in
+                // this same AdminWindow, so no new window is needed, just a
+                // section switch (see ShowSection).
+                ShowSection(requestedNavigation);
+            }
+            else
+            {
+                ShowSection(sectionKeyBeforeEditor);
+            }
+        };
+        ScreenEditorHost.Content = editor;
+        ShowSection("ScreenEditor");
     }
 
     private async Task LoadAsync()
@@ -562,7 +612,6 @@ public partial class AdminWindow : Window
                 FiltersModeAutoRadio.IsChecked = effects.FiltersMode == "Auto";
                 SetOnOffToggle(PostProcessingEnabledCheckBox, effects.PostProcessingEnabled);
                 PostProcessingApplicationPathBox.Text = effects.PostProcessingApplicationPath ?? string.Empty;
-                SetOnOffToggle(StickersEnabledCheckBox, effects.StickersEnabled);
                 SetOnOffToggle(WatermarkEnabledCheckBox, effects.WatermarkEnabled);
                 _existingWatermarkPath = effects.WatermarkImagePath;
                 _pendingWatermarkPath = null;
@@ -654,7 +703,6 @@ public partial class AdminWindow : Window
                 AboutVersionText.Text = $"Version {AppVersionText()}";
                 AboutLocationText.Text = $"Location: {location.Name} ({location.Type})";
 
-                await LoadFramesAsync();
                 await LoadGuestbookVideosAsync();
                 await LoadSurveyQuestionsAsync();
                 await LoadSurveyResponsesAsync();
@@ -751,86 +799,6 @@ public partial class AdminWindow : Window
         {
             await _repository.DeleteGuestbookVideoAsync(guestbookVideoId);
             await LoadGuestbookVideosAsync();
-        }
-    }
-
-    /// <summary>Frame library CRUD (add/delete/browse/toggle-active) now lives
-    /// entirely in PrintTemplateEditorWindow (see the merged Print Layout
-    /// editor) -- this window only still needs the frame *list* itself, to
-    /// feed the Effects & Stickers card's quick prev/next preview below.</summary>
-    private async Task LoadFramesAsync()
-    {
-        var frames = await _frames.GetAllByLocationAsync(_locationId);
-        _stickerFrames = frames;
-        _stickerPreviewIndex = 0;
-        UpdateStickerPreviewText();
-    }
-
-    private void UpdateStickerPreviewText()
-    {
-        if (_stickerFrames.Count == 0)
-        {
-            StickerPreviewText.Text = "No stickers added yet -- dslrBooth-style built-in defaults are used instead.";
-            return;
-        }
-
-        _stickerPreviewIndex = ((_stickerPreviewIndex % _stickerFrames.Count) + _stickerFrames.Count) % _stickerFrames.Count;
-        FrameRecord current = _stickerFrames[_stickerPreviewIndex];
-        StickerPreviewText.Text = $"{_stickerPreviewIndex + 1} of {_stickerFrames.Count}: {current.Name}{(current.IsActive ? "" : " (inactive)")}";
-    }
-
-    private void PreviousStickerButton_Click(object sender, RoutedEventArgs e)
-    {
-        _stickerPreviewIndex--;
-        UpdateStickerPreviewText();
-    }
-
-    private void NextStickerButton_Click(object sender, RoutedEventArgs e)
-    {
-        _stickerPreviewIndex++;
-        UpdateStickerPreviewText();
-    }
-
-    /// <summary>Quick-add shortcut for the Effects & Stickers card: same copy-
-    /// into-Assets/Frames-then-insert behavior as AddFrameButton_Click, just
-    /// without a separate name field -- the file's own name stands in, and an
-    /// admin who wants to rename/reorder/retire it still has the full Frame
-    /// library further down in General.</summary>
-    private async void ChooseStickerButton_Click(object sender, RoutedEventArgs e)
-    {
-        var dialog = new Microsoft.Win32.OpenFileDialog
-        {
-            Filter = "Transparent PNG (*.png)|*.png",
-            Title = "Choose a sticker/prop overlay image",
-        };
-        if (dialog.ShowDialog() != true)
-        {
-            return;
-        }
-
-        ChooseStickerButton.IsEnabled = false;
-        try
-        {
-            string framesDirectory = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "Frames");
-            System.IO.Directory.CreateDirectory(framesDirectory);
-            string storedFileName = $"{Guid.NewGuid():N}{System.IO.Path.GetExtension(dialog.FileName)}";
-            string storedPath = System.IO.Path.Combine(framesDirectory, storedFileName);
-            System.IO.File.Copy(dialog.FileName, storedPath, overwrite: true);
-
-            var existing = await _frames.GetAllByLocationAsync(_locationId);
-            await _frames.InsertAsync(_locationId, System.IO.Path.GetFileNameWithoutExtension(dialog.FileName), storedPath, sortOrder: existing.Count);
-
-            await LoadFramesAsync();
-            _stickerPreviewIndex = _stickerFrames.Count - 1;
-            UpdateStickerPreviewText();
-        }
-        catch (Exception ex)
-        {
-            StickerPreviewText.Text = $"Couldn't add sticker: {ex.Message}";
-        }
-        finally
-        {
-            ChooseStickerButton.IsEnabled = true;
         }
     }
 
@@ -1141,7 +1109,10 @@ public partial class AdminWindow : Window
             FiltersEnabledCheckBox.IsChecked == true,
             PostProcessingEnabledCheckBox.IsChecked == true,
             postProcessingApplicationPath,
-            StickersEnabledCheckBox.IsChecked == true,
+            // Stickers (the old per-location overlay library) is retired --
+            // a guest's "frame" is now the Print Layout template itself, see
+            // BoothStateMachine.RunSessionAsync's FramePicker step.
+            false,
             WatermarkEnabledCheckBox.IsChecked == true);
         var greenScreen = new GreenScreenSettings(GreenScreenEnabledCheckBox.IsChecked == true, greenScreenBackgroundPath);
         var survey = new SurveySettings(SurveyEnabledCheckBox.IsChecked == true);
