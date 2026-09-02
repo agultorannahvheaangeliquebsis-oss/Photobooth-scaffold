@@ -88,6 +88,48 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
+
+        <!-- Dropdown-menu column heading (SETUP/PROCESS/etc.), matching
+             AdminWindow's own MenuColumnHeader; this window's copy since
+             each window scopes its own resources (see the palette comment
+             above). -->
+        <Style x:Key="MenuColumnHeader" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+
+        <!-- Flat "Menu v" toggle button that opens the settings dropdown,
+             same look as AdminWindow's MenuBarToggleButton so the control
+             reads the same wherever it appears, per-window copy for the same
+             reason as MenuColumnHeader above. -->
+        <Style x:Key="MenuBarToggleButton" TargetType="ToggleButton">
+            <Setter Property="Background" Value="{StaticResource FieldBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+            <Setter Property="Padding" Value="14,8" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="18">
+                            <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Grid Margin="28">
@@ -102,6 +144,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -113,9 +156,83 @@
                 <Button x:Name="DeleteButton" Content="Delete" IsEnabled="False" Click="DeleteButton_Click" />
             </StackPanel>
 
-            <Button Grid.Column="1" x:Name="LaunchEventButton" Content="⚡ Launch event" Style="{StaticResource PrimaryButton}"
+            <!-- Settings dropdown: reaches every Admin Dashboard section
+                 directly from this starting screen, same chevron-menu control
+                 AdminWindow now shows on every section too, so there's no
+                 more "Quick Settings vs Open full settings" split (see the
+                 removed PreviewActionsPanel content below). Doesn't require
+                 an event to be selected to open; picking a section while none
+                 is selected just prompts for one (see SettingsMenuLink_Click). -->
+            <ToggleButton Grid.Column="1" x:Name="SettingsMenuToggle" Style="{StaticResource MenuBarToggleButton}"
+                          Content="⚙ Settings &#9662;" Margin="0,0,8,0" />
+
+            <Button Grid.Column="2" x:Name="LaunchEventButton" Content="⚡ Launch event" Style="{StaticResource PrimaryButton}"
                     Padding="20,10" IsEnabled="False" Click="LaunchEventButton_Click" />
         </Grid>
+
+        <Popup x:Name="SettingsMenuPopup" Grid.Row="0" PlacementTarget="{Binding ElementName=SettingsMenuToggle}"
+               Placement="Bottom" HorizontalOffset="-700" VerticalOffset="4"
+               IsOpen="{Binding IsChecked, ElementName=SettingsMenuToggle, Mode=TwoWay}"
+               StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+            <Border Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
+                    CornerRadius="8" Padding="20,16" Width="820">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                        <TextBlock Text="SETUP" Style="{StaticResource MenuColumnHeader}" />
+                        <TextBlock Text="Print Layout" Style="{StaticResource QuickLink}" Tag="PrintLayout" MouseLeftButtonDown="SettingsMenuLink_Click" />
+                        <TextBlock Text="General" Style="{StaticResource QuickLink}" Tag="General" MouseLeftButtonDown="SettingsMenuLink_Click" />
+                        <TextBlock Text="Capture Settings" Style="{StaticResource QuickLink}" Tag="CaptureSettings" MouseLeftButtonDown="SettingsMenuLink_Click" />
+                        <TextBlock Text="Camera Settings" Style="{StaticResource QuickLink}" Tag="CameraSettings" MouseLeftButtonDown="SettingsMenuLink_Click" />
+                        <TextBlock Text="Virtual Attendant" Style="{StaticResource QuickLink}" Tag="VirtualAttendant" MouseLeftButtonDown="SettingsMenuLink_Click" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" Margin="0,0,12,0">
+                        <TextBlock Text="PROCESS" Style="{StaticResource MenuColumnHeader}" />
+                        <TextBlock Text="Effects &amp; Stickers" Style="{StaticResource QuickLink}" Tag="EffectsStickers" MouseLeftButtonDown="SettingsMenuLink_Click" />
+                        <TextBlock Text="Green Screen" Style="{StaticResource QuickLink}" Tag="GreenScreen" MouseLeftButtonDown="SettingsMenuLink_Click" />
+                        <TextBlock Text="Survey" Style="{StaticResource QuickLink}" Tag="Survey" MouseLeftButtonDown="SettingsMenuLink_Click" />
+                        <TextBlock Text="Disclaimer" Style="{StaticResource QuickLink}" Tag="Disclaimer" MouseLeftButtonDown="SettingsMenuLink_Click" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2" Margin="0,0,12,0">
+                        <TextBlock Text="SHARING ADD-ONS" Style="{StaticResource MenuColumnHeader}" />
+                        <TextBlock Text="Sharing Settings" Style="{StaticResource QuickLink}" Tag="SharingSettings" MouseLeftButtonDown="SettingsMenuLink_Click" />
+                        <TextBlock Text="Print Setup" Style="{StaticResource QuickLink}" Tag="PrintSetup" MouseLeftButtonDown="SettingsMenuLink_Click" />
+                        <TextBlock Text="Slideshow" Style="{StaticResource QuickLink}" Tag="Slideshow" MouseLeftButtonDown="SettingsMenuLink_Click" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="3" Margin="0,0,12,0">
+                        <TextBlock Text="EVENT" Style="{StaticResource MenuColumnHeader}" />
+                        <TextBlock Text="Sharing Status" Style="{StaticResource QuickLink}" Tag="SharingStatus" MouseLeftButtonDown="SettingsMenuLink_Click" />
+                        <TextBlock Text="Export Event" Style="{StaticResource QuickLink}" Tag="ExportEvent" MouseLeftButtonDown="SettingsMenuLink_Click" />
+                        <TextBlock Text="Event folder" Style="{StaticResource QuickLink}" Tag="EventFolder" MouseLeftButtonDown="SettingsMenuLink_Click" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="4" Margin="0,0,12,0">
+                        <TextBlock Text="MORE" Style="{StaticResource MenuColumnHeader}" />
+                        <TextBlock Text="Remote Control" Style="{StaticResource QuickLink}" Tag="RemoteControl" MouseLeftButtonDown="SettingsMenuLink_Click" />
+                        <TextBlock Text="Show Lock Screen" Style="{StaticResource QuickLink}" Tag="ShowLockScreen" MouseLeftButtonDown="SettingsMenuLink_Click" />
+                        <TextBlock Text="Language" Style="{StaticResource QuickLink}" Tag="Language" MouseLeftButtonDown="SettingsMenuLink_Click" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="5">
+                        <TextBlock Text="ACCOUNT" Style="{StaticResource MenuColumnHeader}" />
+                        <TextBlock Text="Subscription" Style="{StaticResource QuickLink}" Tag="Subscription" MouseLeftButtonDown="SettingsMenuLink_Click" />
+                        <TextBlock Text="About dslrBooth" Style="{StaticResource QuickLink}" Tag="About" MouseLeftButtonDown="SettingsMenuLink_Click" />
+                        <TextBlock Text="Help" Style="{StaticResource QuickLink}" Tag="Help" MouseLeftButtonDown="SettingsMenuLink_Click" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Popup>
 
         <!-- ================= Search / sort ================= -->
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,16">
@@ -154,18 +271,12 @@
                     <TextBlock x:Name="PreviewCaptionText" FontFamily="Segoe UI" FontSize="12"
                                Foreground="{StaticResource MutedBrush}" Margin="0,0,0,16" />
 
+                    <!-- Settings are reached via the header's dropdown now
+                         (SettingsMenuToggle/SettingsMenuPopup above), same as
+                         dslrBooth's own flow; this panel keeps just the
+                         primary action for the selected event. -->
                     <StackPanel x:Name="PreviewActionsPanel" Visibility="Collapsed">
                         <Button Content="⚡ Launch event" Style="{StaticResource PrimaryButton}" Margin="0,0,0,10" Click="LaunchEventButton_Click" />
-                        <Button Content="Open full settings" Click="OpenSettingsButton_Click" Margin="0,0,0,20" />
-
-                        <TextBlock Text="QUICK SETTINGS" FontFamily="Segoe UI" FontSize="11" FontWeight="Bold"
-                                   Foreground="{StaticResource MutedBrush}" Margin="0,0,0,10" />
-                        <TextBlock Text="Capture Settings" Style="{StaticResource QuickLink}" Tag="CaptureSettings" MouseLeftButtonDown="QuickLink_Click" />
-                        <TextBlock Text="Effects &amp; Stickers" Style="{StaticResource QuickLink}" Tag="EffectsStickers" MouseLeftButtonDown="QuickLink_Click" />
-                        <TextBlock Text="Green Screen" Style="{StaticResource QuickLink}" Tag="GreenScreen" MouseLeftButtonDown="QuickLink_Click" />
-                        <TextBlock Text="Survey" Style="{StaticResource QuickLink}" Tag="Survey" MouseLeftButtonDown="QuickLink_Click" />
-                        <TextBlock Text="Sharing Settings" Style="{StaticResource QuickLink}" Tag="SharingSettings" MouseLeftButtonDown="QuickLink_Click" />
-                        <TextBlock Text="Print Setup" Style="{StaticResource QuickLink}" Tag="PrintSetup" MouseLeftButtonDown="QuickLink_Click" />
                     </StackPanel>
 
                     <TextBlock x:Name="PreviewEmptyText" Text="Tap an event on the left to preview, launch, or edit its settings."

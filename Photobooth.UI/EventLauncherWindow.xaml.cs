@@ -421,10 +421,13 @@ public partial class EventLauncherWindow : Window
 
     // ============================================================ settings ==
 
-    private void OpenSettingsButton_Click(object sender, RoutedEventArgs e) => OpenAdminWindow("General");
-
-    private void QuickLink_Click(object sender, MouseButtonEventArgs e)
+    /// <summary>Handles every link in the header's settings dropdown
+    /// (SettingsMenuPopup) -- reachable straight from this starting screen,
+    /// same as dslrBooth's own chevron menu, without first requiring a
+    /// separate "Open full settings" step.</summary>
+    private void SettingsMenuLink_Click(object sender, MouseButtonEventArgs e)
     {
+        SettingsMenuToggle.IsChecked = false;
         if (sender is FrameworkElement { Tag: string section })
         {
             OpenAdminWindow(section);
@@ -435,6 +438,9 @@ public partial class EventLauncherWindow : Window
     {
         if (_selectedLocationId is not int locationId)
         {
+            MessageBox.Show(
+                "Select an event first, then choose a settings section.",
+                "Focus & Snap", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 

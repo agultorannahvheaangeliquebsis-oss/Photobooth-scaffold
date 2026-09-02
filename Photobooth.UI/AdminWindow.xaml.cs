@@ -162,6 +162,7 @@ public partial class AdminWindow : Window
 
     private Dictionary<string, FrameworkElement> SectionPanels => _sectionPanels ??= new()
     {
+        ["PrintLayout"] = PrintLayoutSectionPanel,
         ["General"] = GeneralSectionPanel,
         ["CaptureSettings"] = CaptureSettingsSectionPanel,
         ["CameraSettings"] = CameraSettingsSectionPanel,
@@ -176,8 +177,9 @@ public partial class AdminWindow : Window
 
     /// <summary>Shows the named section (a wizard section key, or one of
     /// PlaceholderTitles' keys) and hides every other section panel. The
-    /// Layer 1 top nav bar stays visible throughout -- it's a persistent bar,
-    /// not a dropdown, matching dslrBooth's own always-on top nav.</summary>
+    /// Layer 1 nav lives in a dropdown (NavMenuToggle/NavMenuPopup) rather
+    /// than a permanently expanded grid, so it stays reachable on every
+    /// section without taking up space while closed.</summary>
     private void ShowSection(string key)
     {
         foreach (FrameworkElement panel in SectionPanels.Values)
@@ -206,6 +208,7 @@ public partial class AdminWindow : Window
         if (sender is FrameworkElement { Tag: string key })
         {
             ShowSection(key);
+            NavMenuToggle.IsChecked = false;
         }
     }
 
@@ -231,12 +234,27 @@ public partial class AdminWindow : Window
     /// CloseButton_Click).</summary>
     private void LaunchEvent_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) => Close();
 
+    /// <summary>Countdown/Glam/PIN (General) and the print template (Print
+    /// Layout) save together through one call (LocationRepository.
+    /// UpdateSettingsAsync); both sections' Save buttons trigger this same
+    /// handler, so status/enabled state is mirrored to both status texts and
+    /// both buttons rather than just whichever one was clicked.</summary>
+    private void SetSettingsStatus(string text, bool isError)
+    {
+        System.Windows.Media.Brush brush = isError
+            ? System.Windows.Media.Brushes.Firebrick
+            : (System.Windows.Media.Brush)FindResource("MutedBrush");
+        SettingsStatusText.Text = text;
+        SettingsStatusText.Foreground = brush;
+        PrintLayoutStatusText.Text = text;
+        PrintLayoutStatusText.Foreground = brush;
+    }
+
     private async void SaveSettingsButton_Click(object sender, RoutedEventArgs e)
     {
         if (!int.TryParse(CountdownSecondsBox.Text, out int countdownSeconds) || countdownSeconds <= 0)
         {
-            SettingsStatusText.Text = "Countdown must be a whole number of seconds greater than 0.";
-            SettingsStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+            SetSettingsStatus("Countdown must be a whole number of seconds greater than 0.", isError: true);
             return;
         }
 
@@ -245,42 +263,39 @@ public partial class AdminWindow : Window
             || !double.TryParse(PrintHeightBox.Text, out double heightInches)
             || !int.TryParse(StripCopiesBox.Text, out int stripCopies))
         {
-            SettingsStatusText.Text = "Print width/height and strip copies must be numbers.";
-            SettingsStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+            SetSettingsStatus("Print width/height and strip copies must be numbers.", isError: true);
             return;
         }
 
         var printTemplate = new PrintTemplate(layout, widthInches, heightInches, stripCopies);
         if (!printTemplate.IsValid)
         {
-            SettingsStatusText.Text = "Print width/height must be greater than 0 and strip copies at least 1.";
-            SettingsStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+            SetSettingsStatus("Print width/height must be greater than 0 and strip copies at least 1.", isError: true);
             return;
         }
 
         string adminPin = AdminPinBox.Text.Trim();
         if (adminPin.Length == 0)
         {
-            SettingsStatusText.Text = "Admin PIN can't be blank.";
-            SettingsStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+            SetSettingsStatus("Admin PIN can't be blank.", isError: true);
             return;
         }
 
         SaveSettingsButton.IsEnabled = false;
+        SavePrintLayoutButton.IsEnabled = false;
         try
         {
             await _locations.UpdateSettingsAsync(_locationId, countdownSeconds, GlamFilterCheckBox.IsChecked == true, printTemplate, adminPin);
-            SettingsStatusText.Text = "Saved -- takes effect for the next guest session.";
-            SettingsStatusText.Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush");
+            SetSettingsStatus("Saved -- takes effect for the next guest session.", isError: false);
         }
         catch (Exception ex)
         {
-            SettingsStatusText.Text = $"Couldn't save: {ex.Message}";
-            SettingsStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+            SetSettingsStatus($"Couldn't save: {ex.Message}", isError: true);
         }
         finally
         {
             SaveSettingsButton.IsEnabled = true;
+            SavePrintLayoutButton.IsEnabled = true;
         }
     }
 
@@ -890,23 +905,36 @@ public partial class AdminWindow : Window
     /// <summary>Saves Capture/Effects/Green Screen/Survey/Disclaimer/Print/Sharing
     /// settings added in Phase 1 (BUILD_PLAN.md's dslrBooth feature-parity plan).
     /// Kept as its own button/status text, same one-save-button-per-section
-    /// precedent as SaveSettingsButton/SaveThemeButton above.</summary>
+    /// precedent as SaveSettingsButton/SaveThemeButton above. Also reachable via
+    /// SaveSurveySettingsButton directly on the Survey page -- that page's
+    /// Enabled checkbox otherwise has no save path of its own until the wizard
+    /// reaches Print Setup (the only page this button used to live on), so a
+    /// guest opening straight to Survey from the settings dropdown and closing
+    /// the window afterward would silently discard the toggle. Both buttons
+    /// save the exact same bundle (not just Survey) since that's already how
+    /// this data is grouped in the database.</summary>
     private async void SaveParitySettingsButton_Click(object sender, RoutedEventArgs e)
+        => await SaveParitySettingsAsync(SaveParitySettingsButton, ParitySettingsStatusText);
+
+    private async void SaveSurveySettingsButton_Click(object sender, RoutedEventArgs e)
+        => await SaveParitySettingsAsync(SaveSurveySettingsButton, SurveySettingsStatusText);
+
+    private async Task SaveParitySettingsAsync(Button triggerButton, TextBlock statusText)
     {
         if (!int.TryParse(FrameCountBox.Text, out int frameCount) || frameCount <= 0
             || !int.TryParse(FrameDelayBox.Text, out int frameDelayMs) || frameDelayMs <= 0
             || !int.TryParse(VideoDurationBox.Text, out int videoDurationSeconds) || videoDurationSeconds <= 0)
         {
-            ParitySettingsStatusText.Text = "Frame count, frame delay, and video duration must be whole numbers greater than 0.";
-            ParitySettingsStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+            statusText.Text = "Frame count, frame delay, and video duration must be whole numbers greater than 0.";
+            statusText.Foreground = System.Windows.Media.Brushes.Firebrick;
             return;
         }
 
         if (!int.TryParse(PrintLimitPerEventBox.Text, out int printLimitPerEvent) || printLimitPerEvent <= 0
             || !int.TryParse(PrintLimitPerSessionBox.Text, out int printLimitPerSession) || printLimitPerSession <= 0)
         {
-            ParitySettingsStatusText.Text = "Print limits must be whole numbers greater than 0.";
-            ParitySettingsStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+            statusText.Text = "Print limits must be whole numbers greater than 0.";
+            statusText.Foreground = System.Windows.Media.Brushes.Firebrick;
             return;
         }
 
@@ -969,7 +997,7 @@ public partial class AdminWindow : Window
             printLimitPerEvent, printLimitPerSession, printSharpening);
         var sharing = new SharingSettings(EmailEnabledCheckBox.IsChecked == true, SmsEnabledCheckBox.IsChecked == true, QrEnabledCheckBox.IsChecked == true);
 
-        SaveParitySettingsButton.IsEnabled = false;
+        triggerButton.IsEnabled = false;
         try
         {
             await _locations.UpdateDslrBoothParitySettingsAsync(_locationId, capture, screen, effects, greenScreen, survey, disclaimer, printOptions, sharing);
@@ -978,17 +1006,17 @@ public partial class AdminWindow : Window
             _pendingWatermarkPath = null;
             _existingGreenScreenBackgroundPath = greenScreenBackgroundPath;
             _pendingGreenScreenBackgroundPath = null;
-            ParitySettingsStatusText.Text = "Saved -- takes effect for the next guest session.";
-            ParitySettingsStatusText.Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush");
+            statusText.Text = "Saved -- takes effect for the next guest session.";
+            statusText.Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush");
         }
         catch (Exception ex)
         {
-            ParitySettingsStatusText.Text = $"Couldn't save: {ex.Message}";
-            ParitySettingsStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+            statusText.Text = $"Couldn't save: {ex.Message}";
+            statusText.Foreground = System.Windows.Media.Brushes.Firebrick;
         }
         finally
         {
-            SaveParitySettingsButton.IsEnabled = true;
+            triggerButton.IsEnabled = true;
         }
     }
 
