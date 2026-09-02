@@ -7,6 +7,8 @@ public record InventoryAlert(int PrinterId, string Model, string ItemType, int Q
 public record FeedbackSummary(double? AverageRating, int RatingCount);
 public record RecentFeedbackComment(int SessionId, string Comment, DateTime RecordedAt);
 public record GuestbookVideoRecord(int GuestbookVideoId, int SessionId, string FilePath, int DurationSeconds, DateTime RecordedAt);
+public record SessionLogRow(int SessionId, string Mode, DateTime StartedAt, DateTime? EndedAt, string Status);
+public record FeedbackExportRow(int SessionId, int? Rating, string? Comment, DateTime RecordedAt);
 
 /// <summary>
 /// Read-only queries backing the admin dashboard: sessions today, revenue
@@ -155,5 +157,59 @@ public class AdminDashboardRepository
         using var command = new SqlCommand("DELETE FROM GuestbookVideo WHERE GuestbookVideoId = @Id;", connection);
         command.Parameters.AddWithValue("@Id", guestbookVideoId);
         await command.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>Every session for one event, newest first -- backs Export
+    /// Event's "Session log (CSV)" (see AdminWindow's Export Event section).
+    /// Location-scoped (unlike the aggregate queries above, which predate
+    /// multi-event support) since an export is specifically about one event,
+    /// never "every event this booth machine has ever run".</summary>
+    public async Task<List<SessionLogRow>> GetSessionLogAsync(int locationId, CancellationToken ct = default)
+    {
+        using var connection = await SqlConnectionFactory.OpenAsync(ct);
+        using var command = new SqlCommand(
+            "SELECT SessionId, Mode, StartedAt, EndedAt, Status FROM Session WHERE LocationId = @LocationId ORDER BY StartedAt DESC;",
+            connection);
+        command.Parameters.AddWithValue("@LocationId", locationId);
+        using var reader = await command.ExecuteReaderAsync(ct);
+
+        var results = new List<SessionLogRow>();
+        while (await reader.ReadAsync(ct))
+        {
+            results.Add(new SessionLogRow(
+                reader.GetInt32(0), reader.GetString(1), reader.GetDateTime(2),
+                reader.IsDBNull(3) ? null : reader.GetDateTime(3), reader.GetString(4)));
+        }
+        return results;
+    }
+
+    /// <summary>Every feedback row for one event, newest first -- backs Export
+    /// Event's "Guest feedback (CSV)" (see AdminWindow's Export Event
+    /// section). Unlike GetRecentCommentsAsync (capped at a handful, comment-only,
+    /// unscoped), this is the complete record for one event -- an export
+    /// should never silently drop rows past some display-only limit.</summary>
+    public async Task<List<FeedbackExportRow>> GetAllFeedbackAsync(int locationId, CancellationToken ct = default)
+    {
+        using var connection = await SqlConnectionFactory.OpenAsync(ct);
+        using var command = new SqlCommand(
+            """
+            SELECT f.SessionId, f.Rating, f.Comment, f.RecordedAt
+            FROM Feedback f
+            JOIN Session s ON s.SessionId = f.SessionId
+            WHERE s.LocationId = @LocationId
+            ORDER BY f.RecordedAt DESC;
+            """,
+            connection);
+        command.Parameters.AddWithValue("@LocationId", locationId);
+        using var reader = await command.ExecuteReaderAsync(ct);
+
+        var results = new List<FeedbackExportRow>();
+        while (await reader.ReadAsync(ct))
+        {
+            results.Add(new FeedbackExportRow(
+                reader.GetInt32(0), reader.IsDBNull(1) ? null : reader.GetInt32(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2), reader.GetDateTime(3)));
+        }
+        return results;
     }
 }

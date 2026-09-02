@@ -62,6 +62,21 @@ CREATE TABLE Location (
     SmsEnabled          BIT          NOT NULL DEFAULT 0,
     QrEnabled           BIT          NOT NULL DEFAULT 1,
 
+    -- Real SMTP/Twilio delivery config (see Photobooth.Core's
+    -- SmtpEmailDeliveryService/TwilioSmsDeliveryService). The two
+    -- *Protected columns hold DPAPI ciphertext (SecretProtector), never a
+    -- plaintext password/token.
+    EmailFromAddress            NVARCHAR(320) NOT NULL DEFAULT '',
+    EmailSubject                NVARCHAR(200) NOT NULL DEFAULT 'Here is your photo',
+    EmailSmtpHost               NVARCHAR(200) NOT NULL DEFAULT '',
+    EmailSmtpPort               INT           NOT NULL DEFAULT 587,
+    EmailSmtpUsername           NVARCHAR(200) NOT NULL DEFAULT '',
+    EmailUseSsl                 BIT           NOT NULL DEFAULT 1,
+    EmailSmtpPasswordProtected  NVARCHAR(MAX) NOT NULL DEFAULT '',
+    TwilioAccountSid            NVARCHAR(100) NOT NULL DEFAULT '',
+    TwilioFromNumber            NVARCHAR(20)  NOT NULL DEFAULT '',
+    TwilioAuthTokenProtected    NVARCHAR(MAX) NOT NULL DEFAULT '',
+
     -- Virtual Attendant (see BUILD_PLAN.md's Phase 6 scope text,
     -- IVirtualAttendantService). Randomize is one column per cue-worthy
     -- stage, not a generic key-value table -- BoothState's cue-worthy
@@ -74,6 +89,18 @@ CREATE TABLE Location (
     AttendantRandomizeReviewing  BIT NOT NULL DEFAULT 0,
     AttendantRandomizePrinting   BIT NOT NULL DEFAULT 0,
     AttendantRandomizeComplete   BIT NOT NULL DEFAULT 0,
+
+    -- Admin Dashboard sections added after the dslrBooth-parity pass (see
+    -- BUILD_PLAN.md's "Admin Dashboard stub sections" writeup) -- Show Lock
+    -- Screen, Remote Control, Slideshow. Read fresh into BoothSettings same
+    -- as every other admin-editable column above.
+    IsLocked                     BIT NOT NULL DEFAULT 0,
+    RemoteControlEnabled         BIT NOT NULL DEFAULT 0,
+    SlideshowEnabled             BIT NOT NULL DEFAULT 1,
+    SlideshowIntervalSeconds     INT NOT NULL DEFAULT 4,
+    SlideshowTransition          NVARCHAR(20) NOT NULL DEFAULT 'Fade',
+    SlideshowShowLogoOverlay     BIT NOT NULL DEFAULT 1,
+    SlideshowShowQrOverlay       BIT NOT NULL DEFAULT 1,
 
     CreatedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
 );
@@ -160,6 +187,21 @@ CREATE TABLE Frame (
     LocationId      INT             NOT NULL REFERENCES Location(LocationId),
     Name            NVARCHAR(100)   NOT NULL,
     ImagePath       NVARCHAR(500)   NOT NULL,
+    SortOrder       INT             NOT NULL DEFAULT 0,
+    IsActive        BIT             NOT NULL DEFAULT 1,
+    CreatedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
+-- Admin-uploaded custom .CUBE 3D LUT filters offered alongside the built-in
+-- PhotoFilterPreset tiles (see FilterLibraryWindow's "Add Custom Filter"
+-- tile, ICustomFilterLibraryService, GdiCubeLutFilterService). Same
+-- IsActive/SortOrder shape as Frame -- CubeFilePath points at the .cube file
+-- copied into Assets/CustomFilters, not the admin's original file location.
+CREATE TABLE CustomFilter (
+    CustomFilterId  INT IDENTITY(1,1) PRIMARY KEY,
+    LocationId      INT             NOT NULL REFERENCES Location(LocationId),
+    Name            NVARCHAR(100)   NOT NULL,
+    CubeFilePath    NVARCHAR(500)   NOT NULL,
     SortOrder       INT             NOT NULL DEFAULT 0,
     IsActive        BIT             NOT NULL DEFAULT 1,
     CreatedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
@@ -252,6 +294,22 @@ CREATE TABLE SurveyResponse (
     RecordedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
 );
 
+-- One row per guest email/SMS share attempt (see AdminWindow's Sharing
+-- Status section, KioskViewModel.SendEmailAsync/SendSmsAsync). PhotoUrl is
+-- stored (not just looked up via SessionId) so a Failed row's Retry action
+-- can re-send without needing the original guest session's in-memory state,
+-- which no longer exists by the time an admin looks at this screen.
+CREATE TABLE SharingLog (
+    SharingLogId    INT IDENTITY(1,1) PRIMARY KEY,
+    SessionId       INT             NOT NULL REFERENCES Session(SessionId),
+    Method          NVARCHAR(10)    NOT NULL CHECK (Method IN ('Email', 'SMS')),
+    Destination     NVARCHAR(320)   NOT NULL,
+    PhotoUrl        NVARCHAR(500)   NOT NULL,
+    Status          NVARCHAR(10)    NOT NULL CHECK (Status IN ('Sent', 'Failed')),
+    ErrorMessage    NVARCHAR(500)   NULL,
+    SentAt          DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
 -- Admin-placed elements for the Welcome/Capture/Sharing guest-facing screens
 -- (see ScreenTemplateEditorWindow, MainWindow's live overlay rendering).
 -- Same percent-of-canvas model as PrintTemplateElement, one Screen value per
@@ -282,6 +340,7 @@ CREATE INDEX IX_Payment_Session ON Payment(SessionId);
 CREATE INDEX IX_Consent_Session ON Consent(SessionId);
 CREATE INDEX IX_InventoryLog_Printer_LoggedAt ON InventoryLog(PrinterId, LoggedAt DESC);
 CREATE INDEX IX_Frame_Location_Active ON Frame(LocationId, IsActive, SortOrder);
+CREATE INDEX IX_CustomFilter_Location_Active ON CustomFilter(LocationId, IsActive, SortOrder);
 CREATE INDEX IX_Feedback_Session ON Feedback(SessionId);
 CREATE INDEX IX_GuestbookVideo_Session ON GuestbookVideo(SessionId);
 CREATE INDEX IX_PrintTemplateElement_Location ON PrintTemplateElement(LocationId, SortOrder);
@@ -289,3 +348,5 @@ CREATE INDEX IX_VirtualAttendantClip_Location_Stage ON VirtualAttendantClip(Loca
 CREATE INDEX IX_SurveyQuestion_Location_Active ON SurveyQuestion(LocationId, IsActive, SortOrder);
 CREATE INDEX IX_SurveyResponse_Session ON SurveyResponse(SessionId);
 CREATE INDEX IX_ScreenTemplateElement_Location_Screen ON ScreenTemplateElement(LocationId, Screen, SortOrder);
+CREATE INDEX IX_SharingLog_Session ON SharingLog(SessionId);
+CREATE INDEX IX_SharingLog_SentAt ON SharingLog(SentAt DESC);

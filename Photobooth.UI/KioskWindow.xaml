@@ -88,7 +88,7 @@
                         Background="{StaticResource KioskAccentBrush}"
                         CornerRadius="12" Padding="56,24" Margin="0,44,0,0"
                         HorizontalAlignment="Center"
-                        Visibility="{Binding IsBoothLocked, Converter={StaticResource InverseBoolToVisibility}}">
+                        Visibility="{Binding IsIdleBlocked, Converter={StaticResource InverseBoolToVisibility}}">
                     <Border.Triggers>
                         <EventTrigger RoutedEvent="Loaded">
                             <BeginStoryboard>
@@ -117,11 +117,25 @@
                     </StackPanel>
                 </Border>
 
+                <!-- Show Lock Screen: an already-launched event an admin has
+                     locked (see AdminWindow's Show Lock Screen section,
+                     KioskViewModel.IsAdminLocked), distinct from the
+                     pre-launch card above, which is IsBoothLocked (Setup)
+                     instead. -->
+                <Border Style="{StaticResource KioskCard}" Margin="0,44,0,0" HorizontalAlignment="Center"
+                        Visibility="{Binding IsAdminLocked, Converter={StaticResource BoolToVisibility}}">
+                    <StackPanel>
+                        <TextBlock Text="Booth locked." Style="{StaticResource KioskPrompt}" />
+                        <TextBlock Text="Ask an attendant, or press F12 or tap the top-right corner."
+                                   Style="{StaticResource KioskCaption}" TextAlignment="Center" Margin="0,10,0,0" MaxWidth="420" />
+                    </StackPanel>
+                </Border>
+
                 <!-- Capture mode picker. Selection styling is driven off the one
                      SelectedCaptureMode enum via EnumToTagConverter - see the
                      KioskModeTile template's Tag trigger. -->
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,48,0,0"
-                            Visibility="{Binding IsBoothLocked, Converter={StaticResource InverseBoolToVisibility}}">
+                            Visibility="{Binding IsIdleBlocked, Converter={StaticResource InverseBoolToVisibility}}">
 
                     <Button Style="{StaticResource KioskModeTile}"
                             Command="{Binding SelectModeCommand}" CommandParameter="Photo"

@@ -34,6 +34,46 @@ public record BoothSettings(int CountdownSeconds, bool GlamFilterEnabled, PrintT
 
     // Phase 6 -- see BUILD_PLAN.md's Phase 6 scope text.
     public VirtualAttendantSettings VirtualAttendant { get; init; } = VirtualAttendantSettings.Default;
+
+    // Admin Dashboard sections added after the dslrBooth-parity pass (see
+    // BUILD_PLAN.md's "Admin Dashboard stub sections" writeup) -- same
+    // init-property reasoning as Theme/Capture/etc. above.
+
+    /// <summary>Show Lock Screen: blocks a new guest session from starting
+    /// (see KioskViewModel.CanStartSession) without interrupting one already
+    /// in progress. Re-read at every return to Idle, same cadence Theme/
+    /// Screen already use -- plus applied immediately by AdminWindow's own
+    /// Lock Now/Unlock buttons when they're reached from a live kiosk
+    /// session (see KioskAdminViewModel.OnLockChanged), since waiting for
+    /// the next Idle re-read would leave the booth briefly unlocked to a
+    /// guest tapping the screen right now.</summary>
+    public bool IsLocked { get; init; }
+
+    /// <summary>Whether the loopback Remote Control HTTP listener should be
+    /// running for this event (see RemoteControlServer in Photobooth.UI).</summary>
+    public bool RemoteControlEnabled { get; init; }
+
+    public SlideshowSettings Slideshow { get; init; } = SlideshowSettings.Default;
+}
+
+/// <summary>See AdminWindow's Slideshow section. Cycles this event's captured
+/// photos on an idle screen or second monitor between guests (see
+/// SlideshowWindow in Photobooth.UI). Transition only has one real
+/// implementation so far (Fade -- see SlideshowWindow); "Slide" and "Ken
+/// Burns" round-trip through Save but render as a fade too, same honest
+/// "saved but not yet applied" status BeautyFilterEnabled already has for
+/// its own unbuilt effect. ShowQrOverlay is likewise saved but not yet
+/// rendered -- a slideshow spans many photos, and there's no single "the"
+/// QR to show for all of them without a real per-photo overlay pass this
+/// build doesn't attempt yet.</summary>
+public record SlideshowSettings(
+    bool Enabled = true,
+    int IntervalSeconds = 4,
+    string Transition = "Fade",
+    bool ShowLogoOverlay = true,
+    bool ShowQrOverlay = true)
+{
+    public static SlideshowSettings Default { get; } = new();
 }
 
 /// <summary>Capture mode + related timing, see dslrBooth's Capture Settings screen.
@@ -145,11 +185,41 @@ public record PrintOptions(
     public static PrintOptions Default { get; } = new();
 }
 
-/// <summary>See dslrBooth's Sharing Settings screen. Channel toggles only -- actual
-/// delivery is IEmailDeliveryService etc., unaffected by this record.</summary>
+/// <summary>See dslrBooth's Sharing Settings screen. The three positional
+/// channel toggles are the original fields; SMTP/Twilio delivery config
+/// below was added later as init properties, not positional parameters,
+/// same reasoning BoothTheme/EnabledFilterPresetIds already established for
+/// the same problem -- every existing `new SharingSettings(...)` call site
+/// keeps compiling unchanged with these silently defaulting.</summary>
 public record SharingSettings(bool EmailEnabled = true, bool SmsEnabled = false, bool QrEnabled = true)
 {
     public static SharingSettings Default { get; } = new();
+
+    // Real SMTP delivery config -- see SmtpEmailDeliveryService, which reads
+    // these fresh on every send (via IBoothSettingsProvider), same "admin's
+    // change takes effect for the next guest" reasoning every other setting
+    // in this file already follows.
+    public string EmailFromAddress { get; init; } = "";
+    public string EmailSubject { get; init; } = "Here is your photo";
+    public string EmailSmtpHost { get; init; } = "";
+    public int EmailSmtpPort { get; init; } = 587;
+    public string EmailSmtpUsername { get; init; } = "";
+    public bool EmailUseSsl { get; init; } = true;
+
+    /// <summary>DPAPI-protected at rest (see SecretProtector) -- a real
+    /// mail-account password, unlike every other field on this record.
+    /// AdminWindow encrypts before saving; SmtpEmailDeliveryService decrypts
+    /// right before connecting, never holding the plain value longer than
+    /// one send.</summary>
+    public string EmailSmtpPasswordProtected { get; init; } = "";
+
+    // Real Twilio SMS delivery config -- see TwilioSmsDeliveryService.
+    public string TwilioAccountSid { get; init; } = "";
+    public string TwilioFromNumber { get; init; } = "";
+
+    /// <summary>DPAPI-protected at rest, same reasoning as
+    /// EmailSmtpPasswordProtected -- a Twilio auth token is a real secret.</summary>
+    public string TwilioAuthTokenProtected { get; init; } = "";
 }
 
 /// <summary>Per-stage audio/video attendant cues, see dslrBooth's Virtual Attendant screen

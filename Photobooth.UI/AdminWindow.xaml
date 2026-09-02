@@ -102,6 +102,36 @@
             </Setter>
         </Style>
 
+        <!-- Same look as TextBox above, for the two real-secret fields
+             (SMTP password, Twilio auth token); masked input reads better
+             for those than the plain TextBox the Admin PIN field still
+             uses. -->
+        <Style TargetType="PasswordBox">
+            <Setter Property="Background" Value="{StaticResource FieldBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+            <Setter Property="CaretBrush" Value="{StaticResource InkBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="PasswordBox">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="5">
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsFocused" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Rounded accent pill button; every Button in this window picks
              this up automatically (no x:Key, so it applies implicitly). -->
         <Style TargetType="Button">
@@ -346,7 +376,7 @@
                     <StackPanel Grid.Column="5">
                         <TextBlock Text="ACCOUNT" Style="{StaticResource MenuColumnHeader}" />
                         <TextBlock Text="Subscription" Style="{StaticResource MenuLink}" Tag="Subscription" MouseLeftButtonDown="MenuLink_Click" />
-                        <TextBlock Text="About dslrBooth" Style="{StaticResource MenuLink}" Tag="About" MouseLeftButtonDown="MenuLink_Click" />
+                        <TextBlock Text="About Focus &amp; Snap" Style="{StaticResource MenuLink}" Tag="About" MouseLeftButtonDown="MenuLink_Click" />
                         <TextBlock Text="Help" Style="{StaticResource MenuLink}" Tag="Help" MouseLeftButtonDown="MenuLink_Click" />
                     </StackPanel>
                 </Grid>
@@ -1099,6 +1129,78 @@
                               Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
                     <CheckBox x:Name="QrEnabledCheckBox" Content="QR sharing enabled"
                               Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
+
+                    <!-- Real SMTP delivery, see SmtpEmailDeliveryService.
+                         The password field is left blank on load and only
+                         overwrites the saved one if the admin types a new
+                         value (see _existingEmailSmtpPasswordProtected),
+                         same "never round-trip a secret back into the UI"
+                         precedent BoothConfiguration already set for the DB
+                         connection string. -->
+                    <TextBlock Text="Email (SMTP)" Style="{StaticResource SectionHeader}" />
+                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                        <TextBlock Text="From address:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
+                        <TextBox x:Name="EmailFromAddressBox" Width="220" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text="Subject:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
+                        <TextBox x:Name="EmailSubjectBox" Width="220" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text="SMTP host:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
+                        <TextBox x:Name="EmailSmtpHostBox" Width="180" Margin="0,0,16,0" />
+                        <TextBlock Text="Port:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="34" />
+                        <TextBox x:Name="EmailSmtpPortBox" Width="60" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text="Username:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
+                        <TextBox x:Name="EmailSmtpUsernameBox" Width="220" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text="Password:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
+                        <PasswordBox x:Name="EmailSmtpPasswordBox" Width="220" />
+                    </StackPanel>
+                    <TextBlock x:Name="EmailSmtpPasswordHintText" Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" Margin="120,2,0,0" />
+                    <CheckBox x:Name="EmailUseSslCheckBox" Content="Use SSL/TLS" Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <TextBlock Text="Send test to:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
+                        <TextBox x:Name="TestEmailAddressBox" Width="180" Margin="0,0,8,0" />
+                        <Button x:Name="SendTestEmailButton" Content="Send Test Email" Padding="8,4" Click="SendTestEmailButton_Click" />
+                    </StackPanel>
+                    <TextBlock x:Name="EmailTestStatusText" Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,6,0,0" TextWrapping="Wrap" />
+
+                    <!-- Real Twilio delivery, see TwilioSmsDeliveryService.
+                         Same blank-unless-changed pattern as the SMTP
+                         password above. -->
+                    <TextBlock Text="SMS (Twilio)" Style="{StaticResource SectionHeader}" />
+                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                        <TextBlock Text="Account SID:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
+                        <TextBox x:Name="TwilioAccountSidBox" Width="260" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text="Auth token:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
+                        <PasswordBox x:Name="TwilioAuthTokenBox" Width="260" />
+                    </StackPanel>
+                    <TextBlock x:Name="TwilioAuthTokenHintText" Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" Margin="120,2,0,0" />
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text="From number:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
+                        <TextBox x:Name="TwilioFromNumberBox" Width="160" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <TextBlock Text="Send test to:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
+                        <TextBox x:Name="TestPhoneNumberBox" Width="180" Margin="0,0,8,0" />
+                        <Button x:Name="SendTestSmsButton" Content="Send Test SMS" Padding="8,4" Click="SendTestSmsButton_Click" />
+                    </StackPanel>
+                    <TextBlock x:Name="SmsTestStatusText" Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,6,0,0" TextWrapping="Wrap" />
+
+                    <TextBlock x:Name="SharingSettingsStatusText" Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,12,0,0" TextWrapping="Wrap" />
+                    <Button x:Name="SaveSharingSettingsButton" Content="Save Settings" Padding="16,8"
+                            HorizontalAlignment="Left" Margin="0,8,0,0" Click="SaveSharingSettingsButton_Click" />
                 </StackPanel>
 
                 <!-- ===== Print Setup (last section: Next becomes "Launch
@@ -1146,11 +1248,14 @@
                             HorizontalAlignment="Left" Margin="0,8,0,0" Click="SaveParitySettingsButton_Click" />
                 </StackPanel>
 
-                <!-- ===== Shared placeholder for menu-only items that aren't
-                     part of the wizard order (Sharing Status, Export Event,
-                     Event folder, Remote Control, Show Lock Screen, Language,
-                     Help, Subscription, About dslrBooth): none of these
-                     have backing functionality in this build yet. ===== -->
+                <!-- ===== Shared placeholder for any menu-only item that still
+                     has no backing functionality. Everything that had one in
+                     the original dslrBooth-parity menu (Slideshow, Sharing
+                     Status, Export Event, Event folder, Remote Control, Show
+                     Lock Screen, Language, Subscription, About, Help) now has
+                     its own real section below; this panel is kept only as
+                     the fallback ShowSection already had for an unrecognized
+                     key. ===== -->
                 <StackPanel x:Name="PlaceholderSectionPanel" Visibility="Collapsed">
                     <Grid Margin="0,4,0,12">
                         <Grid.ColumnDefinitions>
@@ -1165,6 +1270,270 @@
                     </Grid>
                     <TextBlock Text="Not available in this build yet." Style="{StaticResource Row}"
                                Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                </StackPanel>
+
+                <!-- ===== Slideshow ===== -->
+                <StackPanel x:Name="SlideshowSectionPanel" Visibility="Collapsed">
+                    <TextBlock Text="Slideshow" FontSize="15" FontWeight="Bold"
+                               Foreground="{StaticResource InkBrush}" HorizontalAlignment="Center" Margin="0,4,0,8" />
+
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                        <CheckBox x:Name="SlideshowEnabledCheckBox" Content="On" VerticalAlignment="Center" IsChecked="True"
+                                  Checked="OnOffToggle_Changed" Unchecked="OnOffToggle_Changed" />
+                        <TextBlock Text="Enable Slideshow" Style="{StaticResource Row}" VerticalAlignment="Center" Margin="10,0,0,0" />
+                    </StackPanel>
+                    <TextBlock Text="Cycles this event's captured photos full-screen. Launch it on this machine, or move the window to a second monitor." Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,0" MaxWidth="520" HorizontalAlignment="Left" />
+
+                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                        <TextBlock Text="Seconds per photo:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="180" />
+                        <TextBox x:Name="SlideshowIntervalBox" Width="60" />
+                    </StackPanel>
+
+                    <TextBlock Text="Transition" Style="{StaticResource Row}" Margin="0,14,0,4" />
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton x:Name="SlideshowTransitionFadeRadio" GroupName="SlideshowTransition" Content="Fade"
+                                     Foreground="{StaticResource InkBrush}" IsChecked="True" Margin="0,0,10,0" />
+                        <RadioButton x:Name="SlideshowTransitionSlideRadio" GroupName="SlideshowTransition" Content="Slide"
+                                     Foreground="{StaticResource InkBrush}" Margin="0,0,10,0" />
+                        <RadioButton x:Name="SlideshowTransitionKenBurnsRadio" GroupName="SlideshowTransition" Content="Ken Burns"
+                                     Foreground="{StaticResource InkBrush}" />
+                    </StackPanel>
+                    <TextBlock Text="Only Fade actually crossfades right now -- Slide/Ken Burns are saved but render as a fade too until built." Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" />
+
+                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                        <CheckBox x:Name="SlideshowShowLogoCheckBox" Content="On" VerticalAlignment="Center" IsChecked="True"
+                                  Checked="OnOffToggle_Changed" Unchecked="OnOffToggle_Changed" />
+                        <TextBlock Text="Show event logo overlay" Style="{StaticResource Row}" VerticalAlignment="Center" Margin="10,0,0,0" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <CheckBox x:Name="SlideshowShowQrCheckBox" Content="On" VerticalAlignment="Center" IsChecked="True"
+                                  Checked="OnOffToggle_Changed" Unchecked="OnOffToggle_Changed" />
+                        <TextBlock Text="Show QR code for downloads" Style="{StaticResource Row}" VerticalAlignment="Center" Margin="10,0,0,0" />
+                    </StackPanel>
+                    <TextBlock Text="Saved but not yet rendered -- there's no single QR that makes sense across a whole slideshow of photos yet." Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
+
+                    <TextBlock x:Name="SlideshowStatusText" Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,10,0,0" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button x:Name="SaveSlideshowSettingsButton" Content="Save Slideshow Settings" Padding="16,8" Margin="0,0,10,0" Click="SaveSlideshowSettingsButton_Click" />
+                        <Button x:Name="LaunchSlideshowButton" Content="Launch Slideshow" Padding="16,8" Click="LaunchSlideshowButton_Click" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- ===== Sharing Status ===== -->
+                <StackPanel x:Name="SharingStatusSectionPanel" Visibility="Collapsed">
+                    <TextBlock Text="Sharing Status" FontSize="15" FontWeight="Bold"
+                               Foreground="{StaticResource InkBrush}" HorizontalAlignment="Center" Margin="0,4,0,8" />
+
+                    <TextBlock x:Name="SharingStatusSummaryText" Text="Loading..." Style="{StaticResource Row}" Margin="0,0,0,10" />
+
+                    <ItemsControl x:Name="SharingStatusList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="{Binding Summary}" Style="{StaticResource Row}" />
+                                        <TextBlock Text="{Binding Detail}" Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}" FontSize="11" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Content="Retry" Padding="10,4" Tag="{Binding SharingLogId}"
+                                            Visibility="{Binding RetryVisibility}"
+                                            Click="RetrySharingLogButton_Click" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock x:Name="SharingStatusEmptyText" Text="No shares yet this event -- rows appear here as guests email/text their photo." Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Visibility="Collapsed" />
+                </StackPanel>
+
+                <!-- ===== Export Event ===== -->
+                <StackPanel x:Name="ExportEventSectionPanel" Visibility="Collapsed">
+                    <TextBlock Text="Export Event" FontSize="15" FontWeight="Bold"
+                               Foreground="{StaticResource InkBrush}" HorizontalAlignment="Center" Margin="0,4,0,8" />
+
+                    <TextBlock Text="Include" Style="{StaticResource SectionHeader}" Margin="0,0,0,4" />
+                    <CheckBox x:Name="ExportPhotosCheckBox" Content="Captured photos, GIFs, boomerangs and videos"
+                              Foreground="{StaticResource InkBrush}" IsChecked="True" Margin="0,4,0,0" />
+                    <CheckBox x:Name="ExportFeedbackCheckBox" Content="Guest feedback (CSV)"
+                              Foreground="{StaticResource InkBrush}" IsChecked="True" Margin="0,8,0,0" />
+                    <CheckBox x:Name="ExportSessionLogCheckBox" Content="Session log (CSV)"
+                              Foreground="{StaticResource InkBrush}" IsChecked="True" Margin="0,8,0,0" />
+                    <CheckBox x:Name="ExportZipCheckBox" Content="Zip the export"
+                              Foreground="{StaticResource InkBrush}" IsChecked="True" Margin="0,8,0,0" />
+
+                    <TextBlock Text="Destination" Style="{StaticResource SectionHeader}" Margin="0,14,0,4" />
+                    <StackPanel Orientation="Horizontal">
+                        <TextBox x:Name="ExportDestinationBox" Width="380" Margin="0,0,8,0" IsReadOnly="True" />
+                        <Button x:Name="BrowseExportDestinationButton" Content="Browse..." Padding="8,4" Click="BrowseExportDestinationButton_Click" />
+                    </StackPanel>
+
+                    <TextBlock x:Name="ExportEventStatusText" Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,12,0,0" TextWrapping="Wrap" MaxWidth="560" HorizontalAlignment="Left" />
+                    <Button x:Name="ExportEventButton" Content="Export Event" Padding="16,8"
+                            HorizontalAlignment="Left" Margin="0,10,0,0" Click="ExportEventButton_Click" />
+                </StackPanel>
+
+                <!-- ===== Event folder ===== -->
+                <StackPanel x:Name="EventFolderSectionPanel" Visibility="Collapsed">
+                    <TextBlock Text="Event folder" FontSize="15" FontWeight="Bold"
+                               Foreground="{StaticResource InkBrush}" HorizontalAlignment="Center" Margin="0,4,0,8" />
+
+                    <Border Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="18" Margin="0,4,0,0">
+                        <StackPanel>
+                            <TextBlock x:Name="EventFolderPathText" Text="Loading..." FontFamily="Consolas" FontSize="12"
+                                       Foreground="{StaticResource InkBrush}" TextWrapping="Wrap" />
+                            <TextBlock x:Name="EventFolderStatsText" Text="" Style="{StaticResource Row}"
+                                       Foreground="{StaticResource MutedBrush}" Margin="0,10,0,0" />
+                        </StackPanel>
+                    </Border>
+
+                    <Button x:Name="OpenEventFolderButton" Content="Open in File Explorer" Padding="16,8"
+                            HorizontalAlignment="Left" Margin="0,14,0,0" Click="OpenEventFolderButton_Click" />
+                    <TextBlock Text="Captures already save here automatically during the event -- this just gives quick access without leaving the dashboard." Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,10,0,0" MaxWidth="520" HorizontalAlignment="Left" />
+                </StackPanel>
+
+                <!-- ===== Remote Control ===== -->
+                <StackPanel x:Name="RemoteControlSectionPanel" Visibility="Collapsed">
+                    <TextBlock Text="Remote Control" FontSize="15" FontWeight="Bold"
+                               Foreground="{StaticResource InkBrush}" HorizontalAlignment="Center" Margin="0,4,0,8" />
+
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                        <CheckBox x:Name="RemoteControlEnabledCheckBox" Content="On" VerticalAlignment="Center"
+                                  Checked="OnOffToggle_Changed" Unchecked="OnOffToggle_Changed" />
+                        <TextBlock Text="Enable Remote Control" Style="{StaticResource Row}" VerticalAlignment="Center" Margin="10,0,0,0" />
+                    </StackPanel>
+                    <TextBlock Text="Lets an attendant view live booth status and start the next guest from a browser, without walking up to the kiosk. Loopback/local-network only -- never exposed to the public internet." Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,0" MaxWidth="560" HorizontalAlignment="Left" />
+
+                    <TextBlock Text="Attendant URL" Style="{StaticResource SectionHeader}" Margin="0,14,0,4" />
+                    <TextBlock x:Name="RemoteControlUrlText" Text="http://localhost:5197/" FontFamily="Consolas" FontSize="13"
+                               Foreground="{StaticResource InkBrush}" />
+                    <TextBlock x:Name="RemoteControlStatusText" Text="" Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,6,0,0" TextWrapping="Wrap" />
+
+                    <Button x:Name="SaveRemoteControlSettingsButton" Content="Save Remote Control Settings" Padding="16,8"
+                            HorizontalAlignment="Left" Margin="0,14,0,0" Click="SaveRemoteControlSettingsButton_Click" />
+                </StackPanel>
+
+                <!-- ===== Show Lock Screen ===== -->
+                <StackPanel x:Name="ShowLockScreenSectionPanel" Visibility="Collapsed">
+                    <TextBlock Text="Show Lock Screen" FontSize="15" FontWeight="Bold"
+                               Foreground="{StaticResource InkBrush}" HorizontalAlignment="Center" Margin="0,4,0,8" />
+
+                    <TextBlock Text="Locks the guest-facing screen so no one can start a new session while you're away. A session already in progress is never interrupted. Unlocking requires the Admin PIN, same as opening this dashboard." Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" MaxWidth="520" HorizontalAlignment="Left" Margin="0,0,0,14" />
+
+                    <TextBlock x:Name="LockScreenStatusText" Text="Loading..." Style="{StaticResource Row}" FontWeight="SemiBold" Margin="0,0,0,10" />
+                    <StackPanel Orientation="Horizontal">
+                        <Button x:Name="LockNowButton" Content="Lock Now" Padding="20,10" Margin="0,0,10,0" Click="LockNowButton_Click" />
+                        <Button x:Name="UnlockButton" Content="Unlock" Padding="20,10" Click="UnlockButton_Click" />
+                    </StackPanel>
+
+                    <TextBlock Text="Auto-lock" Style="{StaticResource SectionHeader}" Margin="0,20,0,4" />
+                    <StackPanel Orientation="Horizontal">
+                        <CheckBox x:Name="AutoLockEnabledCheckBox" Content="Off" VerticalAlignment="Center" IsEnabled="False"
+                                  Checked="OnOffToggle_Changed" Unchecked="OnOffToggle_Changed" />
+                        <TextBlock Text="Automatically lock after guest inactivity" Style="{StaticResource Row}" VerticalAlignment="Center" Margin="10,0,0,0" />
+                    </StackPanel>
+                    <TextBlock Text="Not built yet in this pass -- Lock Now/Unlock above are real; automatic triggering after an idle timeout isn't wired up." Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" MaxWidth="480" />
+                </StackPanel>
+
+                <!-- ===== Language ===== -->
+                <StackPanel x:Name="LanguageSectionPanel" Visibility="Collapsed">
+                    <TextBlock Text="Language" FontSize="15" FontWeight="Bold"
+                               Foreground="{StaticResource InkBrush}" HorizontalAlignment="Center" Margin="0,4,0,8" />
+
+                    <TextBlock Text="Sets the language guests see on the capture screens. Only English exists today -- the options below are shown so the setting has somewhere to live, but picking one wouldn't change anything a guest sees yet (every guest-facing string would need to be translated first)." Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" MaxWidth="540" HorizontalAlignment="Left" Margin="0,0,0,14" />
+
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton GroupName="Language" Content="English" Foreground="{StaticResource InkBrush}" IsChecked="True" Margin="0,0,10,0" />
+                        <RadioButton GroupName="Language" Content="Filipino (coming soon)" Foreground="{StaticResource MutedBrush}" IsEnabled="False" Margin="0,0,10,0" />
+                        <RadioButton GroupName="Language" Content="Spanish (coming soon)" Foreground="{StaticResource MutedBrush}" IsEnabled="False" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- ===== Subscription ===== -->
+                <StackPanel x:Name="SubscriptionSectionPanel" Visibility="Collapsed">
+                    <TextBlock Text="Subscription" FontSize="15" FontWeight="Bold"
+                               Foreground="{StaticResource InkBrush}" HorizontalAlignment="Center" Margin="0,4,0,8" />
+
+                    <Border Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="20" Margin="0,4,0,0">
+                        <StackPanel>
+                            <TextBlock Text="CURRENT PLAN" Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}" FontSize="11" FontWeight="Bold" />
+                            <TextBlock Text="Unlimited -- Owned copy" FontSize="18" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" Margin="0,4,0,0" />
+                            <TextBlock Text="This booth runs on hardware and software you own outright. No recurring subscription, no usage cap, no billing account attached." Style="{StaticResource Row}"
+                                       Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,8,0,0" MaxWidth="480" />
+                            <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                                <TextBlock Text="Licensed to:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="90" />
+                                <TextBlock x:Name="SubscriptionLicensedToText" Text="Loading..." Style="{StaticResource Row}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Text="If this ever becomes a hosted/SaaS product for other studios, plan tiers and billing would live here." Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,10,0,0" MaxWidth="480" />
+                </StackPanel>
+
+                <!-- ===== About ===== -->
+                <StackPanel x:Name="AboutSectionPanel" Visibility="Collapsed">
+                    <TextBlock Text="About Focus &amp; Snap" FontSize="15" FontWeight="Bold"
+                               Foreground="{StaticResource InkBrush}" HorizontalAlignment="Center" Margin="0,4,0,8" />
+
+                    <Border Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="8" Padding="20" Margin="0,4,0,0">
+                        <StackPanel>
+                            <TextBlock Text="Focus &amp; Snap" FontSize="18" FontWeight="Bold" Foreground="{StaticResource InkBrush}" />
+                            <TextBlock Text="Booth Management Software" Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}" />
+                            <TextBlock Text="Capture, print, and revenue tracking across event and vendo modes." Style="{StaticResource Row}"
+                                       Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,8,0,0" MaxWidth="480" />
+
+                            <StackPanel Margin="0,16,0,0">
+                                <TextBlock x:Name="AboutVersionText" Style="{StaticResource Row}" />
+                                <TextBlock x:Name="AboutLocationText" Style="{StaticResource Row}" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    <Button x:Name="OpenReadmeFromAboutButton" Content="Open README" Padding="16,8"
+                            HorizontalAlignment="Left" Margin="0,14,0,0" Click="OpenReadmeButton_Click" />
+                </StackPanel>
+
+                <!-- ===== Help ===== -->
+                <StackPanel x:Name="HelpSectionPanel" Visibility="Collapsed">
+                    <TextBlock Text="Help" FontSize="15" FontWeight="Bold"
+                               Foreground="{StaticResource InkBrush}" HorizontalAlignment="Center" Margin="0,4,0,8" />
+
+                    <TextBlock Text="Frequently asked questions" Style="{StaticResource SectionHeader}" Margin="0,4,0,4" />
+                    <StackPanel Margin="0,0,0,4">
+                        <TextBlock Text="How do I add or change a print frame?" Style="{StaticResource Row}" FontWeight="SemiBold" Margin="0,8,0,0" />
+                        <TextBlock Text="Menu &gt; Print Layout &gt; Frame library. New frames apply to the next guest session automatically, no restart needed." Style="{StaticResource Row}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" MaxWidth="540" />
+
+                        <TextBlock Text="Guests aren't getting their photos by email or SMS" Style="{StaticResource Row}" FontWeight="SemiBold" Margin="0,14,0,0" />
+                        <TextBlock Text="Check Menu &gt; Sharing Status for delivery failures, and confirm the email/SMS settings on the Sharing Settings screen are correct." Style="{StaticResource Row}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" MaxWidth="540" />
+
+                        <TextBlock Text="The printer says it's offline" Style="{StaticResource Row}" FontWeight="SemiBold" Margin="0,14,0,0" />
+                        <TextBlock Text="Confirm the printer is powered on and the PHOTOBOOTH_PRINTER_NAME setting matches the Windows queue name exactly." Style="{StaticResource Row}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" MaxWidth="540" />
+
+                        <TextBlock Text="How do I change the countdown timer or Admin PIN?" Style="{StaticResource Row}" FontWeight="SemiBold" Margin="0,14,0,0" />
+                        <TextBlock Text="Menu &gt; General &gt; Booth settings. Changes take effect for the next guest session." Style="{StaticResource Row}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" MaxWidth="540" />
+                    </StackPanel>
+
+                    <TextBlock Text="Still stuck?" Style="{StaticResource SectionHeader}" Margin="0,10,0,4" />
+                    <TextBlock Text="Talk to whoever manages this booth, or open the full guide for setup and troubleshooting details." Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" MaxWidth="540" Margin="0,0,0,10" />
+                    <Button x:Name="OpenReadmeFromHelpButton" Content="Open full guide (README)" Padding="16,8"
+                            HorizontalAlignment="Left" Click="OpenReadmeButton_Click" />
                 </StackPanel>
 
             </StackPanel>

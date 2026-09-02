@@ -72,8 +72,11 @@ public class KioskViewModel : ObservableObject, IDisposable
     // dependency -- see ReloadSettingsAsync.
     private readonly int? _locationId;
     private readonly ScreenTemplateElementRepository _screenElements = new();
+    private readonly SharingLogRepository _sharingLog = new();
     private ILookup<ScreenTemplateScreen, ScreenTemplateElement> _screenElementsByScreen =
         Array.Empty<ScreenTemplateElement>().ToLookup(e => e.Screen);
+
+    private RemoteControlServer? _remoteControl;
 
     private readonly DispatcherTimer _liveViewTimer;
     private readonly DispatcherTimer _flashTimer;
@@ -339,6 +342,7 @@ public class KioskViewModel : ObservableObject, IDisposable
             if (SetProperty(ref _currentBoothState, value))
             {
                 RaisePropertyChanged(nameof(IsBoothLocked));
+                RaisePropertyChanged(nameof(IsIdleBlocked));
                 LaunchEventCommand.RaiseCanExecuteChanged();
 
                 // CanStartSession keys off THIS property, not CurrentScreenState:
@@ -359,7 +363,39 @@ public class KioskViewModel : ObservableObject, IDisposable
     /// BoothState.Setup).</summary>
     public bool IsBoothLocked => CurrentBoothState == BoothState.Setup;
 
-    public bool CanStartSession => CurrentBoothState == BoothState.Idle && !_sessionRunning;
+    private bool _isAdminLocked;
+
+    /// <summary>Show Lock Screen (see AdminWindow's Show Lock Screen section
+    /// and BoothSettings.IsLocked). Distinct from <see cref="IsBoothLocked"/>
+    /// (pre-launch, BoothState.Setup) -- this blocks a *new* session on an
+    /// already-launched, already-running event. Set two ways: the DB value,
+    /// re-read at every return to Idle same as every other admin setting
+    /// (see ReloadSettingsAsync); and immediately, live, by AdminWindow's own
+    /// Lock Now/Unlock buttons via <see cref="KioskAdminViewModel.OnLockChanged"/>
+    /// when reached from a running kiosk session -- waiting for the next Idle
+    /// re-read would leave the booth briefly unlocked to whoever is standing
+    /// at it right now.</summary>
+    public bool IsAdminLocked
+    {
+        get => _isAdminLocked;
+        set
+        {
+            if (SetProperty(ref _isAdminLocked, value))
+            {
+                RaisePropertyChanged(nameof(CanStartSession));
+                RaisePropertyChanged(nameof(IsIdleBlocked));
+                StartSessionCommand.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    /// <summary>Either lock reason -- what the Idle screen's touch-to-start
+    /// prompt and mode picker actually bind their Visibility to, since a
+    /// single Bool-to-Visibility converter can't express an OR of two
+    /// properties on its own.</summary>
+    public bool IsIdleBlocked => IsBoothLocked || IsAdminLocked;
+
+    public bool CanStartSession => CurrentBoothState == BoothState.Idle && !_sessionRunning && !IsAdminLocked;
 
     // ============================================================ branding ==
 
@@ -901,7 +937,16 @@ public class KioskViewModel : ObservableObject, IDisposable
         }
 
         string address = ShareEmail.Trim();
-        await _services.Email.SendPhotoLinkAsync(address, url);
+        try
+        {
+            await _services.Email.SendPhotoLinkAsync(address, url);
+            await LogShareAttemptAsync("Email", address, url, status: "Sent", errorMessage: null);
+        }
+        catch (Exception ex)
+        {
+            await LogShareAttemptAsync("Email", address, url, status: "Failed", errorMessage: ex.Message);
+            throw;
+        }
         ShareStatus = $"Sent to {address}.";
         ShareEmail = string.Empty;
     }
@@ -915,9 +960,43 @@ public class KioskViewModel : ObservableObject, IDisposable
         }
 
         string phone = SharePhone.Trim();
-        await _services.Sms.SendPhotoLinkAsync(phone, url);
+        try
+        {
+            await _services.Sms.SendPhotoLinkAsync(phone, url);
+            await LogShareAttemptAsync("SMS", phone, url, status: "Sent", errorMessage: null);
+        }
+        catch (Exception ex)
+        {
+            await LogShareAttemptAsync("SMS", phone, url, status: "Failed", errorMessage: ex.Message);
+            throw;
+        }
         ShareStatus = $"Sent to {phone}.";
         SharePhone = string.Empty;
+    }
+
+    /// <summary>Records one Sharing Status row (see AdminWindow's Sharing
+    /// Status section) -- skipped entirely in mock/designer mode, same
+    /// `_locationId is int` guard the Phase-6 screen-overlay reads already
+    /// use, since there's no LocalDB to write to there. A logging failure
+    /// (e.g. a dropped DB connection) is swallowed rather than surfaced --
+    /// it must never turn a real, successful send into a "Send failed"
+    /// message the guest sees, or vice versa mask a real send failure behind
+    /// a logging exception.</summary>
+    private async Task LogShareAttemptAsync(string method, string destination, Uri photoUrl, string status, string? errorMessage)
+    {
+        if (_locationId is null || _stateMachine.LastSessionId is not int sessionId)
+        {
+            return;
+        }
+
+        try
+        {
+            await _sharingLog.InsertAsync(sessionId, method, destination, photoUrl.ToString(), status, errorMessage);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Couldn't record SharingLog row for session {SessionId}", sessionId);
+        }
     }
 
     private void FinishSharing()
@@ -1122,6 +1201,7 @@ public class KioskViewModel : ObservableObject, IDisposable
             IsQrEnabled = settings.Sharing.QrEnabled;
             PrintsRemaining = settings.PrintOptions.PrintLimitPerSession;
             LiveViewTransform = BuildLiveViewTransform(settings.Screen);
+            IsAdminLocked = settings.IsLocked;
 
             if (overlayElements is not null)
             {
@@ -1129,6 +1209,57 @@ public class KioskViewModel : ObservableObject, IDisposable
             }
             ScreenOverlaysChanged?.Invoke();
         });
+
+        ApplyRemoteControlEnabled(settings.RemoteControlEnabled);
+    }
+
+    /// <summary>Starts or stops the loopback Remote Control HTTP listener to
+    /// match the admin's Enable toggle (see AdminWindow's Remote Control
+    /// section, RemoteControlServer). Idempotent -- safe to call on every
+    /// ReloadSettingsAsync (every return to Idle) even when the toggle
+    /// hasn't changed since the last call.</summary>
+    private void ApplyRemoteControlEnabled(bool enabled)
+    {
+        if (enabled)
+        {
+            if (_remoteControl is null)
+            {
+                _remoteControl = new RemoteControlServer(
+                    // Both callbacks fire on the listener's background thread
+                    // (see RemoteControlServer's own doc comment) -- Dispatcher.Invoke,
+                    // not OnUi, since the HTTP response needs a real result back
+                    // from the UI thread, not a fire-and-forget dispatch.
+                    getStatus: () => _dispatcher.Invoke(() => CurrentBoothState.ToString()),
+                    tryStartNextGuest: () => _dispatcher.Invoke(() =>
+                    {
+                        if (!CanStartSession)
+                        {
+                            return false;
+                        }
+                        StartSession();
+                        return true;
+                    }));
+                try
+                {
+                    _remoteControl.Start();
+                }
+                catch (Exception ex)
+                {
+                    // Best-effort, same reasoning as every other settings-driven
+                    // side effect in this method -- a booth that can't bind the
+                    // loopback port (e.g. another instance already running)
+                    // still runs a normal guest session; it just isn't
+                    // remotely controllable this run.
+                    Log.Warning(ex, "Couldn't start the Remote Control listener");
+                    _remoteControl = null;
+                }
+            }
+        }
+        else
+        {
+            _remoteControl?.Dispose();
+            _remoteControl = null;
+        }
     }
 
     /// <summary>Mirror then rotate, matching MainWindow.ApplyLiveViewTransform.
@@ -1473,6 +1604,7 @@ public class KioskViewModel : ObservableObject, IDisposable
         _shareTimer.Stop();
         _gifPreviewTimer.Stop();
         _ = _liveView.StopAsync();
+        _remoteControl?.Dispose();
         GC.SuppressFinalize(this);
     }
 }

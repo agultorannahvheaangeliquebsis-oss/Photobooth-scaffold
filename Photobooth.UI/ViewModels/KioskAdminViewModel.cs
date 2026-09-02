@@ -31,6 +31,14 @@ public class KioskAdminViewModel : ObservableObject
     /// mode, in which case UnlockAsync just closes the overlay.</summary>
     public Action? OpenFullSettings { get; set; }
 
+    /// <summary>Set by KioskWindow right after construction, same pattern as
+    /// <see cref="OpenFullSettings"/> -- lets AdminWindow's Show Lock Screen
+    /// section apply Lock Now/Unlock immediately to a live kiosk session
+    /// (see KioskViewModel.IsAdminLocked) instead of only taking effect on
+    /// the DB value's next re-read at Idle. Null in mock/designer mode and
+    /// whenever AdminWindow is opened without a live kiosk behind it.</summary>
+    public Action<bool>? OnLockChanged { get; set; }
+
     // ----------------------------------------------------------- gate ----
 
     private bool _isOpen;

@@ -9,7 +9,8 @@ public record LocationRecord(
     PrintTemplate PrintTemplate, BoothTheme Theme, string AdminPin,
     CaptureSettings Capture, ScreenSettings Screen, EffectsSettings Effects, GreenScreenSettings GreenScreen,
     SurveySettings Survey, DisclaimerSettings Disclaimer, PrintOptions PrintOptions, SharingSettings Sharing,
-    VirtualAttendantSettings VirtualAttendant, DateTime CreatedAt);
+    VirtualAttendantSettings VirtualAttendant, DateTime CreatedAt,
+    bool IsLocked, bool RemoteControlEnabled, SlideshowSettings Slideshow);
 
 public class LocationRepository
 {
@@ -49,7 +50,11 @@ public class LocationRepository
                    AttendantEnabled, AttendantStyle, AttendantRandomizeConsent, AttendantRandomizeCountdown,
                    AttendantRandomizeCapturing, AttendantRandomizeReviewing, AttendantRandomizePrinting, AttendantRandomizeComplete,
                    PoseStripPosition,
-                   CreatedAt
+                   EmailFromAddress, EmailSubject, EmailSmtpHost, EmailSmtpPort, EmailSmtpUsername, EmailUseSsl,
+                   EmailSmtpPasswordProtected, TwilioAccountSid, TwilioFromNumber, TwilioAuthTokenProtected,
+                   CreatedAt,
+                   IsLocked, RemoteControlEnabled,
+                   SlideshowEnabled, SlideshowIntervalSeconds, SlideshowTransition, SlideshowShowLogoOverlay, SlideshowShowQrOverlay
             FROM Location ORDER BY LocationId;
             """,
             connection);
@@ -93,11 +98,27 @@ public class LocationRepository
                 new SurveySettings(reader.GetBoolean(40)),
                 new DisclaimerSettings(reader.GetString(41), reader.GetString(42)),
                 new PrintOptions(reader.GetBoolean(43), reader.GetBoolean(44), reader.GetInt32(45), reader.GetInt32(46), reader.GetString(47)),
-                new SharingSettings(reader.GetBoolean(48), reader.GetBoolean(49), reader.GetBoolean(50)),
+                new SharingSettings(reader.GetBoolean(48), reader.GetBoolean(49), reader.GetBoolean(50))
+                {
+                    EmailFromAddress = reader.GetString(60),
+                    EmailSubject = reader.GetString(61),
+                    EmailSmtpHost = reader.GetString(62),
+                    EmailSmtpPort = reader.GetInt32(63),
+                    EmailSmtpUsername = reader.GetString(64),
+                    EmailUseSsl = reader.GetBoolean(65),
+                    EmailSmtpPasswordProtected = reader.GetString(66),
+                    TwilioAccountSid = reader.GetString(67),
+                    TwilioFromNumber = reader.GetString(68),
+                    TwilioAuthTokenProtected = reader.GetString(69),
+                },
                 new VirtualAttendantSettings(
                     reader.GetBoolean(51), reader.GetString(52), reader.GetBoolean(53), reader.GetBoolean(54),
                     reader.GetBoolean(55), reader.GetBoolean(56), reader.GetBoolean(57), reader.GetBoolean(58)),
-                reader.GetDateTime(60)));
+                reader.GetDateTime(70),
+                reader.GetBoolean(71),
+                reader.GetBoolean(72),
+                new SlideshowSettings(
+                    reader.GetBoolean(73), reader.GetInt32(74), reader.GetString(75), reader.GetBoolean(76), reader.GetBoolean(77))));
         }
         return results;
     }
@@ -151,6 +172,11 @@ public class LocationRepository
             newLocationId, source.Capture, source.Screen, source.Effects, source.GreenScreen,
             source.Survey, source.Disclaimer, source.PrintOptions, source.Sharing, ct);
         await UpdateVirtualAttendantSettingsAsync(newLocationId, source.VirtualAttendant, ct);
+        await UpdateRemoteControlEnabledAsync(newLocationId, source.RemoteControlEnabled, ct);
+        await UpdateSlideshowSettingsAsync(newLocationId, source.Slideshow, ct);
+        // IsLocked deliberately NOT cloned -- a brand-new event starts
+        // unlocked regardless of whether the source event happened to be
+        // locked at the moment it was duplicated.
         return newLocationId;
     }
 
@@ -274,7 +300,12 @@ public class LocationRepository
                 DisclaimerHeader = @DisclaimerHeader, DisclaimerText = @DisclaimerText,
                 PrintAutomatically = @PrintAutomatically, ShowPrintButton = @ShowPrintButton,
                 PrintLimitPerEvent = @PrintLimitPerEvent, PrintLimitPerSession = @PrintLimitPerSession, PrintSharpening = @PrintSharpening,
-                EmailEnabled = @EmailEnabled, SmsEnabled = @SmsEnabled, QrEnabled = @QrEnabled
+                EmailEnabled = @EmailEnabled, SmsEnabled = @SmsEnabled, QrEnabled = @QrEnabled,
+                EmailFromAddress = @EmailFromAddress, EmailSubject = @EmailSubject, EmailSmtpHost = @EmailSmtpHost,
+                EmailSmtpPort = @EmailSmtpPort, EmailSmtpUsername = @EmailSmtpUsername, EmailUseSsl = @EmailUseSsl,
+                EmailSmtpPasswordProtected = @EmailSmtpPasswordProtected,
+                TwilioAccountSid = @TwilioAccountSid, TwilioFromNumber = @TwilioFromNumber,
+                TwilioAuthTokenProtected = @TwilioAuthTokenProtected
             WHERE LocationId = @LocationId;
             """,
             connection);
@@ -314,6 +345,20 @@ public class LocationRepository
         command.Parameters.AddWithValue("@EmailEnabled", sharing.EmailEnabled);
         command.Parameters.AddWithValue("@SmsEnabled", sharing.SmsEnabled);
         command.Parameters.AddWithValue("@QrEnabled", sharing.QrEnabled);
+        command.Parameters.AddWithValue("@EmailFromAddress", sharing.EmailFromAddress);
+        command.Parameters.AddWithValue("@EmailSubject", sharing.EmailSubject);
+        command.Parameters.AddWithValue("@EmailSmtpHost", sharing.EmailSmtpHost);
+        command.Parameters.AddWithValue("@EmailSmtpPort", sharing.EmailSmtpPort);
+        command.Parameters.AddWithValue("@EmailSmtpUsername", sharing.EmailSmtpUsername);
+        command.Parameters.AddWithValue("@EmailUseSsl", sharing.EmailUseSsl);
+        // Already DPAPI-protected by the caller (AdminWindow) before this
+        // record was built -- this repository never sees a plaintext
+        // password/token, same reasoning BoothConfiguration.WriteConnectionString
+        // establishes for the connection-string secret.
+        command.Parameters.AddWithValue("@EmailSmtpPasswordProtected", sharing.EmailSmtpPasswordProtected);
+        command.Parameters.AddWithValue("@TwilioAccountSid", sharing.TwilioAccountSid);
+        command.Parameters.AddWithValue("@TwilioFromNumber", sharing.TwilioFromNumber);
+        command.Parameters.AddWithValue("@TwilioAuthTokenProtected", sharing.TwilioAuthTokenProtected);
         command.Parameters.AddWithValue("@LocationId", locationId);
         await command.ExecuteNonQueryAsync(ct);
     }
@@ -363,6 +408,56 @@ public class LocationRepository
         command.Parameters.AddWithValue("@AttendantRandomizeReviewing", settings.RandomizeReviewing);
         command.Parameters.AddWithValue("@AttendantRandomizePrinting", settings.RandomizePrinting);
         command.Parameters.AddWithValue("@AttendantRandomizeComplete", settings.RandomizeComplete);
+        command.Parameters.AddWithValue("@LocationId", locationId);
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>Show Lock Screen (see AdminWindow's Show Lock Screen section).
+    /// Kept as its own tiny save method, not folded into UpdateSettingsAsync --
+    /// Lock Now/Unlock are one-click actions fired independently of that
+    /// section's own Save button, same "each section saves on its own"
+    /// reasoning UpdateThemeAsync already established.</summary>
+    public async Task UpdateLockedAsync(int locationId, bool isLocked, CancellationToken ct = default)
+    {
+        using var connection = await SqlConnectionFactory.OpenAsync(ct);
+        using var command = new SqlCommand("UPDATE Location SET IsLocked = @IsLocked WHERE LocationId = @LocationId;", connection);
+        command.Parameters.AddWithValue("@IsLocked", isLocked);
+        command.Parameters.AddWithValue("@LocationId", locationId);
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>Remote Control's Enable toggle (see AdminWindow's Remote
+    /// Control section) -- kept separate from UpdateSettingsAsync for the
+    /// same one-section-per-save-button reasoning as UpdateLockedAsync above.</summary>
+    public async Task UpdateRemoteControlEnabledAsync(int locationId, bool enabled, CancellationToken ct = default)
+    {
+        using var connection = await SqlConnectionFactory.OpenAsync(ct);
+        using var command = new SqlCommand("UPDATE Location SET RemoteControlEnabled = @RemoteControlEnabled WHERE LocationId = @LocationId;", connection);
+        command.Parameters.AddWithValue("@RemoteControlEnabled", enabled);
+        command.Parameters.AddWithValue("@LocationId", locationId);
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>Slideshow settings (see AdminWindow's Slideshow section) --
+    /// kept separate from UpdateSettingsAsync for the same reasoning as
+    /// UpdateLockedAsync above.</summary>
+    public async Task UpdateSlideshowSettingsAsync(int locationId, SlideshowSettings slideshow, CancellationToken ct = default)
+    {
+        using var connection = await SqlConnectionFactory.OpenAsync(ct);
+        using var command = new SqlCommand(
+            """
+            UPDATE Location SET
+                SlideshowEnabled = @SlideshowEnabled, SlideshowIntervalSeconds = @SlideshowIntervalSeconds,
+                SlideshowTransition = @SlideshowTransition, SlideshowShowLogoOverlay = @SlideshowShowLogoOverlay,
+                SlideshowShowQrOverlay = @SlideshowShowQrOverlay
+            WHERE LocationId = @LocationId;
+            """,
+            connection);
+        command.Parameters.AddWithValue("@SlideshowEnabled", slideshow.Enabled);
+        command.Parameters.AddWithValue("@SlideshowIntervalSeconds", slideshow.IntervalSeconds);
+        command.Parameters.AddWithValue("@SlideshowTransition", slideshow.Transition);
+        command.Parameters.AddWithValue("@SlideshowShowLogoOverlay", slideshow.ShowLogoOverlay);
+        command.Parameters.AddWithValue("@SlideshowShowQrOverlay", slideshow.ShowQrOverlay);
         command.Parameters.AddWithValue("@LocationId", locationId);
         await command.ExecuteNonQueryAsync(ct);
     }

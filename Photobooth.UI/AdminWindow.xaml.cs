@@ -28,6 +28,7 @@ public partial class AdminWindow : Window
     private readonly FrameRepository _frames = new();
     private readonly SurveyRepository _survey = new();
     private readonly VirtualAttendantClipRepository _attendantClips = new();
+    private readonly SharingLogRepository _sharingLog = new();
 
     // Which event/location this dashboard is editing. A booth machine can now
     // have several saved events (see EventLauncherWindow) -- _requestedLocationId
@@ -36,6 +37,20 @@ public partial class AdminWindow : Window
     // window's original "one booth machine has one location" assumption did.
     private readonly int? _requestedLocationId;
     private int _locationId;
+
+    /// <summary>Set by KioskWindow when this dashboard is opened from a live
+    /// kiosk session (see KioskAdminViewModel.OnLockChanged) -- lets the Show
+    /// Lock Screen section's Lock Now/Unlock apply immediately to that
+    /// session instead of only on its next re-read at Idle. Null when this
+    /// window is opened without a live kiosk behind it (e.g. standalone),
+    /// in which case Lock Now/Unlock still persists to the DB, it just has
+    /// no live session to notify.</summary>
+    private readonly Action<bool>? _onLockChanged;
+
+    /// <summary>Real captures directory this event's photos/GIFs/videos are
+    /// written to -- see BoothCompositionRoot.ResolveCapturesDirectory for why
+    /// this isn't simply relative to this window's own process directory.</summary>
+    public static string CapturesDirectory { get; } = BoothCompositionRoot.ResolveCapturesDirectory();
 
     private string? _pendingFrameImagePath;
     private List<FrameRecord> _stickerFrames = new();
@@ -48,6 +63,20 @@ public partial class AdminWindow : Window
     private string? _existingWatermarkPath;
     private string? _pendingGreenScreenBackgroundPath;
     private string? _existingGreenScreenBackgroundPath;
+
+    // Show Lock Screen's current state, and the rows behind Sharing Status'
+    // list (kept so RetrySharingLogButton_Click can look up a row's
+    // Method/Destination/PhotoUrl from just the SharingLogId its Tag carries).
+    private bool _isLocked;
+    private List<SharingLogRow> _sharingLogRows = new();
+
+    // DPAPI-protected (SecretProtector) values already on file -- kept so
+    // Save can fall back to them when the admin leaves the password/token
+    // box blank, same "own local copy, only overwrite on a real change"
+    // pattern _existingWatermarkPath/_existingGreenScreenBackgroundPath
+    // already establish for files.
+    private string _existingEmailSmtpPasswordProtected = "";
+    private string _existingTwilioAuthTokenProtected = "";
 
     // Source of truth for the six Randomize toggles now embedded in the Virtual
     // Attendant tile grid (see BuildAttendantStageCard) -- a plain dictionary
@@ -94,10 +123,11 @@ public partial class AdminWindow : Window
     // WebcamResolutionQuality/AudioInputDeviceName) get saved.
     private ScreenSettings _currentScreenSettings = ScreenSettings.Default;
 
-    public AdminWindow(int? locationId = null, string initialSection = "General")
+    public AdminWindow(int? locationId = null, string initialSection = "General", Action<bool>? onLockChanged = null)
     {
         InitializeComponent();
         _requestedLocationId = locationId;
+        _onLockChanged = onLockChanged;
         Loaded += async (_, _) => await LoadAsync();
         Loaded += (_, _) => ShowSection(initialSection);
     }
@@ -141,22 +171,12 @@ public partial class AdminWindow : Window
     // ShowSection just flips which StackPanel is Visible so every existing
     // control/handler below keeps working untouched. ----
 
-    /// <summary>Friendly titles for the dropdown-menu-only entries that have
-    /// no dedicated section panel/backing functionality yet -- they route to
-    /// the shared PlaceholderSectionPanel instead.</summary>
-    private static readonly Dictionary<string, string> PlaceholderTitles = new()
-    {
-        ["Slideshow"] = "Slideshow",
-        ["SharingStatus"] = "Sharing Status",
-        ["ExportEvent"] = "Export Event",
-        ["EventFolder"] = "Event folder",
-        ["RemoteControl"] = "Remote Control",
-        ["ShowLockScreen"] = "Show Lock Screen",
-        ["Language"] = "Language",
-        ["Subscription"] = "Subscription",
-        ["About"] = "About dslrBooth",
-        ["Help"] = "Help",
-    };
+    /// <summary>Friendly titles for a dropdown-menu entry with no dedicated
+    /// section panel -- empty now that every entry from the original
+    /// dslrBooth-parity menu has a real section (see SectionPanels below).
+    /// Kept as a dictionary (rather than removed outright) since ShowSection's
+    /// fallback branch still needs somewhere to route an unrecognized key.</summary>
+    private static readonly Dictionary<string, string> PlaceholderTitles = new();
 
     private Dictionary<string, FrameworkElement>? _sectionPanels;
 
@@ -173,6 +193,16 @@ public partial class AdminWindow : Window
         ["Disclaimer"] = DisclaimerSectionPanel,
         ["SharingSettings"] = SharingSettingsSectionPanel,
         ["PrintSetup"] = PrintSetupSectionPanel,
+        ["Slideshow"] = SlideshowSectionPanel,
+        ["SharingStatus"] = SharingStatusSectionPanel,
+        ["ExportEvent"] = ExportEventSectionPanel,
+        ["EventFolder"] = EventFolderSectionPanel,
+        ["RemoteControl"] = RemoteControlSectionPanel,
+        ["ShowLockScreen"] = ShowLockScreenSectionPanel,
+        ["Language"] = LanguageSectionPanel,
+        ["Subscription"] = SubscriptionSectionPanel,
+        ["About"] = AboutSectionPanel,
+        ["Help"] = HelpSectionPanel,
     };
 
     /// <summary>Shows the named section (a wizard section key, or one of
@@ -532,6 +562,28 @@ public partial class AdminWindow : Window
                 EmailEnabledCheckBox.IsChecked = sharing.EmailEnabled;
                 SmsEnabledCheckBox.IsChecked = sharing.SmsEnabled;
                 QrEnabledCheckBox.IsChecked = sharing.QrEnabled;
+                EmailFromAddressBox.Text = sharing.EmailFromAddress;
+                EmailSubjectBox.Text = sharing.EmailSubject;
+                EmailSmtpHostBox.Text = sharing.EmailSmtpHost;
+                EmailSmtpPortBox.Text = sharing.EmailSmtpPort.ToString();
+                EmailSmtpUsernameBox.Text = sharing.EmailSmtpUsername;
+                EmailUseSslCheckBox.IsChecked = sharing.EmailUseSsl;
+                TwilioAccountSidBox.Text = sharing.TwilioAccountSid;
+                TwilioFromNumberBox.Text = sharing.TwilioFromNumber;
+                // Password/token boxes stay blank -- never round-trip a
+                // decrypted secret back into the UI, same reasoning
+                // BoothConfiguration set for the DB connection string. The
+                // hint line is the only signal of whether one's configured.
+                EmailSmtpPasswordBox.Password = string.Empty;
+                TwilioAuthTokenBox.Password = string.Empty;
+                _existingEmailSmtpPasswordProtected = sharing.EmailSmtpPasswordProtected;
+                _existingTwilioAuthTokenProtected = sharing.TwilioAuthTokenProtected;
+                EmailSmtpPasswordHintText.Text = sharing.EmailSmtpPasswordProtected.Length > 0
+                    ? "A password is already saved. Leave blank to keep it."
+                    : "No password saved yet.";
+                TwilioAuthTokenHintText.Text = sharing.TwilioAuthTokenProtected.Length > 0
+                    ? "An auth token is already saved. Leave blank to keep it."
+                    : "No auth token saved yet.";
 
                 PrintOptions printOptions = location.PrintOptions;
                 PrintAutomaticallyCheckBox.IsChecked = printOptions.PrintAutomatically;
@@ -542,11 +594,41 @@ public partial class AdminWindow : Window
                 PrintSharpeningMediumRadio.IsChecked = printOptions.PrintSharpening == "Medium";
                 PrintSharpeningHighRadio.IsChecked = printOptions.PrintSharpening == "High";
 
+                SlideshowSettings slideshow = location.Slideshow;
+                SetOnOffToggle(SlideshowEnabledCheckBox, slideshow.Enabled);
+                SlideshowIntervalBox.Text = slideshow.IntervalSeconds.ToString();
+                SlideshowTransitionFadeRadio.IsChecked = slideshow.Transition == "Fade";
+                SlideshowTransitionSlideRadio.IsChecked = slideshow.Transition == "Slide";
+                SlideshowTransitionKenBurnsRadio.IsChecked = slideshow.Transition == "Ken Burns";
+                SetOnOffToggle(SlideshowShowLogoCheckBox, slideshow.ShowLogoOverlay);
+                SetOnOffToggle(SlideshowShowQrCheckBox, slideshow.ShowQrOverlay);
+
+                SetOnOffToggle(RemoteControlEnabledCheckBox, location.RemoteControlEnabled);
+                RemoteControlUrlText.Text = RemoteControlServer.Url;
+                RemoteControlStatusText.Text = location.RemoteControlEnabled
+                    ? "Enabled -- the running kiosk starts listening the next time it returns to Idle."
+                    : "Disabled.";
+
+                _isLocked = location.IsLocked;
+                UpdateLockScreenStatusText();
+
+                SubscriptionLicensedToText.Text = location.Name;
+                AboutVersionText.Text = $"Version {AppVersionText()}";
+                AboutLocationText.Text = $"Location: {location.Name} ({location.Type})";
+
                 await LoadFramesAsync();
                 await LoadGuestbookVideosAsync();
                 await LoadSurveyQuestionsAsync();
                 await LoadSurveyResponsesAsync();
                 await LoadAttendantClipsAsync();
+                await LoadSharingStatusAsync();
+                LoadEventFolder();
+
+                if (!System.IO.Directory.Exists(ExportDestinationBox.Text))
+                {
+                    ExportDestinationBox.Text = System.IO.Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "EventExports", SafeFileName(location.Name));
+                }
             }
         }
         catch (Exception ex)
@@ -919,6 +1001,116 @@ public partial class AdminWindow : Window
     private async void SaveSurveySettingsButton_Click(object sender, RoutedEventArgs e)
         => await SaveParitySettingsAsync(SaveSurveySettingsButton, SurveySettingsStatusText);
 
+    private async void SaveSharingSettingsButton_Click(object sender, RoutedEventArgs e)
+        => await SaveParitySettingsAsync(SaveSharingSettingsButton, SharingSettingsStatusText);
+
+    /// <summary>Builds a SharingSettings from the Sharing Settings section's
+    /// current field values -- shared by the real Save path and the two
+    /// Send Test buttons, so "what would be saved" and "what gets tested"
+    /// can never drift apart. The two secret fields fall back to whatever's
+    /// already on file (_existingEmailSmtpPasswordProtected/
+    /// _existingTwilioAuthTokenProtected) when left blank, same reasoning
+    /// SaveParitySettingsAsync's watermark/green-screen file handling
+    /// already establishes for "only overwrite on a real change".</summary>
+    private SharingSettings BuildSharingSettingsFromForm()
+    {
+        string emailPasswordProtected = EmailSmtpPasswordBox.Password.Length > 0
+            ? SecretProtector.Protect(EmailSmtpPasswordBox.Password)
+            : _existingEmailSmtpPasswordProtected;
+        string twilioTokenProtected = TwilioAuthTokenBox.Password.Length > 0
+            ? SecretProtector.Protect(TwilioAuthTokenBox.Password)
+            : _existingTwilioAuthTokenProtected;
+        int.TryParse(EmailSmtpPortBox.Text, out int smtpPort);
+
+        return new SharingSettings(EmailEnabledCheckBox.IsChecked == true, SmsEnabledCheckBox.IsChecked == true, QrEnabledCheckBox.IsChecked == true)
+        {
+            EmailFromAddress = EmailFromAddressBox.Text.Trim(),
+            EmailSubject = EmailSubjectBox.Text.Trim(),
+            EmailSmtpHost = EmailSmtpHostBox.Text.Trim(),
+            EmailSmtpPort = smtpPort > 0 ? smtpPort : 587,
+            EmailSmtpUsername = EmailSmtpUsernameBox.Text.Trim(),
+            EmailUseSsl = EmailUseSslCheckBox.IsChecked == true,
+            EmailSmtpPasswordProtected = emailPasswordProtected,
+            TwilioAccountSid = TwilioAccountSidBox.Text.Trim(),
+            TwilioFromNumber = TwilioFromNumberBox.Text.Trim(),
+            TwilioAuthTokenProtected = twilioTokenProtected,
+        };
+    }
+
+    /// <summary>Adapts one fixed BoothSettings for the two Send Test
+    /// buttons -- SmtpEmailDeliveryService/TwilioSmsDeliveryService take an
+    /// IBoothSettingsProvider (so they can re-read settings fresh on every
+    /// real guest send), but a test send has nothing to re-read: it's
+    /// testing the form's current, possibly-unsaved values.</summary>
+    private sealed class StaticSettingsProvider(BoothSettings settings) : IBoothSettingsProvider
+    {
+        public Task<BoothSettings> GetSettingsAsync(CancellationToken ct = default) => Task.FromResult(settings);
+    }
+
+    private async void SendTestEmailButton_Click(object sender, RoutedEventArgs e)
+    {
+        string testAddress = TestEmailAddressBox.Text.Trim();
+        if (testAddress.Length == 0)
+        {
+            EmailTestStatusText.Text = "Enter an address to send the test to.";
+            EmailTestStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+            return;
+        }
+
+        var provider = new StaticSettingsProvider(new BoothSettings(0, false, PrintTemplate.Default) { Sharing = BuildSharingSettingsFromForm() });
+        var emailService = new SmtpEmailDeliveryService(provider);
+
+        SendTestEmailButton.IsEnabled = false;
+        EmailTestStatusText.Text = "Sending...";
+        EmailTestStatusText.Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush");
+        try
+        {
+            await emailService.SendPhotoLinkAsync(testAddress, new Uri("https://example.com/photobooth-test"));
+            EmailTestStatusText.Text = $"Test email sent to {testAddress}.";
+        }
+        catch (Exception ex)
+        {
+            EmailTestStatusText.Text = $"Test failed: {ex.Message}";
+            EmailTestStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+        }
+        finally
+        {
+            SendTestEmailButton.IsEnabled = true;
+        }
+    }
+
+    private async void SendTestSmsButton_Click(object sender, RoutedEventArgs e)
+    {
+        string testPhone = TestPhoneNumberBox.Text.Trim();
+        if (testPhone.Length == 0)
+        {
+            SmsTestStatusText.Text = "Enter a phone number to send the test to.";
+            SmsTestStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+            return;
+        }
+
+        var provider = new StaticSettingsProvider(new BoothSettings(0, false, PrintTemplate.Default) { Sharing = BuildSharingSettingsFromForm() });
+        var smsService = new TwilioSmsDeliveryService(provider);
+
+        SendTestSmsButton.IsEnabled = false;
+        SmsTestStatusText.Text = "Sending...";
+        SmsTestStatusText.Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush");
+        try
+        {
+            await smsService.SendPhotoLinkAsync(testPhone, new Uri("https://example.com/photobooth-test"));
+            SmsTestStatusText.Text = $"Test SMS sent to {testPhone}.";
+        }
+        catch (Exception ex)
+        {
+            SmsTestStatusText.Text = $"Test failed: {ex.Message}";
+            SmsTestStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+        }
+        finally
+        {
+            SendTestSmsButton.IsEnabled = true;
+        }
+    }
+
     private async Task SaveParitySettingsAsync(Button triggerButton, TextBlock statusText)
     {
         if (!int.TryParse(FrameCountBox.Text, out int frameCount) || frameCount <= 0
@@ -995,7 +1187,7 @@ public partial class AdminWindow : Window
         var printOptions = new PrintOptions(
             PrintAutomaticallyCheckBox.IsChecked == true, ShowPrintButtonCheckBox.IsChecked == true,
             printLimitPerEvent, printLimitPerSession, printSharpening);
-        var sharing = new SharingSettings(EmailEnabledCheckBox.IsChecked == true, SmsEnabledCheckBox.IsChecked == true, QrEnabledCheckBox.IsChecked == true);
+        var sharing = BuildSharingSettingsFromForm();
 
         triggerButton.IsEnabled = false;
         try
@@ -1006,6 +1198,16 @@ public partial class AdminWindow : Window
             _pendingWatermarkPath = null;
             _existingGreenScreenBackgroundPath = greenScreenBackgroundPath;
             _pendingGreenScreenBackgroundPath = null;
+            _existingEmailSmtpPasswordProtected = sharing.EmailSmtpPasswordProtected;
+            _existingTwilioAuthTokenProtected = sharing.TwilioAuthTokenProtected;
+            EmailSmtpPasswordBox.Password = string.Empty;
+            TwilioAuthTokenBox.Password = string.Empty;
+            EmailSmtpPasswordHintText.Text = sharing.EmailSmtpPasswordProtected.Length > 0
+                ? "A password is already saved. Leave blank to keep it."
+                : "No password saved yet.";
+            TwilioAuthTokenHintText.Text = sharing.TwilioAuthTokenProtected.Length > 0
+                ? "An auth token is already saved. Leave blank to keep it."
+                : "No auth token saved yet.";
             statusText.Text = "Saved -- takes effect for the next guest session.";
             statusText.Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush");
         }
@@ -1245,5 +1447,411 @@ public partial class AdminWindow : Window
         await _attendantClips.UpdateSortOrderAsync(current.ClipId, swapWith.SortOrder);
         await _attendantClips.UpdateSortOrderAsync(swapWith.ClipId, current.SortOrder);
         await LoadAttendantClipsAsync();
+    }
+
+    // ================================================================
+    // Slideshow
+    // ================================================================
+
+    private async void SaveSlideshowSettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!int.TryParse(SlideshowIntervalBox.Text, out int intervalSeconds) || intervalSeconds <= 0)
+        {
+            SlideshowStatusText.Text = "Seconds per photo must be a whole number greater than 0.";
+            SlideshowStatusText.Foreground = Brushes.Firebrick;
+            return;
+        }
+
+        string transition = SlideshowTransitionSlideRadio.IsChecked == true ? "Slide"
+            : SlideshowTransitionKenBurnsRadio.IsChecked == true ? "Ken Burns"
+            : "Fade";
+        var settings = new SlideshowSettings(
+            SlideshowEnabledCheckBox.IsChecked == true, intervalSeconds, transition,
+            SlideshowShowLogoCheckBox.IsChecked == true, SlideshowShowQrCheckBox.IsChecked == true);
+
+        SaveSlideshowSettingsButton.IsEnabled = false;
+        try
+        {
+            await _locations.UpdateSlideshowSettingsAsync(_locationId, settings);
+            SlideshowStatusText.Text = "Saved.";
+            SlideshowStatusText.Foreground = (Brush)FindResource("MutedBrush");
+        }
+        catch (Exception ex)
+        {
+            SlideshowStatusText.Text = $"Couldn't save: {ex.Message}";
+            SlideshowStatusText.Foreground = Brushes.Firebrick;
+        }
+        finally
+        {
+            SaveSlideshowSettingsButton.IsEnabled = true;
+        }
+    }
+
+    private void LaunchSlideshowButton_Click(object sender, RoutedEventArgs e)
+    {
+        int.TryParse(SlideshowIntervalBox.Text, out int intervalSeconds);
+        string transition = SlideshowTransitionSlideRadio.IsChecked == true ? "Slide"
+            : SlideshowTransitionKenBurnsRadio.IsChecked == true ? "Ken Burns"
+            : "Fade";
+        var settings = new SlideshowSettings(
+            true, intervalSeconds > 0 ? intervalSeconds : SlideshowSettings.Default.IntervalSeconds, transition,
+            SlideshowShowLogoCheckBox.IsChecked == true, SlideshowShowQrCheckBox.IsChecked == true);
+
+        // Not modal (.Show, not .ShowDialog) -- a slideshow is meant to run
+        // alongside the dashboard (e.g. dragged onto a second monitor) while
+        // an admin keeps working here, not block this window.
+        new SlideshowWindow(CapturesDirectory, EventNameBox.Text, _existingThemeLogoPath, settings) { Owner = this }.Show();
+    }
+
+    // ================================================================
+    // Sharing Status
+    // ================================================================
+
+    private record SharingStatusRow(int SharingLogId, string Summary, string Detail, Visibility RetryVisibility);
+
+    private async Task LoadSharingStatusAsync()
+    {
+        _sharingLogRows = await _sharingLog.GetRecentAsync(_locationId);
+        (int sent, int failed) = await _sharingLog.GetSummaryAsync(_locationId);
+        SharingStatusSummaryText.Text = $"Sent {sent} -- Failed {failed}";
+
+        SharingStatusList.ItemsSource = _sharingLogRows.Select(row =>
+        {
+            string summary = $"Session #{row.SessionId} -- {row.Method} -- {MaskDestination(row.Destination)} -- {row.Status}";
+            string detail = row.Status == "Failed" && row.ErrorMessage is not null
+                ? $"{row.ErrorMessage} -- {row.SentAt:g}"
+                : $"{row.SentAt:g}";
+            return new SharingStatusRow(
+                row.SharingLogId, summary, detail,
+                row.Status == "Failed" ? Visibility.Visible : Visibility.Collapsed);
+        }).ToList();
+        SharingStatusEmptyText.Visibility = _sharingLogRows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>Masks all but a short recognizable prefix of an email/phone,
+    /// same "don't show a guest's full contact info on a shared admin
+    /// screen" reasoning the Slideshow/Export Event mockup's own masked
+    /// sample data (j***@gmail.com etc.) was modeling.</summary>
+    private static string MaskDestination(string destination)
+    {
+        int atIndex = destination.IndexOf('@');
+        if (atIndex > 1)
+        {
+            return $"{destination[..1]}***{destination[atIndex..]}";
+        }
+        return destination.Length > 4 ? $"{destination[..4]}***" : destination;
+    }
+
+    /// <summary>Re-sends a Failed row through the real delivery service (same
+    /// SmtpEmailDeliveryService/TwilioSmsDeliveryService AdminWindow's own
+    /// Send Test buttons already construct directly) and logs the outcome as
+    /// a new row -- the original Failed row is left as history, not
+    /// overwritten, same "append, don't mutate" reasoning every other log in
+    /// this codebase (Session/Payment/etc.) already follows.</summary>
+    private async void RetrySharingLogButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: int sharingLogId } button)
+        {
+            return;
+        }
+        SharingLogRow? row = _sharingLogRows.FirstOrDefault(r => r.SharingLogId == sharingLogId);
+        if (row is null)
+        {
+            return;
+        }
+
+        button.IsEnabled = false;
+        var provider = new SqlBoothSettingsProvider(_locationId);
+        try
+        {
+            var photoUrl = new Uri(row.PhotoUrl);
+            if (row.Method == "Email")
+            {
+                await new SmtpEmailDeliveryService(provider).SendPhotoLinkAsync(row.Destination, photoUrl);
+            }
+            else
+            {
+                await new TwilioSmsDeliveryService(provider).SendPhotoLinkAsync(row.Destination, photoUrl);
+            }
+            await _sharingLog.InsertAsync(row.SessionId, row.Method, row.Destination, row.PhotoUrl, "Sent", null);
+        }
+        catch (Exception ex)
+        {
+            await _sharingLog.InsertAsync(row.SessionId, row.Method, row.Destination, row.PhotoUrl, "Failed", ex.Message);
+        }
+        finally
+        {
+            await LoadSharingStatusAsync();
+        }
+    }
+
+    // ================================================================
+    // Export Event
+    // ================================================================
+
+    private void BrowseExportDestinationButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Choose an export destination" };
+        if (dialog.ShowDialog() == true)
+        {
+            ExportDestinationBox.Text = dialog.FolderName;
+        }
+    }
+
+    private async void ExportEventButton_Click(object sender, RoutedEventArgs e)
+    {
+        string destinationRoot = ExportDestinationBox.Text.Trim();
+        if (destinationRoot.Length == 0)
+        {
+            ExportEventStatusText.Text = "Choose a destination first.";
+            ExportEventStatusText.Foreground = Brushes.Firebrick;
+            return;
+        }
+
+        ExportEventButton.IsEnabled = false;
+        ExportEventStatusText.Text = "Exporting...";
+        ExportEventStatusText.Foreground = (Brush)FindResource("MutedBrush");
+        try
+        {
+            string exportFolder = System.IO.Path.Combine(destinationRoot, $"{SafeFileName(EventNameBox.Text)}-{DateTime.Now:yyyy-MM-dd_HHmmss}");
+            System.IO.Directory.CreateDirectory(exportFolder);
+
+            int fileCount = 0;
+            if (ExportPhotosCheckBox.IsChecked == true && System.IO.Directory.Exists(CapturesDirectory))
+            {
+                string mediaFolder = System.IO.Path.Combine(exportFolder, "Media");
+                System.IO.Directory.CreateDirectory(mediaFolder);
+                foreach (string filePath in System.IO.Directory.EnumerateFiles(CapturesDirectory))
+                {
+                    System.IO.File.Copy(filePath, System.IO.Path.Combine(mediaFolder, System.IO.Path.GetFileName(filePath)), overwrite: true);
+                    fileCount++;
+                }
+            }
+
+            if (ExportFeedbackCheckBox.IsChecked == true)
+            {
+                var feedback = await _repository.GetAllFeedbackAsync(_locationId);
+                WriteCsv(
+                    System.IO.Path.Combine(exportFolder, "Feedback.csv"),
+                    new[] { "SessionId", "Rating", "Comment", "RecordedAt" },
+                    feedback.Select(f => new[] { f.SessionId.ToString(), f.Rating?.ToString() ?? "", f.Comment ?? "", f.RecordedAt.ToString("o") }));
+                fileCount++;
+            }
+
+            if (ExportSessionLogCheckBox.IsChecked == true)
+            {
+                var sessions = await _repository.GetSessionLogAsync(_locationId);
+                WriteCsv(
+                    System.IO.Path.Combine(exportFolder, "Sessions.csv"),
+                    new[] { "SessionId", "Mode", "StartedAt", "EndedAt", "Status" },
+                    sessions.Select(s => new[] { s.SessionId.ToString(), s.Mode, s.StartedAt.ToString("o"), s.EndedAt?.ToString("o") ?? "", s.Status }));
+                fileCount++;
+            }
+
+            string resultPath = exportFolder;
+            if (ExportZipCheckBox.IsChecked == true)
+            {
+                string zipPath = exportFolder + ".zip";
+                if (System.IO.File.Exists(zipPath))
+                {
+                    System.IO.File.Delete(zipPath);
+                }
+                System.IO.Compression.ZipFile.CreateFromDirectory(exportFolder, zipPath);
+                System.IO.Directory.Delete(exportFolder, recursive: true);
+                resultPath = zipPath;
+            }
+
+            ExportEventStatusText.Text = $"Exported to {resultPath}.";
+        }
+        catch (Exception ex)
+        {
+            ExportEventStatusText.Text = $"Couldn't export: {ex.Message}";
+            ExportEventStatusText.Foreground = Brushes.Firebrick;
+        }
+        finally
+        {
+            ExportEventButton.IsEnabled = true;
+        }
+    }
+
+    private static void WriteCsv(string path, string[] headers, IEnumerable<string[]> rows)
+    {
+        using var writer = new System.IO.StreamWriter(path, append: false, System.Text.Encoding.UTF8);
+        writer.WriteLine(string.Join(",", headers.Select(CsvField)));
+        foreach (string[] row in rows)
+        {
+            writer.WriteLine(string.Join(",", row.Select(CsvField)));
+        }
+    }
+
+    private static string CsvField(string value)
+    {
+        if (value.IndexOfAny(new[] { ',', '"', '\n', '\r' }) < 0)
+        {
+            return value;
+        }
+        return $"\"{value.Replace("\"", "\"\"")}\"";
+    }
+
+    // ================================================================
+    // Event folder
+    // ================================================================
+
+    private void LoadEventFolder()
+    {
+        EventFolderPathText.Text = CapturesDirectory;
+        if (!System.IO.Directory.Exists(CapturesDirectory))
+        {
+            EventFolderStatsText.Text = "This folder doesn't exist yet -- it's created automatically the first time a guest photo is captured.";
+            return;
+        }
+
+        var files = System.IO.Directory.EnumerateFiles(CapturesDirectory).ToList();
+        long totalBytes = files.Sum(f => new System.IO.FileInfo(f).Length);
+        EventFolderStatsText.Text = $"{files.Count} file{(files.Count == 1 ? "" : "s")} -- {totalBytes / 1024.0 / 1024.0:0.0} MB";
+    }
+
+    private void OpenEventFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            System.IO.Directory.CreateDirectory(CapturesDirectory);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(CapturesDirectory) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Couldn't open the folder: {ex.Message}", "Focus & Snap -- admin", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    // ================================================================
+    // Remote Control
+    // ================================================================
+
+    private async void SaveRemoteControlSettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        bool enabled = RemoteControlEnabledCheckBox.IsChecked == true;
+        SaveRemoteControlSettingsButton.IsEnabled = false;
+        try
+        {
+            await _locations.UpdateRemoteControlEnabledAsync(_locationId, enabled);
+            RemoteControlStatusText.Text = enabled
+                ? "Saved -- the running kiosk starts listening the next time it returns to Idle."
+                : "Saved -- disabled.";
+            RemoteControlStatusText.Foreground = (Brush)FindResource("MutedBrush");
+        }
+        catch (Exception ex)
+        {
+            RemoteControlStatusText.Text = $"Couldn't save: {ex.Message}";
+            RemoteControlStatusText.Foreground = Brushes.Firebrick;
+        }
+        finally
+        {
+            SaveRemoteControlSettingsButton.IsEnabled = true;
+        }
+    }
+
+    // ================================================================
+    // Show Lock Screen
+    // ================================================================
+
+    private void UpdateLockScreenStatusText()
+    {
+        LockScreenStatusText.Text = _isLocked ? "Currently locked." : "Currently unlocked.";
+        LockScreenStatusText.Foreground = _isLocked ? Brushes.Firebrick : (Brush)FindResource("AccentBrush");
+    }
+
+    private async void LockNowButton_Click(object sender, RoutedEventArgs e) => await SetLockedAsync(true);
+
+    private async void UnlockButton_Click(object sender, RoutedEventArgs e) => await SetLockedAsync(false);
+
+    private async Task SetLockedAsync(bool locked)
+    {
+        LockNowButton.IsEnabled = false;
+        UnlockButton.IsEnabled = false;
+        try
+        {
+            await _locations.UpdateLockedAsync(_locationId, locked);
+            _isLocked = locked;
+            UpdateLockScreenStatusText();
+            // Applies immediately to a live kiosk session, if this dashboard
+            // was opened from one -- see KioskAdminViewModel.OnLockChanged.
+            // Null (opened standalone) just means there's no live session to
+            // notify; the DB value above is still the source of truth the
+            // next time any kiosk reads it.
+            _onLockChanged?.Invoke(locked);
+        }
+        catch (Exception ex)
+        {
+            LockScreenStatusText.Text = $"Couldn't save: {ex.Message}";
+            LockScreenStatusText.Foreground = Brushes.Firebrick;
+        }
+        finally
+        {
+            LockNowButton.IsEnabled = true;
+            UnlockButton.IsEnabled = true;
+        }
+    }
+
+    // ================================================================
+    // About / Help
+    // ================================================================
+
+    private static string AppVersionText()
+    {
+        Version? version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        return version is null ? "unknown" : $"{version.Major}.{version.Minor}.{version.Build}";
+    }
+
+    /// <summary>Walks up from this process's own build output to find
+    /// README.md next to Photobooth.sln -- same "dev layout: walk up to the
+    /// solution root" resolution BoothCompositionRoot.ResolveCameraBridgeHostPath
+    /// already uses for a different file next to the same marker.</summary>
+    private static string? ResolveReadmePath()
+    {
+        var dir = new System.IO.DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !System.IO.File.Exists(System.IO.Path.Combine(dir.FullName, "Photobooth.sln")))
+        {
+            dir = dir.Parent;
+        }
+        if (dir is null)
+        {
+            return null;
+        }
+        string readmePath = System.IO.Path.Combine(dir.FullName, "README.md");
+        return System.IO.File.Exists(readmePath) ? readmePath : null;
+    }
+
+    private void OpenReadmeButton_Click(object sender, RoutedEventArgs e)
+    {
+        string? readmePath = ResolveReadmePath();
+        if (readmePath is null)
+        {
+            MessageBox.Show("Couldn't find README.md next to Photobooth.sln.", "Focus & Snap -- admin", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(readmePath) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Couldn't open README.md: {ex.Message}", "Focus & Snap -- admin", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    /// <summary>Strips characters Windows doesn't allow in a file/folder name
+    /// -- used for both Export Event's destination folder name and its
+    /// default suggestion (see LoadAsync), both derived from the admin-typed
+    /// event/brand name.</summary>
+    private static string SafeFileName(string name)
+    {
+        string result = name;
+        foreach (char invalid in System.IO.Path.GetInvalidFileNameChars())
+        {
+            result = result.Replace(invalid, '_');
+        }
+        return result.Trim().Length == 0 ? "Event" : result.Trim();
     }
 }

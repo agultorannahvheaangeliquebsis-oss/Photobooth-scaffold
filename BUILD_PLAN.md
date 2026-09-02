@@ -81,9 +81,11 @@ clip pool (rows have to be inserted directly).
 file:** Glam Booth mode (`GlamFilterEnabled`, `GdiPhotoFilterService`) and
 per-event theme/screen customization (`BoothTheme`, `ScreenSettings`) are
 both actually done — that section still marks them `[ ]` because it was
-written before the dslrBooth-parity pass built them. Its checkboxes for
-green screen, 360°, hashtag printing, live camera parameter control, and
-remote booth control are still accurate — none of those exist.
+written before the dslrBooth-parity pass built them. Green screen (Days
+4–5, further below) and a scoped-down remote booth control (Day 8, further
+below) are also both actually done now — that section is stale on those
+too. 360°, hashtag printing, and live camera parameter control remain
+accurate — none of those exist.
 
 ### Hardware testing status — D3500 deferred indefinitely (updated 2026-08-31)
 
@@ -505,6 +507,85 @@ listener), rather than inventing a new transport.
 - Update this file's status summary and README to match reality, and fix
   any other stale checkboxes the way this section fixed the Glam Booth
   Mode one.
+
+### Day 8 — Admin Dashboard stub sections built out — done 2026-09-02
+
+`AdminWindow`'s ten menu-only entries (Slideshow, Sharing Status, Export
+Event, Event folder, Remote Control, Show Lock Screen, Language,
+Subscription, About, Help) were literal placeholders ("Not available in
+this build yet.") with no backing functionality at all. Proposed as a dark-
+theme mockup canvas first (static, matching `AdminWindow.xaml`'s existing
+palette/controls exactly) so the scope and honesty-per-section calls below
+were agreed before any XAML got written, then built out for real, scoped
+per section to what's actually true rather than uniformly gold-plated:
+
+- **Real, full features (new schema + service):** Slideshow (`SlideshowWindow`,
+  a real full-screen crossfade over this event's actual captured photos, own
+  settings on `Location`); Sharing Status (new `SharingLog` table/repository,
+  wired into `KioskViewModel.SendEmailAsync`/`SendSmsAsync` so every guest
+  email/SMS attempt is actually recorded, with a working Retry that re-sends
+  through the real `SmtpEmailDeliveryService`/`TwilioSmsDeliveryService`);
+  Export Event (real file copy of the captures folder + real Feedback/Session
+  CSV export via two new `AdminDashboardRepository` queries, optional real
+  zip via `System.IO.Compression.ZipFile`); Event folder (real directory
+  scan/open, resolved to the camera bridge host's *actual* working directory,
+  not this process's own -- see `BoothCompositionRoot.ResolveCapturesDirectory`'s
+  doc comment for why those differ); Show Lock Screen (`Location.IsLocked`,
+  gates `KioskViewModel.CanStartSession`, applied live to a running kiosk via
+  a new `KioskAdminViewModel.OnLockChanged` callback -- same delegate pattern
+  `OpenFullSettings` already established -- and persisted so it survives past
+  the current session).
+- **Real, deliberately scoped down (said so in the UI, not silently faked):**
+  Remote Control -- built the actual scoped-down feature Day 6 above called
+  for and never shipped: `RemoteControlServer`, a loopback-only `HttpListener`
+  (`GET /status`, `POST /start-next`) an attendant's browser can hit, wired to
+  `KioskViewModel`'s real state and `StartSessionCommand`. Slideshow's
+  Slide/Ken Burns transitions and QR overlay toggle save but aren't rendered
+  yet (only Fade actually crossfades); Show Lock Screen's auto-lock-after-
+  inactivity toggle saves but isn't wired to a real timer yet -- both flagged
+  directly in `AdminWindow`'s own UI text, same "toggle is saved but not yet
+  applied" honesty precedent `ConfigureBeautyFilterButton_Click` already set.
+- **Real, informational only (no backing service needed):** About (real
+  assembly version + real location/mode, not placeholder text -- also
+  caught and fixed a leftover: the placeholder's title was literally "About
+  dslrBooth", copied verbatim from dslrBooth's own menu; renamed to "About
+  Focus & Snap" everywhere it appeared); Help (static FAQ + a real "Open
+  README" action that resolves README.md next to `Photobooth.sln`);
+  Language (honestly English-only, no translation infrastructure exists,
+  said so in the UI rather than pretending a picker does something);
+  Subscription (this is an owned, not sold/hosted, copy -- an informational
+  card instead of fabricating a billing screen with nothing behind it).
+- New migration `Script0019_AdminSectionsColumnsAndTable.sql` (idempotent,
+  same `IF NOT EXISTS` guard style as Script0017/0018) plus the matching
+  `schema.sql` update for a fresh install -- `Location.IsLocked`/
+  `RemoteControlEnabled`/five `Slideshow*` columns, new `SharingLog` table.
+  `BoothSettings` gained `IsLocked`/`RemoteControlEnabled`/`Slideshow` as
+  init properties (not positional parameters), same reasoning every other
+  settings group on that record already established for not breaking
+  existing `new BoothSettings(...)` call sites.
+- `BoothStateMachine` gained `LastSessionId` (set the moment a session's
+  `Session` row is created, same pattern `LastPhotoUrl`/`LastConsent`
+  already use) so `KioskViewModel` can tie a `SharingLog` row back to the
+  session it happened in without tracking its own separate copy of the id.
+- Verified via `dotnet build`: clean, 0 warnings, 0 errors, across every
+  project. Verified via `dotnet test`: **223 passed, 0 failed** (179 in
+  `Photobooth.Tests`, unaffected by this session's changes; 44 in
+  `Photobooth.UI.Tests`, up from 40 -- +4 new `RemoteControlServerTests`
+  exercising the real loopback listener end to end: `/status` returns the
+  injected state, `/start-next` returns 200/`{"ok":true}` when the callback
+  succeeds and 409/`{"ok":false}` when it reports the booth can't start,
+  an unknown path 404s).
+- **Not yet verified: any of this actually running in the app.** Same
+  no-interactive-desktop wall this file has hit everywhere else --
+  `AdminWindow`'s ten new sections have never been opened and clicked
+  through, `SlideshowWindow` has never been shown against a real captures
+  folder, the `SharingLog` write path has never run against a real guest
+  send (needs a live session, same gap Sharing Settings' own SMTP/Twilio
+  test-send buttons already have), the migration has never run against a
+  real LocalDB instance, and `RemoteControlServer` has only been hit by its
+  own unit tests, never by an actual second device on the same network.
+  Worth a real pass once there's an interactive desktop to drive it from,
+  same as every other UI-facing gap already logged in this file.
 
 ## Done
 

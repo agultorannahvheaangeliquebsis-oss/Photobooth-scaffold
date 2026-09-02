@@ -41,6 +41,13 @@ public class BoothStateMachine
 
     public Uri? LastPhotoUrl { get; private set; }
 
+    /// <summary>The current/most recent session's own Session row id -- set as
+    /// soon as it's created, well before LastPhotoUrl. Lets a caller (e.g.
+    /// KioskViewModel logging a guest's email/SMS share attempt) tie a
+    /// SharingLog row back to the session it happened in without needing its
+    /// own separate tracking of the same id.</summary>
+    public int? LastSessionId { get; private set; }
+
     /// <summary>QR code the guest scans to pay, set right before the Payment state shows. Null for a gateway with nothing to scan (e.g. a card reader). Only meaningful in vendo mode.</summary>
     public byte[]? PaymentQrPng { get; private set; }
 
@@ -188,6 +195,7 @@ public class BoothStateMachine
             BoothSettings settings = await _services.Settings.GetSettingsAsync(ct);
 
             sessionId = await _services.Sessions.CreateAsync(_mode, ct);
+            LastSessionId = sessionId;
 
             SetState(BoothState.Consent);
             ConsentResult consent = await WithGuestIdleTimeoutAsync(
@@ -322,25 +330,43 @@ public class BoothStateMachine
                     if (settings.Effects.FiltersEnabled)
                     {
                         List<PhotoFilterPreset> enabledPresets = PhotoFilterPresets.Parse(settings.Effects.EnabledFilterPresetIds);
-                        if (enabledPresets.Count > 0)
+                        IReadOnlyList<CustomFilterOption> customFilters = await _services.CustomFilterLibrary.GetActiveCustomFiltersAsync(ct);
+                        if (enabledPresets.Count > 0 || customFilters.Count > 0)
                         {
                             if (settings.Effects.FiltersMode == "Auto")
                             {
                                 // Silent -- no guest interaction, no FilterPicker state.
-                                LastCapturedImagePath = await _services.FilterPreset.ApplyPresetAsync(LastCapturedImagePath, enabledPresets[0], ct);
+                                // Built-in presets take priority over custom LUTs when
+                                // both exist -- there's no single ordering that spans a
+                                // fixed enum and an admin-orderable custom list, so this
+                                // is just the simplest deterministic choice.
+                                if (enabledPresets.Count > 0)
+                                {
+                                    LastCapturedImagePath = await _services.FilterPreset.ApplyPresetAsync(LastCapturedImagePath, enabledPresets[0], ct);
+                                }
+                                else
+                                {
+                                    LastCapturedImagePath = await _services.CustomFilter.ApplyCustomFilterAsync(LastCapturedImagePath, customFilters[0].CubeFilePath, ct);
+                                }
                             }
                             else
                             {
-                                // Ask: render every enabled preset against the actual
-                                // capture up front -- each candidate is a real,
-                                // fully-rendered result (not a generic stock
-                                // thumbnail), so whichever one the guest taps is
-                                // already the final file, no second apply pass needed.
+                                // Ask: render every enabled preset and every active
+                                // custom LUT against the actual capture up front --
+                                // each candidate is a real, fully-rendered result (not
+                                // a generic stock thumbnail), so whichever one the
+                                // guest taps is already the final file, no second
+                                // apply pass needed.
                                 var filterOptions = new List<FilterOption>();
                                 foreach (PhotoFilterPreset preset in enabledPresets)
                                 {
                                     string previewPath = await _services.FilterPreset.ApplyPresetAsync(LastCapturedImagePath, preset, ct);
                                     filterOptions.Add(new FilterOption(preset, PhotoFilterPresets.DisplayName(preset), previewPath));
+                                }
+                                foreach (CustomFilterOption customFilter in customFilters)
+                                {
+                                    string previewPath = await _services.CustomFilter.ApplyCustomFilterAsync(LastCapturedImagePath, customFilter.CubeFilePath, ct);
+                                    filterOptions.Add(new FilterOption(null, customFilter.Name, previewPath, customFilter.CustomFilterId));
                                 }
 
                                 SetState(BoothState.FilterPicker);

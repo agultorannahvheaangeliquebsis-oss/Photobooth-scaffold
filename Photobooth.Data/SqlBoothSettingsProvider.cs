@@ -39,7 +39,11 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
                    EmailEnabled, SmsEnabled, QrEnabled,
                    AttendantEnabled, AttendantStyle, AttendantRandomizeConsent, AttendantRandomizeCountdown,
                    AttendantRandomizeCapturing, AttendantRandomizeReviewing, AttendantRandomizePrinting, AttendantRandomizeComplete,
-                   PoseStripPosition
+                   PoseStripPosition,
+                   EmailFromAddress, EmailSubject, EmailSmtpHost, EmailSmtpPort, EmailSmtpUsername, EmailUseSsl,
+                   EmailSmtpPasswordProtected, TwilioAccountSid, TwilioFromNumber, TwilioAuthTokenProtected,
+                   IsLocked, RemoteControlEnabled,
+                   SlideshowEnabled, SlideshowIntervalSeconds, SlideshowTransition, SlideshowShowLogoOverlay, SlideshowShowQrOverlay
             FROM Location WHERE LocationId = @LocationId;
             """,
             connection);
@@ -59,6 +63,9 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
         var printOptions = default(PrintOptions)!;
         var sharing = default(SharingSettings)!;
         var virtualAttendant = default(VirtualAttendantSettings)!;
+        bool isLocked;
+        bool remoteControlEnabled;
+        var slideshow = default(SlideshowSettings)!;
         using (var reader = await command.ExecuteReaderAsync(ct))
         {
             if (!await reader.ReadAsync(ct))
@@ -96,10 +103,26 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
             survey = new SurveySettings(reader.GetBoolean(36));
             disclaimer = new DisclaimerSettings(reader.GetString(37), reader.GetString(38));
             printOptions = new PrintOptions(reader.GetBoolean(39), reader.GetBoolean(40), reader.GetInt32(41), reader.GetInt32(42), reader.GetString(43));
-            sharing = new SharingSettings(reader.GetBoolean(44), reader.GetBoolean(45), reader.GetBoolean(46));
+            sharing = new SharingSettings(reader.GetBoolean(44), reader.GetBoolean(45), reader.GetBoolean(46))
+            {
+                EmailFromAddress = reader.GetString(56),
+                EmailSubject = reader.GetString(57),
+                EmailSmtpHost = reader.GetString(58),
+                EmailSmtpPort = reader.GetInt32(59),
+                EmailSmtpUsername = reader.GetString(60),
+                EmailUseSsl = reader.GetBoolean(61),
+                EmailSmtpPasswordProtected = reader.GetString(62),
+                TwilioAccountSid = reader.GetString(63),
+                TwilioFromNumber = reader.GetString(64),
+                TwilioAuthTokenProtected = reader.GetString(65),
+            };
             virtualAttendant = new VirtualAttendantSettings(
                 reader.GetBoolean(47), reader.GetString(48), reader.GetBoolean(49), reader.GetBoolean(50),
                 reader.GetBoolean(51), reader.GetBoolean(52), reader.GetBoolean(53), reader.GetBoolean(54));
+            isLocked = reader.GetBoolean(66);
+            remoteControlEnabled = reader.GetBoolean(67);
+            slideshow = new SlideshowSettings(
+                reader.GetBoolean(68), reader.GetInt32(69), reader.GetString(70), reader.GetBoolean(71), reader.GetBoolean(72));
         }
 
         // A separate connection (not this method's `connection` above), so
@@ -122,6 +145,9 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
             PrintOptions = printOptions,
             Sharing = sharing,
             VirtualAttendant = virtualAttendant,
+            IsLocked = isLocked,
+            RemoteControlEnabled = remoteControlEnabled,
+            Slideshow = slideshow,
         };
     }
 }

@@ -92,6 +92,11 @@ public static class BoothCompositionRoot
         Process? cameraBridgeProcess = EnsureCameraBridgeRunning(target.Screen.EnableWebcams);
 
         var sessionRepository = new SqlSessionRepository(seedIds.LocationId, seedIds.PrinterId);
+        // Shared by Settings below and the two real delivery services --
+        // Email/Sms need it to read SharingSettings' SMTP/Twilio config
+        // fresh on every send (see SmtpEmailDeliveryService/
+        // TwilioSmsDeliveryService's own doc comments), not just once here.
+        var settingsProvider = new SqlBoothSettingsProvider(seedIds.LocationId);
         var services = new BoothServices(
             Camera: new PtpCameraService(),
             Printer: new SpoolerPrinterService(),
@@ -100,10 +105,10 @@ public static class BoothCompositionRoot
             Payment: new MockQrPaymentService(),
             UploadQueue: new FileSystemPendingUploadQueue(),
             Consent: new MockConsentService(),
-            Email: new MockEmailDeliveryService(),
+            Email: new SmtpEmailDeliveryService(settingsProvider),
             Branding: new GdiPhotoBrandingService(),
             Filter: new GdiPhotoFilterService(),
-            Settings: new SqlBoothSettingsProvider(seedIds.LocationId),
+            Settings: settingsProvider,
             FrameLibrary: new SqlFrameLibraryService(seedIds.LocationId),
             FrameSelection: frameSelection,
             FrameOverlay: new GdiFrameOverlayService(),
@@ -115,11 +120,13 @@ public static class BoothCompositionRoot
             AttendantCue: new SqlVirtualAttendantService(seedIds.LocationId),
             Survey: survey)
         {
-            Sms = new MockSmsDeliveryService(),
+            Sms = new TwilioSmsDeliveryService(settingsProvider),
             GreenScreen = new GdiGreenScreenService(),
             PostProcessing = new ProcessPostProcessingService(),
             FilterPreset = new GdiFilterPresetService(),
             FilterSelection = filterSelection,
+            CustomFilterLibrary = new SqlCustomFilterLibraryService(seedIds.LocationId),
+            CustomFilter = new GdiCubeLutFilterService(),
         };
 
         return new RealBooth(
@@ -234,6 +241,28 @@ public static class BoothCompositionRoot
         }
 
         return process;
+    }
+
+    /// <summary>Where this event's captured photos/GIFs/videos actually live
+    /// on disk (see AdminWindow's Event folder/Export Event/Slideshow
+    /// sections) -- the camera bridge host writes into a "captures" folder
+    /// relative to *its own* working directory (see Program.cs's HandleCapture,
+    /// `Directory.CreateDirectory("captures")`), which is a different process
+    /// with a different working directory than Photobooth.UI's own (see
+    /// EnsureCameraBridgeRunning's WorkingDirectory), so "AppContext.BaseDirectory
+    /// of this process" would be the wrong folder for a real capture. Reuses
+    /// the exact same resolution ResolveCameraBridgeHostPath already uses to
+    /// find that process's own directory. Falls back to a "captures" folder
+    /// relative to this process's own current directory when the bridge
+    /// host's location can't be resolved -- the same relative convention
+    /// MockCameraService itself uses when running in-process against mocks
+    /// (no separate bridge process to have its own working directory at all).</summary>
+    public static string ResolveCapturesDirectory()
+    {
+        string? bridgeExePath = ResolveCameraBridgeHostPath();
+        string? bridgeDirectory = bridgeExePath is not null ? System.IO.Path.GetDirectoryName(bridgeExePath) : null;
+        string baseDirectory = bridgeDirectory ?? Environment.CurrentDirectory;
+        return System.IO.Path.GetFullPath(System.IO.Path.Combine(baseDirectory, "captures"));
     }
 
     private static string? ResolveCameraBridgeHostPath()

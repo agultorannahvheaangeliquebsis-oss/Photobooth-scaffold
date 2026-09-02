@@ -63,4 +63,15 @@ public record BoothServices(
     /// <summary>Collects the guest's filter pick during FilterPicker -- an init
     /// property here for the same reason Sms/GreenScreen/PostProcessing are.</summary>
     public IFilterSelectionService FilterSelection { get; init; } = new MockFilterSelectionService();
+
+    /// <summary>Reads the admin's uploaded custom .CUBE LUT filters (see
+    /// FilterLibraryWindow's "Add Custom Filter" tile) -- an init property here
+    /// for the same reason Sms/GreenScreen/PostProcessing are.</summary>
+    public ICustomFilterLibraryService CustomFilterLibrary { get; init; } = new MockCustomFilterLibraryService();
+
+    /// <summary>Applies a custom LUT's color grade (see BoothStateMachine's
+    /// FilterPicker step) -- the CustomFilter/CustomFilterLibrary split mirrors
+    /// FilterPreset/FilterSelection's own "apply the effect" vs "know what's
+    /// offered" split.</summary>
+    public ICustomFilterService CustomFilter { get; init; } = new MockCustomFilterService();
 }
