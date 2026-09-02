@@ -48,6 +48,7 @@ public class LocationRepository
                    EmailEnabled, SmsEnabled, QrEnabled,
                    AttendantEnabled, AttendantStyle, AttendantRandomizeConsent, AttendantRandomizeCountdown,
                    AttendantRandomizeCapturing, AttendantRandomizeReviewing, AttendantRandomizePrinting, AttendantRandomizeComplete,
+                   PoseStripPosition,
                    CreatedAt
             FROM Location ORDER BY LocationId;
             """,
@@ -79,7 +80,8 @@ public class LocationRepository
                 new CaptureSettings(reader.GetString(16), reader.GetBoolean(17), reader.GetInt32(18), reader.GetInt32(19), reader.GetInt32(20)),
                 new ScreenSettings(
                     reader.GetBoolean(21), reader.GetBoolean(22), reader.GetBoolean(23), reader.GetInt32(24),
-                    reader.GetBoolean(25), reader.GetInt32(26), reader.IsDBNull(27) ? null : reader.GetString(27)),
+                    reader.GetBoolean(25), reader.GetInt32(26), reader.IsDBNull(27) ? null : reader.GetString(27),
+                    reader.GetString(59)),
                 new EffectsSettings(
                     reader.GetBoolean(28), reader.GetString(29), reader.IsDBNull(30) ? null : reader.GetString(30),
                     reader.GetBoolean(31), reader.GetBoolean(32), reader.GetBoolean(34),
@@ -95,7 +97,7 @@ public class LocationRepository
                 new VirtualAttendantSettings(
                     reader.GetBoolean(51), reader.GetString(52), reader.GetBoolean(53), reader.GetBoolean(54),
                     reader.GetBoolean(55), reader.GetBoolean(56), reader.GetBoolean(57), reader.GetBoolean(58)),
-                reader.GetDateTime(59)));
+                reader.GetDateTime(60)));
         }
         return results;
     }
@@ -168,7 +170,7 @@ public class LocationRepository
                 BoothIconsEnabled = @BoothIconsEnabled, ShowLiveView = @ShowLiveView,
                 MirrorLiveView = @MirrorLiveView, LiveViewRotation = @LiveViewRotation,
                 EnableWebcams = @EnableWebcams, WebcamResolutionQuality = @WebcamResolutionQuality,
-                AudioInputDeviceName = @AudioInputDeviceName
+                AudioInputDeviceName = @AudioInputDeviceName, PoseStripPosition = @PoseStripPosition
             WHERE LocationId = @LocationId;
             """,
             connection);
@@ -179,6 +181,7 @@ public class LocationRepository
         command.Parameters.AddWithValue("@EnableWebcams", screen.EnableWebcams);
         command.Parameters.AddWithValue("@WebcamResolutionQuality", screen.WebcamResolutionQuality);
         command.Parameters.AddWithValue("@AudioInputDeviceName", (object?)screen.AudioInputDeviceName ?? DBNull.Value);
+        command.Parameters.AddWithValue("@PoseStripPosition", screen.PoseStripPosition);
         command.Parameters.AddWithValue("@LocationId", locationId);
         await command.ExecuteNonQueryAsync(ct);
     }
@@ -260,7 +263,7 @@ public class LocationRepository
                 BoothIconsEnabled = @BoothIconsEnabled, ShowLiveView = @ShowLiveView,
                 MirrorLiveView = @MirrorLiveView, LiveViewRotation = @LiveViewRotation,
                 EnableWebcams = @EnableWebcams, WebcamResolutionQuality = @WebcamResolutionQuality,
-                AudioInputDeviceName = @AudioInputDeviceName,
+                AudioInputDeviceName = @AudioInputDeviceName, PoseStripPosition = @PoseStripPosition,
                 BeautyFilterEnabled = @BeautyFilterEnabled, BeautyFilterAlsoDuringCountdown = @BeautyFilterAlsoDuringCountdown,
                 FiltersMode = @FiltersMode, FiltersEnabled = @FiltersEnabled, EnabledFilterPresetIds = @EnabledFilterPresetIds,
                 PostProcessingEnabled = @PostProcessingEnabled, PostProcessingApplicationPath = @PostProcessingApplicationPath,
@@ -287,6 +290,7 @@ public class LocationRepository
         command.Parameters.AddWithValue("@EnableWebcams", screen.EnableWebcams);
         command.Parameters.AddWithValue("@WebcamResolutionQuality", screen.WebcamResolutionQuality);
         command.Parameters.AddWithValue("@AudioInputDeviceName", (object?)screen.AudioInputDeviceName ?? DBNull.Value);
+        command.Parameters.AddWithValue("@PoseStripPosition", screen.PoseStripPosition);
         command.Parameters.AddWithValue("@BeautyFilterEnabled", effects.BeautyFilterEnabled);
         command.Parameters.AddWithValue("@BeautyFilterAlsoDuringCountdown", effects.BeautyFilterAlsoDuringCountdown);
         command.Parameters.AddWithValue("@FiltersMode", effects.FiltersMode);

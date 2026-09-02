@@ -4,19 +4,29 @@
         Title="Edit Screen Layout"
         Background="{DynamicResource CanvasBrush}"
         WindowStartupLocation="CenterOwner"
-        Width="900"
-        Height="640">
+        Width="1040"
+        Height="660"
+        MinWidth="920"
+        MinHeight="600">
     <Window.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="Themes/DarkPalette.xaml" />
             </ResourceDictionary.MergedDictionaries>
 
+            <!-- DarkPalette.xaml only carries the 5 shared tokens (Canvas/Ink/
+                 Muted/Accent/Line); FieldBrush/OnAccentBrush are this window's
+                 own, same values AdminWindow already established so inputs and
+                 accent-text read identically across both windows. -->
+            <SolidColorBrush x:Key="FieldBrush" Color="#1F2023" />
+            <SolidColorBrush x:Key="OnAccentBrush" Color="#0B0C0D" />
+            <SolidColorBrush x:Key="DangerBrush" Color="#E5484D" />
+
             <Style x:Key="EditorSectionHeader" TargetType="TextBlock">
                 <Setter Property="FontFamily" Value="Segoe UI" />
-                <Setter Property="FontSize" Value="14" />
-                <Setter Property="FontWeight" Value="SemiBold" />
-                <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+                <Setter Property="FontSize" Value="12.5" />
+                <Setter Property="FontWeight" Value="Bold" />
+                <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
                 <Setter Property="Margin" Value="0,16,0,6" />
             </Style>
             <Style x:Key="EditorLabel" TargetType="TextBlock">
@@ -25,39 +35,528 @@
                 <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
                 <Setter Property="Margin" Value="0,4,0,2" />
             </Style>
+
+            <!-- ===================== Icon geometries ===================== -->
+            <!-- Small line-icon set for the tool rail, alignment grid, tab
+                 headers and the new pose-thumbnail dock picker, since this window
+                 had no icons at all before, everything was text buttons. -->
+            <Geometry x:Key="IconTextTool">M5,5 L19,5 M12,5 L12,19</Geometry>
+            <GeometryGroup x:Key="IconImageTool">
+                <RectangleGeometry Rect="3.5,4.5,17,15" />
+                <PathGeometry Figures="M4,17 L9.5,11.5 L14,16 L16.5,13.5 L20,17" />
+                <EllipseGeometry Center="9,10" RadiusX="1.6" RadiusY="1.6" />
+            </GeometryGroup>
+            <RectangleGeometry x:Key="IconShapeTool" Rect="4,4,16,16" RadiusX="3" RadiusY="3" />
+
+            <Geometry x:Key="IconAlignLeft">M4,6 L20,6 M4,12 L14,12 M4,18 L17,18</Geometry>
+            <Geometry x:Key="IconAlignCenterH">M4,6 L20,6 M7,12 L17,12 M5.5,18 L18.5,18</Geometry>
+            <Geometry x:Key="IconAlignRight">M4,6 L20,6 M10,12 L20,12 M7,18 L20,18</Geometry>
+            <Geometry x:Key="IconAlignTop">M6,4 L18,4 M8,8 L16,8 M9,12 L15,12</Geometry>
+            <Geometry x:Key="IconAlignCenterV">M4,12 L20,12 M8,8 L16,8 M9,16 L15,16</Geometry>
+            <Geometry x:Key="IconAlignBottom">M6,20 L18,20 M8,16 L16,16 M9,12 L15,12</Geometry>
+
+            <GeometryGroup x:Key="IconTrash">
+                <PathGeometry Figures="M5,7 L19,7" />
+                <PathGeometry Figures="M9,7 L9,5.5 A1.5,1.5 0 0 1 10.5,4 L13.5,4 A1.5,1.5 0 0 1 15,5.5 L15,7" />
+                <PathGeometry Figures="M7,7 L8,19.2 A1.8,1.8 0 0 0 9.8,21 L14.2,21 A1.8,1.8 0 0 0 16,19.2 L17,7" />
+            </GeometryGroup>
+
+            <!-- Pose-thumbnail dock icons: one shared outer frame (stroked)
+                 plus a per-direction inner band (filled), composited as two
+                 Paths at each usage site since a single Geometry can't mix a
+                 stroke-only and a fill-only pass. -->
+            <RectangleGeometry x:Key="IconFrameRect" Rect="4,4,16,16" RadiusX="2.5" RadiusY="2.5" />
+            <RectangleGeometry x:Key="IconDockBandTop" Rect="4,4,16,5" />
+            <RectangleGeometry x:Key="IconDockBandBottom" Rect="4,15,16,5" />
+            <RectangleGeometry x:Key="IconDockBandLeft" Rect="4,4,5,16" />
+            <RectangleGeometry x:Key="IconDockBandRight" Rect="15,4,5,16" />
+
+            <Geometry x:Key="IconWelcome">M4,11 L12,5 L20,11 M6,10 L6,19 L11,19 L11,14 L13,14 L13,19 L18,19 L18,10</Geometry>
+            <GeometryGroup x:Key="IconCapture">
+                <PathGeometry Figures="M4,8.5 L7,8.5 L8.3,6.5 L15.7,6.5 L17,8.5 L20,8.5 L20,19 L4,19 Z" />
+                <EllipseGeometry Center="12,13.5" RadiusX="3.4" RadiusY="3.4" />
+            </GeometryGroup>
+            <GeometryGroup x:Key="IconSharing">
+                <EllipseGeometry Center="6,12" RadiusX="2.4" RadiusY="2.4" />
+                <EllipseGeometry Center="18,6" RadiusX="2.4" RadiusY="2.4" />
+                <EllipseGeometry Center="18,18" RadiusX="2.4" RadiusY="2.4" />
+                <PathGeometry Figures="M8.2,10.8 L15.8,7 M8.2,13.2 L15.8,17" />
+            </GeometryGroup>
+
+            <!-- ===================== Buttons ===================== -->
+            <!-- Neutral field-colored pill: the implicit (unkeyed) style, so
+                 Cancel/Browse/etc. pick it up with no per-button Style
+                 reference needed. -->
+            <Style TargetType="Button">
+                <Setter Property="Background" Value="{StaticResource FieldBrush}" />
+                <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="FontSize" Value="12.5" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="17">
+                                <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="Bd" Property="Opacity" Value="0.45" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Solid accent pill, for the one primary action (Save). -->
+            <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+                <Setter Property="Foreground" Value="{StaticResource OnAccentBrush}" />
+                <Setter Property="BorderThickness" Value="0" />
+            </Style>
+
+            <!-- Danger-tinted ghost button, for Delete selected. -->
+            <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+                <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+            </Style>
+
+            <!-- Icon-only rail button (Text/Image/Shape): transparent until
+                 hovered, ToolTip carries the label since there's no room for
+                 text next to the icon. -->
+            <Style x:Key="IconRailButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                <Setter Property="Width" Value="44" />
+                <Setter Property="Height" Value="44" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="10">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource FieldBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Small icon-only action button, for the alignment grid. -->
+            <Style x:Key="IconActionButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                <Setter Property="Height" Value="30" />
+                <Setter Property="Background" Value="{StaticResource FieldBrush}" />
+            </Style>
+
+            <!-- ===================== Inputs ===================== -->
+            <Style TargetType="TextBox">
+                <Setter Property="Background" Value="{StaticResource FieldBrush}" />
+                <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+                <Setter Property="CaretBrush" Value="{StaticResource InkBrush}" />
+                <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Padding" Value="8,6" />
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="TextBox">
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
+                                <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsFocused" Value="True">
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Toggle-switch CheckBox (On/Off pill), for the real Welcome/
+                 Capture screen-chrome toggles, implicit so BoothIconsEnabled/
+                 ShowLiveView/MirrorLiveView pick it up automatically. -->
+            <Style TargetType="CheckBox">
+                <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="CheckBox">
+                            <StackPanel Orientation="Horizontal">
+                                <Border x:Name="Track" Width="38" Height="21" CornerRadius="11"
+                                        Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+                                    <Border x:Name="Thumb" Width="15" Height="15" CornerRadius="8"
+                                            Background="{StaticResource MutedBrush}" HorizontalAlignment="Left" Margin="2,0,0,0" />
+                                </Border>
+                                <ContentPresenter Margin="10,0,0,0" VerticalAlignment="Center" TextElement.Foreground="{TemplateBinding Foreground}" />
+                            </StackPanel>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter TargetName="Track" Property="Background" Value="{StaticResource AccentBrush}" />
+                                    <Setter TargetName="Track" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                    <Setter TargetName="Thumb" Property="Background" Value="{StaticResource OnAccentBrush}" />
+                                    <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right" />
+                                    <Setter TargetName="Thumb" Property="Margin" Value="0,0,2,0" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Icon-toggle variant, for Bold (a real on/off text property,
+                 just not a "chrome enabled" switch, so a small pressed-look
+                 pill reads better than the track-and-thumb switch above). -->
+            <Style x:Key="IconToggleCheckBox" TargetType="CheckBox">
+                <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="CheckBox">
+                            <Border x:Name="Bd" Width="34" Height="30" CornerRadius="6"
+                                    Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" TextElement.Foreground="{TemplateBinding Foreground}" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentBrush}" />
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                    <Setter Property="Foreground" Value="{StaticResource OnAccentBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Segmented pill chip RadioButton, used for both Live view
+                 rotation (text content) and the new Pose thumbnails dock
+                 picker (icon content); same chip AdminWindow's mode/layout
+                 pickers already use. -->
+            <Style TargetType="RadioButton">
+                <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="FontSize" Value="12.5" />
+                <Setter Property="Padding" Value="10,6" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="RadioButton">
+                            <Border x:Name="Bd" CornerRadius="14" Padding="{TemplateBinding Padding}"
+                                    Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" TextElement.Foreground="{TemplateBinding Foreground}" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentBrush}" />
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                    <Setter Property="Foreground" Value="{StaticResource OnAccentBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Flat accent-thumb Slider (Font size). -->
+            <Style TargetType="Slider">
+                <Setter Property="Height" Value="24" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Slider">
+                            <Grid VerticalAlignment="Center">
+                                <Border Height="4" Background="{StaticResource LineBrush}" CornerRadius="2" VerticalAlignment="Center" />
+                                <Track x:Name="PART_Track">
+                                    <Track.DecreaseRepeatButton>
+                                        <RepeatButton Command="Slider.DecreaseLarge" Background="Transparent" BorderThickness="0">
+                                            <RepeatButton.Template>
+                                                <ControlTemplate TargetType="RepeatButton">
+                                                    <Border Height="4" Background="{StaticResource AccentBrush}" CornerRadius="2" VerticalAlignment="Center" />
+                                                </ControlTemplate>
+                                            </RepeatButton.Template>
+                                        </RepeatButton>
+                                    </Track.DecreaseRepeatButton>
+                                    <Track.IncreaseRepeatButton>
+                                        <RepeatButton Command="Slider.IncreaseLarge" Background="Transparent" BorderThickness="0" Opacity="0" />
+                                    </Track.IncreaseRepeatButton>
+                                    <Track.Thumb>
+                                        <Thumb Width="16" Height="16">
+                                            <Thumb.Template>
+                                                <ControlTemplate TargetType="Thumb">
+                                                    <Ellipse Fill="{StaticResource AccentBrush}" />
+                                                </ControlTemplate>
+                                            </Thumb.Template>
+                                        </Thumb>
+                                    </Track.Thumb>
+                                </Track>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- ===================== Layers list ===================== -->
+            <Style TargetType="ListBox">
+                <Setter Property="Background" Value="{StaticResource FieldBrush}" />
+                <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Padding" Value="4" />
+            </Style>
+            <Style TargetType="ListBoxItem">
+                <Setter Property="Padding" Value="6,6" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ListBoxItem">
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentBrush}" />
+                                </Trigger>
+                                <MultiTrigger>
+                                    <MultiTrigger.Conditions>
+                                        <Condition Property="IsMouseOver" Value="True" />
+                                        <Condition Property="IsSelected" Value="False" />
+                                    </MultiTrigger.Conditions>
+                                    <Setter TargetName="Bd" Property="Background" Value="#282A2D" />
+                                </MultiTrigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- One row per element: a small type-icon chip (its own color
+                 doesn't need to flip on selection since the row background
+                 already carries that) plus the element's display name. -->
+            <DataTemplate x:Key="LayerRowTemplate">
+                <StackPanel Orientation="Horizontal">
+                    <Border Width="22" Height="22" CornerRadius="6" Background="{StaticResource CanvasBrush}" Margin="0,0,8,0">
+                        <Path Data="{Binding IconData}" Stretch="Uniform" Width="12" Height="12"
+                              Stroke="{StaticResource MutedBrush}" StrokeThickness="1.6" StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                    </Border>
+                    <TextBlock Text="{Binding Name}" FontFamily="Segoe UI" FontSize="12.5" Foreground="{StaticResource InkBrush}"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </DataTemplate>
+
+            <!-- ===================== Tabs ===================== -->
+            <!-- Both TabControls on this window (screen selector up top,
+                 DESIGN/SETTINGS side panel) were left on the default WPF/OS
+                 tab chrome, which paints its own light background regardless
+                 of CanvasBrush, so the InkBrush (near-white) header/label
+                 text landed on a near-white tab background and was
+                 unreadable. Fully re-templating both removes that chrome
+                 and paints tab headers/content with this window's own dark
+                 palette instead. -->
+            <Style TargetType="TabItem">
+                <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="Padding" Value="12,8" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="TabItem">
+                            <Border x:Name="Bd" Background="Transparent" BorderBrush="Transparent" BorderThickness="0,0,0,2"
+                                    Padding="{TemplateBinding Padding}" Margin="0,0,4,0">
+                                <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  TextElement.Foreground="{TemplateBinding Foreground}" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                    <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+            <Style TargetType="TabControl">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="TabControl">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <TabPanel Grid.Row="0" IsItemsHost="True" Background="Transparent" Margin="0,0,0,10" />
+                                <Border Grid.Row="1" Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}"
+                                        BorderThickness="1" CornerRadius="8">
+                                    <ContentPresenter ContentSource="SelectedContent" Margin="12" />
+                                </Border>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Screen switcher (Welcome/Capture/Sharing): a filled accent
+                 pill on the active screen instead of the underline above,
+                 since it's the primary navigation for this whole window, not a
+                 secondary in-panel tab pair, so it reads as the bolder
+                 control of the two tab styles here. -->
+            <Style x:Key="ScreenSwitchTabItem" TargetType="TabItem">
+                <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="FontSize" Value="12.5" />
+                <Setter Property="Padding" Value="14,7" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="TabItem">
+                            <Border x:Name="Bd" Background="Transparent" CornerRadius="8"
+                                    Padding="{TemplateBinding Padding}" Margin="2,0">
+                                <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  TextElement.Foreground="{TemplateBinding Foreground}" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentBrush}" />
+                                    <Setter Property="Foreground" Value="{StaticResource OnAccentBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- ScreenTabControl has no per-tab content, only headers; it
+                 just swaps which screen ElementsCanvas below is showing. The
+                 default TabControl style above renders a content Border
+                 regardless, which would leave an empty rounded box under the
+                 headers here, so this selector gets a headers-only template,
+                 plus a Border of its own to house the pill row. -->
+            <Style x:Key="SegmentedTabControl" TargetType="TabControl">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="TabControl">
+                            <Border Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}"
+                                    BorderThickness="1" CornerRadius="10" Padding="3">
+                                <TabPanel IsItemsHost="True" Background="Transparent" HorizontalAlignment="Center" />
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
         </ResourceDictionary>
     </Window.Resources>
 
     <Grid Margin="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
             <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="260" />
+            <ColumnDefinition Width="280" />
         </Grid.ColumnDefinitions>
 
-        <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Text="SCREEN LAYOUT EDITOR"
-                   FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,12" />
+        <!-- ================= Top bar: title + screen switcher ================= -->
+        <Grid Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,0,0,14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                <TextBlock Text="SCREEN LAYOUT EDITOR" FontSize="12.5" FontWeight="SemiBold" FontFamily="Segoe UI"
+                           Foreground="{StaticResource AccentBrush}" />
+                <TextBlock x:Name="EditingSubtitleText" Text="Editing the Welcome screen" FontSize="11.5" FontFamily="Segoe UI"
+                           Foreground="{StaticResource MutedBrush}" Margin="0,2,0,0" />
+            </StackPanel>
 
-        <!-- One tab per guest-facing screen (see ScreenTemplateScreen); switching
-             tabs swaps which screen's working element list ElementsCanvas below is
-             showing/editing, same reusable-canvas approach the ScreenTemplateEditorWindow
-             code comment explains, rather than three separate canvases. -->
-        <TabControl x:Name="ScreenTabControl" Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
-                    SelectionChanged="ScreenTabControl_SelectionChanged" Margin="0,0,0,10">
-            <TabItem Header="Welcome" Tag="Welcome" />
-            <TabItem Header="Capture" Tag="Capture" />
-            <TabItem Header="Sharing" Tag="Sharing" />
-        </TabControl>
+            <!-- One tab per guest-facing screen (see ScreenTemplateScreen);
+                 switching tabs swaps which screen's working element list
+                 ElementsCanvas below is showing/editing, same reusable-canvas
+                 approach the ScreenTemplateEditorWindow code comment
+                 explains, rather than three separate canvases. -->
+            <TabControl x:Name="ScreenTabControl" Grid.Column="1" Style="{StaticResource SegmentedTabControl}"
+                        SelectionChanged="ScreenTabControl_SelectionChanged" VerticalAlignment="Center">
+                <TabItem Tag="Welcome" Style="{StaticResource ScreenSwitchTabItem}">
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="{StaticResource IconWelcome}" Stretch="Uniform" Width="13" Height="13" Margin="0,0,6,0"
+                                  Stroke="{Binding RelativeSource={RelativeSource AncestorType=TabItem}, Path=Foreground}"
+                                  StrokeThickness="1.6" StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            <TextBlock Text="Welcome" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </TabItem.Header>
+                </TabItem>
+                <TabItem Tag="Capture" Style="{StaticResource ScreenSwitchTabItem}">
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="{StaticResource IconCapture}" Stretch="Uniform" Width="13" Height="13" Margin="0,0,6,0"
+                                  Stroke="{Binding RelativeSource={RelativeSource AncestorType=TabItem}, Path=Foreground}"
+                                  StrokeThickness="1.6" StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            <TextBlock Text="Capture" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </TabItem.Header>
+                </TabItem>
+                <TabItem Tag="Sharing" Style="{StaticResource ScreenSwitchTabItem}">
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="{StaticResource IconSharing}" Stretch="Uniform" Width="13" Height="13" Margin="0,0,6,0"
+                                  Stroke="{Binding RelativeSource={RelativeSource AncestorType=TabItem}, Path=Foreground}"
+                                  StrokeThickness="1.6" StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            <TextBlock Text="Sharing" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </TabItem.Header>
+                </TabItem>
+            </TabControl>
+
+            <Border Grid.Column="2" />
+        </Grid>
+
+        <!-- ================= Left tool rail ================= -->
+        <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,12,0">
+            <Button x:Name="AddTextButton" Style="{StaticResource IconRailButton}" ToolTip="Add text" Click="AddTextButton_Click" Margin="0,0,0,4">
+                <Path Data="{StaticResource IconTextTool}" Stretch="Uniform" Width="17" Height="17"
+                      Stroke="{StaticResource InkBrush}" StrokeThickness="1.7" StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+            </Button>
+            <Button x:Name="AddImageButton" Style="{StaticResource IconRailButton}" ToolTip="Add image" Click="AddImageButton_Click" Margin="0,0,0,4">
+                <Path Data="{StaticResource IconImageTool}" Stretch="Uniform" Width="17" Height="17"
+                      Stroke="{StaticResource InkBrush}" StrokeThickness="1.5" StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+            </Button>
+            <Button x:Name="AddShapeButton" Style="{StaticResource IconRailButton}" ToolTip="Add shape" Click="AddShapeButton_Click">
+                <Path Data="{StaticResource IconShapeTool}" Stretch="Uniform" Width="17" Height="17"
+                      Stroke="{StaticResource InkBrush}" StrokeThickness="1.6" />
+            </Button>
+        </StackPanel>
 
         <!-- ElementsCanvas is the live view itself (no separate rendered preview
              like PrintTemplateEditorWindow's PreviewImage); these are placed
              WPF elements, not composited onto a captured photo. -->
-        <Border Grid.Row="2" Grid.Column="0" Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
+        <Border Grid.Row="1" Grid.Column="1" Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
                 HorizontalAlignment="Center" VerticalAlignment="Center">
             <Canvas x:Name="ElementsCanvas" Background="#F4F3F0" />
         </Border>
@@ -69,15 +568,12 @@
              editable UI anywhere in this build (see ScreenSettings and
              AdminWindow's own "ScreenSettings has no editable UI" comment,
              now closed by this tab). -->
-        <TabControl Grid.Row="2" Grid.Column="1" Margin="16,0,0,0">
+        <TabControl Grid.Row="1" Grid.Column="2" Margin="0">
             <TabItem Header="DESIGN">
-                <StackPanel Margin="0,10,0,0">
-                    <TextBlock Text="Add element" Style="{StaticResource EditorSectionHeader}" Margin="0,0,0,6" />
-                    <StackPanel Orientation="Horizontal">
-                        <Button x:Name="AddTextButton" Content="+ Text" Padding="10,6" Margin="0,0,8,0" Click="AddTextButton_Click" />
-                        <Button x:Name="AddImageButton" Content="+ Image" Padding="10,6" Margin="0,0,8,0" Click="AddImageButton_Click" />
-                        <Button x:Name="AddShapeButton" Content="+ Shape" Padding="10,6" Click="AddShapeButton_Click" />
-                    </StackPanel>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,-6,0,0">
+                <StackPanel Margin="0,4,4,0">
+                    <TextBlock x:Name="LayersHeaderText" Text="Layers" Style="{StaticResource EditorSectionHeader}" Margin="0,0,0,6" />
+                    <ListBox x:Name="LayerListBox" Height="90" ItemTemplate="{StaticResource LayerRowTemplate}" SelectionChanged="LayerListBox_SelectionChanged" />
 
                     <!-- Aligns the selected element against the canvas bounds
                          (left/center/right, top/middle/bottom): the single-
@@ -87,77 +583,171 @@
                          doesn't support. -->
                     <TextBlock Text="Alignment" Style="{StaticResource EditorSectionHeader}" />
                     <UniformGrid Rows="2" Columns="3">
-                        <Button x:Name="AlignLeftButton" Content="Left" Padding="6,5" Margin="0,0,4,4" ToolTip="Align left" Click="AlignButton_Click" Tag="Left" />
-                        <Button x:Name="AlignCenterButton" Content="Center" Padding="6,5" Margin="0,0,4,4" ToolTip="Center horizontally" Click="AlignButton_Click" Tag="CenterHorizontal" />
-                        <Button x:Name="AlignRightButton" Content="Right" Padding="6,5" Margin="0,0,0,4" ToolTip="Align right" Click="AlignButton_Click" Tag="Right" />
-                        <Button x:Name="AlignTopButton" Content="Top" Padding="6,5" Margin="0,0,4,0" ToolTip="Align top" Click="AlignButton_Click" Tag="Top" />
-                        <Button x:Name="AlignMiddleButton" Content="Middle" Padding="6,5" Margin="0,0,4,0" ToolTip="Center vertically" Click="AlignButton_Click" Tag="CenterVertical" />
-                        <Button x:Name="AlignBottomButton" Content="Bottom" Padding="6,5" ToolTip="Align bottom" Click="AlignButton_Click" Tag="Bottom" />
+                        <Button x:Name="AlignLeftButton" Style="{StaticResource IconActionButton}" Margin="0,0,4,4" ToolTip="Align left" Click="AlignButton_Click" Tag="Left">
+                            <Path Data="{StaticResource IconAlignLeft}" Stretch="Uniform" Width="15" Height="15" Stroke="{StaticResource InkBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        </Button>
+                        <Button x:Name="AlignCenterButton" Style="{StaticResource IconActionButton}" Margin="0,0,4,4" ToolTip="Center horizontally" Click="AlignButton_Click" Tag="CenterHorizontal">
+                            <Path Data="{StaticResource IconAlignCenterH}" Stretch="Uniform" Width="15" Height="15" Stroke="{StaticResource InkBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        </Button>
+                        <Button x:Name="AlignRightButton" Style="{StaticResource IconActionButton}" Margin="0,0,0,4" ToolTip="Align right" Click="AlignButton_Click" Tag="Right">
+                            <Path Data="{StaticResource IconAlignRight}" Stretch="Uniform" Width="15" Height="15" Stroke="{StaticResource InkBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        </Button>
+                        <Button x:Name="AlignTopButton" Style="{StaticResource IconActionButton}" Margin="0,0,4,0" ToolTip="Align top" Click="AlignButton_Click" Tag="Top">
+                            <Path Data="{StaticResource IconAlignTop}" Stretch="Uniform" Width="15" Height="15" Stroke="{StaticResource InkBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        </Button>
+                        <Button x:Name="AlignMiddleButton" Style="{StaticResource IconActionButton}" Margin="0,0,4,0" ToolTip="Center vertically" Click="AlignButton_Click" Tag="CenterVertical">
+                            <Path Data="{StaticResource IconAlignCenterV}" Stretch="Uniform" Width="15" Height="15" Stroke="{StaticResource InkBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        </Button>
+                        <Button x:Name="AlignBottomButton" Style="{StaticResource IconActionButton}" ToolTip="Align bottom" Click="AlignButton_Click" Tag="Bottom">
+                            <Path Data="{StaticResource IconAlignBottom}" Stretch="Uniform" Width="15" Height="15" Stroke="{StaticResource InkBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        </Button>
                     </UniformGrid>
 
-                    <TextBlock Text="Layers" Style="{StaticResource EditorSectionHeader}" />
-                    <ListBox x:Name="LayerListBox" Height="90" SelectionChanged="LayerListBox_SelectionChanged" />
-
-                    <TextBlock Text="Selected element" Style="{StaticResource EditorSectionHeader}" />
-                    <TextBlock x:Name="NoSelectionText" Text="Tap an element on the canvas to edit it." Style="{StaticResource EditorLabel}"
+                    <TextBlock x:Name="SelectedElementHeaderText" Text="Selected element" Style="{StaticResource EditorSectionHeader}" />
+                    <TextBlock x:Name="NoSelectionText" Text="Tap an element on the canvas or a layer to edit it." Style="{StaticResource EditorLabel}"
                                Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
 
                     <StackPanel x:Name="TextPropertiesPanel" Visibility="Collapsed">
                         <TextBlock Text="Text" Style="{StaticResource EditorLabel}" />
-                        <TextBox x:Name="ElementTextBox" TextChanged="ElementTextBox_TextChanged" />
+                        <TextBox x:Name="ElementTextBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="52" TextChanged="ElementTextBox_TextChanged" />
 
-                        <TextBlock Text="Font size" Style="{StaticResource EditorLabel}" />
-                        <Slider x:Name="FontSizeSlider" Minimum="0.02" Maximum="0.15" ValueChanged="FontSizeSlider_ValueChanged" />
+                        <Grid Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Font size" Style="{StaticResource EditorLabel}" Margin="0" />
+                                <Slider x:Name="FontSizeSlider" Minimum="0.02" Maximum="0.15" ValueChanged="FontSizeSlider_ValueChanged" Margin="0,4,0,0" />
+                            </StackPanel>
+                            <CheckBox x:Name="BoldCheckBox" Grid.Column="1" Style="{StaticResource IconToggleCheckBox}" Content="B" FontWeight="Bold"
+                                      VerticalAlignment="Bottom" Margin="10,0,0,0" ToolTip="Bold" Click="BoldCheckBox_Click" />
+                        </Grid>
 
-                        <CheckBox x:Name="BoldCheckBox" Content="Bold" Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" Click="BoldCheckBox_Click" />
-
-                        <TextBlock Text="Color (hex)" Style="{StaticResource EditorLabel}" />
-                        <TextBox x:Name="ElementColorBox" TextChanged="ElementColorBox_TextChanged" />
+                        <TextBlock Text="Color" Style="{StaticResource EditorLabel}" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="TextColorSwatch" Grid.Column="0" Width="30" Height="30" CornerRadius="7"
+                                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Margin="0,0,8,0" />
+                            <TextBox x:Name="ElementColorBox" Grid.Column="1" TextChanged="ElementColorBox_TextChanged" />
+                        </Grid>
                     </StackPanel>
 
                     <StackPanel x:Name="ImagePropertiesPanel" Visibility="Collapsed">
                         <TextBlock Text="Image" Style="{StaticResource EditorLabel}" />
-                        <Button x:Name="ChangeImageButton" Content="Browse..." Padding="8,4" HorizontalAlignment="Left" Click="ChangeImageButton_Click" />
+                        <Border Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
+                                CornerRadius="7" Height="80" Margin="0,2,0,8">
+                            <Image x:Name="SelectedImagePreview" Stretch="Uniform" Margin="6" />
+                        </Border>
+                        <Button x:Name="ChangeImageButton" Content="Browse..." Padding="14,7" HorizontalAlignment="Left" Click="ChangeImageButton_Click" />
                     </StackPanel>
 
                     <StackPanel x:Name="ShapePropertiesPanel" Visibility="Collapsed">
-                        <TextBlock Text="Fill color (hex)" Style="{StaticResource EditorLabel}" />
-                        <TextBox x:Name="ShapeColorBox" TextChanged="ElementColorBox_TextChanged" />
+                        <TextBlock Text="Fill color" Style="{StaticResource EditorLabel}" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="ShapeColorSwatch" Grid.Column="0" Width="30" Height="30" CornerRadius="7"
+                                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Margin="0,0,8,0" />
+                            <TextBox x:Name="ShapeColorBox" Grid.Column="1" TextChanged="ElementColorBox_TextChanged" />
+                        </Grid>
                     </StackPanel>
 
-                    <Button x:Name="DeleteSelectedButton" Content="Delete selected" Padding="10,6" Margin="0,16,0,0"
-                            HorizontalAlignment="Left" IsEnabled="False" Click="DeleteSelectedButton_Click" />
+                    <Button x:Name="DeleteSelectedButton" Style="{StaticResource DangerButton}" Padding="10,7" Margin="0,18,0,0"
+                            HorizontalAlignment="Left" IsEnabled="False" Click="DeleteSelectedButton_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="{StaticResource IconTrash}" Stretch="Uniform" Width="13" Height="13" Margin="0,0,7,0"
+                                  Stroke="{StaticResource DangerBrush}" StrokeThickness="1.6" StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            <TextBlock Text="Delete selected" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
+                </ScrollViewer>
             </TabItem>
 
             <TabItem Header="SETTINGS">
-                <StackPanel Margin="0,10,0,0">
-                    <TextBlock Text="Welcome screen" Style="{StaticResource EditorSectionHeader}" Margin="0,0,0,6" />
-                    <CheckBox x:Name="BoothIconsEnabledCheckBox" Content="Booth icons" Foreground="{StaticResource InkBrush}" Margin="0,4,0,0" Click="ScreenSettingsCheckBox_Click" />
-                    <TextBlock Text="If off, touching anywhere on the Welcome screen starts a session." Style="{StaticResource EditorLabel}"
-                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,2,0,10" />
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,-6,0,0">
+                <StackPanel Margin="0,4,4,0">
+                    <TextBlock x:Name="SettingsHeaderText" Text="Settings · Welcome" Style="{StaticResource EditorSectionHeader}" Margin="0,0,0,6" />
 
-                    <TextBlock Text="Live view" Style="{StaticResource EditorSectionHeader}" />
-                    <CheckBox x:Name="ShowLiveViewCheckBox" Content="Show live view" Foreground="{StaticResource InkBrush}" Margin="0,4,0,0" Click="ScreenSettingsCheckBox_Click" />
-                    <CheckBox x:Name="MirrorLiveViewCheckBox" Content="Mirror live view" Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" Click="ScreenSettingsCheckBox_Click" />
+                    <!-- Only ever the settings that actually apply to the
+                         active screen (BoothIconsEnabled only matters on
+                         Welcome; ShowLiveView/MirrorLiveView/LiveViewRotation/
+                         PoseStripPosition only matter on Capture), same
+                         split dslrBooth uses instead of one flat panel shown
+                         for every screen. -->
+                    <StackPanel x:Name="WelcomeSettingsPanel">
+                        <CheckBox x:Name="BoothIconsEnabledCheckBox" Content="Booth icons" Click="ScreenSettingsCheckBox_Click" />
+                        <TextBlock Text="If off, touching anywhere on the Welcome screen starts a session." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                    </StackPanel>
 
-                    <TextBlock Text="Live view rotation" Style="{StaticResource EditorLabel}" Margin="0,10,0,2" />
-                    <ComboBox x:Name="LiveViewRotationCombo" Width="120" HorizontalAlignment="Left" SelectionChanged="LiveViewRotationCombo_SelectionChanged">
-                        <ComboBoxItem Content="0°" Tag="0" />
-                        <ComboBoxItem Content="90°" Tag="90" />
-                        <ComboBoxItem Content="180°" Tag="180" />
-                        <ComboBoxItem Content="270°" Tag="270" />
-                    </ComboBox>
+                    <StackPanel x:Name="CaptureSettingsPanel" Visibility="Collapsed">
+                        <CheckBox x:Name="ShowLiveViewCheckBox" Content="Show live view" Click="ScreenSettingsCheckBox_Click" />
+                        <TextBlock Text="Displays the camera feed behind the Capture screen elements." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,10" />
+
+                        <CheckBox x:Name="MirrorLiveViewCheckBox" Content="Mirror live view" Click="ScreenSettingsCheckBox_Click" Margin="0,0,0,10" />
+
+                        <TextBlock Text="Rotation" Style="{StaticResource EditorLabel}" Margin="0,0,0,4" />
+                        <UniformGrid Rows="1" Columns="4">
+                            <RadioButton x:Name="Rotation0Radio" GroupName="LiveViewRotation" Content="0°" Tag="0" Margin="0,0,4,0" Click="RotationRadio_Click" />
+                            <RadioButton x:Name="Rotation90Radio" GroupName="LiveViewRotation" Content="90°" Tag="90" Margin="0,0,4,0" Click="RotationRadio_Click" />
+                            <RadioButton x:Name="Rotation180Radio" GroupName="LiveViewRotation" Content="180°" Tag="180" Margin="0,0,4,0" Click="RotationRadio_Click" />
+                            <RadioButton x:Name="Rotation270Radio" GroupName="LiveViewRotation" Content="270°" Tag="270" Click="RotationRadio_Click" />
+                        </UniformGrid>
+
+                        <TextBlock Text="Pose thumbnails" Style="{StaticResource EditorSectionHeader}" />
+                        <TextBlock Text="Where already-taken photos show up on the Capture screen while a guest poses for more." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6" />
+                        <UniformGrid Rows="1" Columns="4">
+                            <RadioButton x:Name="PoseTopRadio" GroupName="PoseStripPosition" Tag="Top" ToolTip="Top" Margin="0,0,4,0" Click="PoseStripRadio_Click">
+                                <Grid Width="16" Height="16">
+                                    <Path Data="{StaticResource IconFrameRect}" Stroke="{Binding RelativeSource={RelativeSource AncestorType=RadioButton}, Path=Foreground}" StrokeThickness="1.4" />
+                                    <Path Data="{StaticResource IconDockBandTop}" Fill="{Binding RelativeSource={RelativeSource AncestorType=RadioButton}, Path=Foreground}" />
+                                </Grid>
+                            </RadioButton>
+                            <RadioButton x:Name="PoseBottomRadio" GroupName="PoseStripPosition" Tag="Bottom" ToolTip="Bottom" Margin="0,0,4,0" Click="PoseStripRadio_Click">
+                                <Grid Width="16" Height="16">
+                                    <Path Data="{StaticResource IconFrameRect}" Stroke="{Binding RelativeSource={RelativeSource AncestorType=RadioButton}, Path=Foreground}" StrokeThickness="1.4" />
+                                    <Path Data="{StaticResource IconDockBandBottom}" Fill="{Binding RelativeSource={RelativeSource AncestorType=RadioButton}, Path=Foreground}" />
+                                </Grid>
+                            </RadioButton>
+                            <RadioButton x:Name="PoseLeftRadio" GroupName="PoseStripPosition" Tag="Left" ToolTip="Left" Margin="0,0,4,0" Click="PoseStripRadio_Click">
+                                <Grid Width="16" Height="16">
+                                    <Path Data="{StaticResource IconFrameRect}" Stroke="{Binding RelativeSource={RelativeSource AncestorType=RadioButton}, Path=Foreground}" StrokeThickness="1.4" />
+                                    <Path Data="{StaticResource IconDockBandLeft}" Fill="{Binding RelativeSource={RelativeSource AncestorType=RadioButton}, Path=Foreground}" />
+                                </Grid>
+                            </RadioButton>
+                            <RadioButton x:Name="PoseRightRadio" GroupName="PoseStripPosition" Tag="Right" ToolTip="Right" Click="PoseStripRadio_Click">
+                                <Grid Width="16" Height="16">
+                                    <Path Data="{StaticResource IconFrameRect}" Stroke="{Binding RelativeSource={RelativeSource AncestorType=RadioButton}, Path=Foreground}" StrokeThickness="1.4" />
+                                    <Path Data="{StaticResource IconDockBandRight}" Fill="{Binding RelativeSource={RelativeSource AncestorType=RadioButton}, Path=Foreground}" />
+                                </Grid>
+                            </RadioButton>
+                        </UniformGrid>
+                    </StackPanel>
+
+                    <StackPanel x:Name="SharingSettingsPanel" Visibility="Collapsed">
+                        <TextBlock Text="Sharing has no screen-specific settings yet. Design its layout from the canvas and Design tab."
+                                   Style="{StaticResource EditorLabel}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                    </StackPanel>
                 </StackPanel>
+                </ScrollViewer>
             </TabItem>
         </TabControl>
 
-        <Grid Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,16,0,0">
+        <Grid Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,16,0,0">
             <TextBlock x:Name="EditorStatusText" Style="{StaticResource EditorLabel}" Foreground="{StaticResource MutedBrush}"
                        TextWrapping="Wrap" VerticalAlignment="Center" />
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button x:Name="CancelButton" Content="Cancel" Padding="16,8" Margin="0,0,8,0" Click="CancelButton_Click" />
-                <Button x:Name="SaveButton" Content="Save" Padding="16,8" Click="SaveButton_Click" />
+                <Button x:Name="CancelButton" Content="Cancel" Padding="18,9" Margin="0,0,8,0" Click="CancelButton_Click" />
+                <Button x:Name="SaveButton" Content="Save" Style="{StaticResource PrimaryButton}" Padding="20,9" Click="SaveButton_Click" />
             </StackPanel>
         </Grid>
     </Grid>

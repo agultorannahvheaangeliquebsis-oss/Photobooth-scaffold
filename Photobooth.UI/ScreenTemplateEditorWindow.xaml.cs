@@ -38,8 +38,8 @@ public partial class ScreenTemplateEditorWindow : Window
     private readonly int _locationId;
 
     /// <summary>Working copy of the screen-chrome toggles edited by the
-    /// SETTINGS tab (see ScreenSettingsCheckBox_Click/LiveViewRotationCombo_
-    /// SelectionChanged) -- booth-wide, not per-tab, same as the underlying
+    /// SETTINGS tab (see ScreenSettingsCheckBox_Click/RotationRadio_Click/
+    /// PoseStripRadio_Click) -- booth-wide, not per-tab, same as the underlying
     /// Location columns (see LocationRepository.UpdateScreenSettingsAsync).</summary>
     private ScreenSettings _screenSettings;
     private bool _suppressScreenSettingsEvents;
@@ -58,6 +58,27 @@ public partial class ScreenTemplateEditorWindow : Window
     private List<ScreenTemplateElement> _elements => _elementsByScreen[_activeScreen];
     private readonly List<Border> _containers = new();
     private readonly List<Rectangle> _handles = new();
+
+    /// <summary>One row in LayerListBox -- Kind drives which icon chip the
+    /// LayerRowTemplate DataTemplate shows, Name is the same display text
+    /// RefreshLayerList always computed, just no longer baked into a plain
+    /// string so the icon can live alongside it instead of a "Text: " prefix.</summary>
+    private sealed record LayerRow(ScreenTemplateElementKind Kind, string Name)
+    {
+        public Geometry IconData => Kind switch
+        {
+            ScreenTemplateElementKind.Text => Geometry.Parse("M5,5 L19,5 M12,5 L12,19"),
+            ScreenTemplateElementKind.Image => Geometry.Parse("M3.5,4.5 L20.5,4.5 L20.5,19.5 L3.5,19.5 Z M4,17 L9.5,11.5 L14,16 L16.5,13.5 L20,17"),
+            _ => Geometry.Parse("M4,4 L20,4 L20,20 L4,20 Z"),
+        };
+    }
+
+    private static string DisplayName(ScreenTemplateElement element) => element.Kind switch
+    {
+        ScreenTemplateElementKind.Text => string.IsNullOrWhiteSpace(element.Text) ? "Text" : element.Text!,
+        ScreenTemplateElementKind.Image => "Image",
+        _ => "Shape",
+    };
 
     private int _selectedIndex = -1;
     private int _draggingIndex = -1;
@@ -93,14 +114,24 @@ public partial class ScreenTemplateEditorWindow : Window
             BoothIconsEnabledCheckBox.IsChecked = _screenSettings.BoothIconsEnabled;
             ShowLiveViewCheckBox.IsChecked = _screenSettings.ShowLiveView;
             MirrorLiveViewCheckBox.IsChecked = _screenSettings.MirrorLiveView;
-            foreach (ComboBoxItem item in LiveViewRotationCombo.Items)
+
+            RadioButton rotationRadio = _screenSettings.LiveViewRotation switch
             {
-                if (item.Tag is string tag && int.TryParse(tag, out int degrees) && degrees == _screenSettings.LiveViewRotation)
-                {
-                    LiveViewRotationCombo.SelectedItem = item;
-                    break;
-                }
-            }
+                90 => Rotation90Radio,
+                180 => Rotation180Radio,
+                270 => Rotation270Radio,
+                _ => Rotation0Radio,
+            };
+            rotationRadio.IsChecked = true;
+
+            RadioButton poseStripRadio = _screenSettings.PoseStripPosition switch
+            {
+                "Top" => PoseTopRadio,
+                "Left" => PoseLeftRadio,
+                "Right" => PoseRightRadio,
+                _ => PoseBottomRadio,
+            };
+            poseStripRadio.IsChecked = true;
         }
         finally
         {
@@ -123,17 +154,24 @@ public partial class ScreenTemplateEditorWindow : Window
         };
     }
 
-    private void LiveViewRotationCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void RotationRadio_Click(object sender, RoutedEventArgs e)
     {
-        if (_suppressScreenSettingsEvents)
+        if (_suppressScreenSettingsEvents || sender is not RadioButton { Tag: string tag } || !int.TryParse(tag, out int degrees))
         {
             return;
         }
 
-        if (LiveViewRotationCombo.SelectedItem is ComboBoxItem { Tag: string tag } && int.TryParse(tag, out int degrees))
+        _screenSettings = _screenSettings with { LiveViewRotation = degrees };
+    }
+
+    private void PoseStripRadio_Click(object sender, RoutedEventArgs e)
+    {
+        if (_suppressScreenSettingsEvents || sender is not RadioButton { Tag: string position })
         {
-            _screenSettings = _screenSettings with { LiveViewRotation = degrees };
+            return;
         }
+
+        _screenSettings = _screenSettings with { PoseStripPosition = position };
     }
 
     private void ScreenTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -145,6 +183,12 @@ public partial class ScreenTemplateEditorWindow : Window
 
         _activeScreen = screen;
         LoadActiveScreen();
+
+        EditingSubtitleText.Text = $"Editing the {screen} screen";
+        SettingsHeaderText.Text = $"Settings · {screen}";
+        WelcomeSettingsPanel.Visibility = screen == ScreenTemplateScreen.Welcome ? Visibility.Visible : Visibility.Collapsed;
+        CaptureSettingsPanel.Visibility = screen == ScreenTemplateScreen.Capture ? Visibility.Visible : Visibility.Collapsed;
+        SharingSettingsPanel.Visibility = screen == ScreenTemplateScreen.Sharing ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>Rebuilds ElementsCanvas's visuals for whichever screen is now
@@ -400,6 +444,7 @@ public partial class ScreenTemplateEditorWindow : Window
 
         if (index < 0)
         {
+            SelectedElementHeaderText.Text = "Selected element";
             TextPropertiesPanel.Visibility = Visibility.Collapsed;
             ImagePropertiesPanel.Visibility = Visibility.Collapsed;
             ShapePropertiesPanel.Visibility = Visibility.Collapsed;
@@ -407,6 +452,7 @@ public partial class ScreenTemplateEditorWindow : Window
         }
 
         ScreenTemplateElement element = _elements[index];
+        SelectedElementHeaderText.Text = "Editing · " + DisplayName(element);
         _suppressPropertyEvents = true;
         try
         {
@@ -420,10 +466,18 @@ public partial class ScreenTemplateEditorWindow : Window
                 FontSizeSlider.Value = element.FontSizePercent;
                 BoldCheckBox.IsChecked = element.Bold;
                 ElementColorBox.Text = element.ColorHex;
+                TextColorSwatch.Background = HexToBrush(element.ColorHex);
+            }
+            else if (element.Kind == ScreenTemplateElementKind.Image)
+            {
+                SelectedImagePreview.Source = element.ImagePath is string path && File.Exists(path)
+                    ? new BitmapImage(new Uri(IoPath.GetFullPath(path)))
+                    : null;
             }
             else if (element.Kind == ScreenTemplateElementKind.Shape)
             {
                 ShapeColorBox.Text = element.ColorHex;
+                ShapeColorSwatch.Background = HexToBrush(element.ColorHex);
             }
         }
         finally
@@ -498,9 +552,20 @@ public partial class ScreenTemplateEditorWindow : Window
             return;
         }
 
-        string hex = _elements[_selectedIndex].Kind == ScreenTemplateElementKind.Shape ? ShapeColorBox.Text : ElementColorBox.Text;
+        bool isShape = _elements[_selectedIndex].Kind == ScreenTemplateElementKind.Shape;
+        string hex = isShape ? ShapeColorBox.Text : ElementColorBox.Text;
         _elements[_selectedIndex] = _elements[_selectedIndex] with { ColorHex = hex };
         RefreshVisualContent(_selectedIndex);
+
+        SolidColorBrush brush = HexToBrush(hex);
+        if (isShape)
+        {
+            ShapeColorSwatch.Background = brush;
+        }
+        else
+        {
+            TextColorSwatch.Background = brush;
+        }
     }
 
     private void AddTextButton_Click(object sender, RoutedEventArgs e)
@@ -563,6 +628,8 @@ public partial class ScreenTemplateEditorWindow : Window
         {
             image.Source = new BitmapImage(new Uri(IoPath.GetFullPath(storedPath)));
         }
+
+        SelectedImagePreview.Source = new BitmapImage(new Uri(IoPath.GetFullPath(storedPath)));
     }
 
     /// <summary>Copies the chosen image into a local Assets/ScreenElements folder,
@@ -652,12 +719,7 @@ public partial class ScreenTemplateEditorWindow : Window
             LayerListBox.Items.Clear();
             foreach (ScreenTemplateElement element in _elements)
             {
-                LayerListBox.Items.Add(element.Kind switch
-                {
-                    ScreenTemplateElementKind.Text => $"Text: {element.Text}",
-                    ScreenTemplateElementKind.Image => "Image",
-                    _ => "Shape",
-                });
+                LayerListBox.Items.Add(new LayerRow(element.Kind, DisplayName(element)));
             }
         }
         finally

@@ -38,7 +38,8 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
                    PrintAutomatically, ShowPrintButton, PrintLimitPerEvent, PrintLimitPerSession, PrintSharpening,
                    EmailEnabled, SmsEnabled, QrEnabled,
                    AttendantEnabled, AttendantStyle, AttendantRandomizeConsent, AttendantRandomizeCountdown,
-                   AttendantRandomizeCapturing, AttendantRandomizeReviewing, AttendantRandomizePrinting, AttendantRandomizeComplete
+                   AttendantRandomizeCapturing, AttendantRandomizeReviewing, AttendantRandomizePrinting, AttendantRandomizeComplete,
+                   PoseStripPosition
             FROM Location WHERE LocationId = @LocationId;
             """,
             connection);
@@ -82,7 +83,8 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
             capture = new CaptureSettings(reader.GetString(12), reader.GetBoolean(13), reader.GetInt32(14), reader.GetInt32(15), reader.GetInt32(16));
             screen = new ScreenSettings(
                 reader.GetBoolean(17), reader.GetBoolean(18), reader.GetBoolean(19), reader.GetInt32(20),
-                reader.GetBoolean(21), reader.GetInt32(22), reader.IsDBNull(23) ? null : reader.GetString(23));
+                reader.GetBoolean(21), reader.GetInt32(22), reader.IsDBNull(23) ? null : reader.GetString(23),
+                reader.GetString(55));
             effects = new EffectsSettings(
                 reader.GetBoolean(24), reader.GetString(25), reader.IsDBNull(26) ? null : reader.GetString(26),
                 reader.GetBoolean(27), reader.GetBoolean(28), reader.GetBoolean(30),

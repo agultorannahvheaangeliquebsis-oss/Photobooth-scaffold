@@ -56,10 +56,16 @@ public record CaptureSettings(string Mode = "Photo", bool AlsoCreateGif = false,
 /// highest quality) -- interpretation is left to whichever webcam capture path
 /// reads it, same "store the admin's choice, let the consuming service decide
 /// what to do with it" pattern PrintSharpening already uses. AudioInputDeviceName
-/// is null for "use the system default device" (see AudioInputDevices.EnumerateNames).</summary>
+/// is null for "use the system default device" (see AudioInputDevices.EnumerateNames).
+/// PoseStripPosition is one of "Top"/"Bottom"/"Left"/"Right" -- which edge of the
+/// Capture screen shows the strip of already-taken shots while a guest poses for
+/// more (see ScreenTemplateEditorWindow's Capture settings), only ever seen for a
+/// true multi-pose template (PrintTemplate.RequiredPhotoCount > 1), same gate
+/// KioskViewModel.ShowPoseProgress already uses.</summary>
 public record ScreenSettings(
     bool BoothIconsEnabled = false, bool ShowLiveView = true, bool MirrorLiveView = true, int LiveViewRotation = 0,
-    bool EnableWebcams = true, int WebcamResolutionQuality = 70, string? AudioInputDeviceName = null)
+    bool EnableWebcams = true, int WebcamResolutionQuality = 70, string? AudioInputDeviceName = null,
+    string PoseStripPosition = "Bottom")
 {
     public static ScreenSettings Default { get; } = new();
 }
