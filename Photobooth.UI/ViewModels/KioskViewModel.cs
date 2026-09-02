@@ -11,6 +11,9 @@ using Serilog;
 
 namespace Photobooth.UI.ViewModels;
 
+public sealed record FrameSelectionItem(FrameOption Option, Guid RequestToken);
+public sealed record FilterSelectionItem(FilterOption Option, Guid RequestToken);
+
 /// <summary>
 /// Drives KioskWindow. Owns a <see cref="BoothStateMachine"/> and projects it
 /// onto the five guest-facing screens (see <see cref="KioskScreen"/>), plus the
@@ -49,6 +52,7 @@ public class KioskViewModel : ObservableObject, IDisposable
     private readonly CaptureModeOverrideSettingsProvider _captureModeOverride;
     private readonly ILiveViewService _liveView;
     private readonly Dispatcher _dispatcher;
+    private readonly SemaphoreSlim _settingsReloadGate = new(1, 1);
 
     // Concrete Ui*/Sql* instances for the four screens whose guest interaction
     // BoothServices' interfaces can't expose (SelectionRequested/SubmitSelection
@@ -128,6 +132,7 @@ public class KioskViewModel : ObservableObject, IDisposable
         _captureModeOverride = new CaptureModeOverrideSettingsProvider(services.Settings);
         _services = services with { Settings = _captureModeOverride };
         _stateMachine = new BoothStateMachine(_services, mode);
+        BoothSettingsChanged.Changed += OnSettingsChanged;
 
         Admin = new KioskAdminViewModel(_services.Settings);
 
@@ -149,7 +154,13 @@ public class KioskViewModel : ObservableObject, IDisposable
         StopGuestbookRecordingCommand = new RelayCommand(() => _guestbookPrompt?.SubmitStop());
         SelectFeedbackStarCommand = new RelayCommand(SelectFeedbackStar);
         SubmitFeedbackCommand = new RelayCommand(SubmitFeedback);
-        SkipFeedbackCommand = new RelayCommand(() => _feedback?.SubmitFeedback(new FeedbackResult(null, null)));
+        SkipFeedbackCommand = new RelayCommand(parameter =>
+        {
+            if (parameter is Guid requestToken)
+            {
+                _feedback?.SubmitFeedback(new FeedbackResult(null, null), requestToken);
+            }
+        });
         SubmitSurveyCommand = new RelayCommand(SubmitSurvey);
         SkipSurveyCommand = new RelayCommand(() => _survey?.SubmitAnswers(Array.Empty<SurveyAnswer>()));
 
@@ -207,19 +218,19 @@ public class KioskViewModel : ObservableObject, IDisposable
         _filterSelection = filterSelection;
         if (_filterSelection is not null)
         {
-            _filterSelection.SelectionRequested += options => OnUi(() => ShowFilterOptions(options));
+            _filterSelection.SelectionRequestedWithToken += (options, token) => OnUi(() => ShowFilterOptions(options, token));
         }
 
         _frameSelection = frameSelection;
         if (_frameSelection is not null)
         {
-            _frameSelection.SelectionRequested += options => OnUi(() => ShowFrameOptions(options));
+            _frameSelection.SelectionRequestedWithToken += (options, token) => OnUi(() => ShowFrameOptions(options, token));
         }
 
         _feedback = feedback;
         if (_feedback is not null)
         {
-            _feedback.FeedbackRequested += () => OnUi(ShowFeedbackPrompt);
+            _feedback.FeedbackRequestedWithToken += token => OnUi(() => ShowFeedbackPrompt(token));
         }
 
         _guestbookPrompt = guestbookPrompt;
@@ -294,7 +305,7 @@ public class KioskViewModel : ObservableObject, IDisposable
 
     /// <summary>Raised after screen-template overlay elements (admin-authored
     /// text/image/rectangle overlays -- see <see cref="ScreenTemplateElementRepository"/>)
-    /// are (re)loaded, at the same Idle-only "next guest, no restart" cadence
+    /// are (re)loaded whenever settings change, and at the existing Idle cadence
     /// as the rest of <see cref="ReloadSettingsAsync"/>. KioskWindow's code-behind
     /// subscribes to repaint its overlay Canvases -- kept out of this ViewModel
     /// since overlay rendering is FrameworkElement-construction glue, same
@@ -578,19 +589,26 @@ public class KioskViewModel : ObservableObject, IDisposable
     /// before that screen is reached -- MockFilterSelectionService resolves on its
     /// own without ever raising the event, same reasoning FrameOptions/
     /// MockFrameSelectionService already give.</summary>
-    public ObservableCollection<FilterOption> FilterOptions { get; } = new();
+    public ObservableCollection<FilterSelectionItem> FilterOptions { get; } = new();
 
     public RelayCommand SelectFilterCommand { get; }
 
     /// <summary>Bound to each filter preview's CommandParameter.</summary>
-    private void SelectFilter(object? parameter) => _filterSelection?.SubmitSelection(parameter as FilterOption);
-
-    private void ShowFilterOptions(IReadOnlyList<FilterOption> options)
+    private void SelectFilter(object? parameter)
     {
+        if (parameter is FilterSelectionItem item)
+        {
+            _filterSelection?.SubmitSelection(item.Option, item.RequestToken);
+        }
+    }
+
+    private void ShowFilterOptions(IReadOnlyList<FilterOption> options, Guid requestToken)
+    {
+        FilterRequestToken = requestToken;
         FilterOptions.Clear();
         foreach (FilterOption option in options)
         {
-            FilterOptions.Add(option);
+            FilterOptions.Add(new FilterSelectionItem(option, requestToken));
         }
     }
 
@@ -600,21 +618,46 @@ public class KioskViewModel : ObservableObject, IDisposable
     /// (i.e. right as BoothStateMachine enters FramePicker). Empty in mock mode or
     /// before that screen is reached -- MockFrameSelectionService resolves on its
     /// own without ever raising the event, matching MainWindow's ShowFrameOptions.</summary>
-    public ObservableCollection<FrameOption> FrameOptions { get; } = new();
+    public ObservableCollection<FrameSelectionItem> FrameOptions { get; } = new();
 
     public RelayCommand SelectFrameCommand { get; }
 
     /// <summary>Bound to each frame thumbnail's CommandParameter, and to the
     /// "No frame" button with a null parameter.</summary>
-    private void SelectFrame(object? parameter) => _frameSelection?.SubmitSelection(parameter as FrameOption);
-
-    private void ShowFrameOptions(IReadOnlyList<FrameOption> options)
+    private void SelectFrame(object? parameter)
     {
+        if (parameter is FrameSelectionItem item)
+        {
+            _frameSelection?.SubmitSelection(item.Option, item.RequestToken);
+        }
+        else if (parameter is Guid requestToken)
+        {
+            _frameSelection?.SubmitSelection(null, requestToken);
+        }
+    }
+
+    private void ShowFrameOptions(IReadOnlyList<FrameOption> options, Guid requestToken)
+    {
+        FrameRequestToken = requestToken;
         FrameOptions.Clear();
         foreach (FrameOption option in options)
         {
-            FrameOptions.Add(option);
+            FrameOptions.Add(new FrameSelectionItem(option, requestToken));
         }
+    }
+
+    private Guid? _frameRequestToken;
+    public Guid? FrameRequestToken
+    {
+        get => _frameRequestToken;
+        private set => SetProperty(ref _frameRequestToken, value);
+    }
+
+    private Guid? _filterRequestToken;
+    public Guid? FilterRequestToken
+    {
+        get => _filterRequestToken;
+        private set => SetProperty(ref _filterRequestToken, value);
     }
 
     // ============================================================ payment ==
@@ -693,17 +736,30 @@ public class KioskViewModel : ObservableObject, IDisposable
         }
     }
 
-    private void SubmitFeedback()
+    private void SubmitFeedback(object? parameter)
     {
+        if (parameter is not Guid requestToken)
+        {
+            return;
+        }
+
         int? rating = SelectedFeedbackRating > 0 ? SelectedFeedbackRating : null;
         string? comment = string.IsNullOrWhiteSpace(FeedbackComment) ? null : FeedbackComment.Trim();
-        _feedback?.SubmitFeedback(new FeedbackResult(rating, comment));
+        _feedback?.SubmitFeedback(new FeedbackResult(rating, comment), requestToken);
     }
 
-    private void ShowFeedbackPrompt()
+    private void ShowFeedbackPrompt(Guid requestToken)
     {
+        FeedbackRequestToken = requestToken;
         SelectedFeedbackRating = 0;
         FeedbackComment = string.Empty;
+    }
+
+    private Guid? _feedbackRequestToken;
+    public Guid? FeedbackRequestToken
+    {
+        get => _feedbackRequestToken;
+        private set => SetProperty(ref _feedbackRequestToken, value);
     }
 
     // ============================================================== survey ==
@@ -1213,9 +1269,8 @@ public class KioskViewModel : ObservableObject, IDisposable
         if (state == BoothState.Idle)
         {
             ResetForNextGuest();
-            // Re-read settings/theme at Idle only, so an admin's save reaches
-            // the next guest without an app restart and without repainting
-            // mid-session. Same cadence MainWindow.ApplyThemeAsync uses.
+            // Re-read settings/theme at Idle as a fallback for changes made by
+            // another process or while the kiosk was not yet subscribed.
             _ = ReloadSettingsAsync();
         }
 
@@ -1319,6 +1374,16 @@ public class KioskViewModel : ObservableObject, IDisposable
 
     private void ResetForNextGuest()
     {
+        _filterSelection?.CancelPending();
+        _frameSelection?.CancelPending();
+        _feedback?.CancelPending();
+        _guestbookPrompt?.CancelPending();
+        FilterRequestToken = null;
+        FrameRequestToken = null;
+        FeedbackRequestToken = null;
+        _captureModeOverride.Mode = null;
+        _selectedCaptureMode = CaptureMode.Photo;
+        RaisePropertyChanged(nameof(SelectedCaptureMode));
         StopGifPreviewAnimation();
         TemplatePreview = null;
         PreviewUnavailableReason = null;
@@ -1342,6 +1407,19 @@ public class KioskViewModel : ObservableObject, IDisposable
     }
 
     private async Task ReloadSettingsAsync()
+    {
+        await _settingsReloadGate.WaitAsync();
+        try
+        {
+            await ReloadSettingsCoreAsync();
+        }
+        finally
+        {
+            _settingsReloadGate.Release();
+        }
+    }
+
+    private async Task ReloadSettingsCoreAsync()
     {
         BoothSettings settings;
         try
@@ -1395,15 +1473,25 @@ public class KioskViewModel : ObservableObject, IDisposable
             UnlockButtonOpacity = Math.Clamp(settings.Screen.UnlockButtonOpacityPercent, 0, 100) / 100.0;
             ShareSecondsTotal = settings.Screen.FinalScreenTimeoutSeconds;
             IsAdminLocked = settings.IsLocked;
+            IsCancelButtonVisible = settings.Screen.ShowCancelButton
+                && (CurrentScreenState == KioskScreen.Countdown || CurrentScreenState == KioskScreen.Capture);
+            IsRetakeVisible = settings.Screen.ShowRetakeButton && CurrentScreenState == KioskScreen.Review;
 
             if (overlayElements is not null)
             {
                 _screenElementsByScreen = overlayElements.ToLookup(e => e.Screen);
             }
             ScreenOverlaysChanged?.Invoke();
+            ApplyRemoteControlEnabled(settings.RemoteControlEnabled);
         });
+    }
 
-        ApplyRemoteControlEnabled(settings.RemoteControlEnabled);
+    private void OnSettingsChanged(object? sender, BoothSettingsChangedEventArgs args)
+    {
+        if (_locationId == args.LocationId && !_disposed)
+        {
+            _ = ReloadSettingsAsync();
+        }
     }
 
     /// <summary>Starts or stops the loopback Remote Control HTTP listener to
@@ -1805,6 +1893,7 @@ public class KioskViewModel : ObservableObject, IDisposable
             return;
         }
         _disposed = true;
+        BoothSettingsChanged.Changed -= OnSettingsChanged;
 
         _liveViewTimer.Stop();
         _flashTimer.Stop();

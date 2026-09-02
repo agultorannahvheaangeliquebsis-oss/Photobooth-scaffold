@@ -551,6 +551,75 @@
 
                     <TextBlock Text="Canvas" Style="{StaticResource EditorSectionHeader}" />
                     <TextBlock x:Name="CanvasInfoText" Style="{StaticResource EditorLabel}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+
+                    <!-- Paper size: merged in from AdminWindow's former embedded Print
+                         Layout panel; edits _workingLayout/_workingWidthInches/
+                         _workingHeightInches/_workingStripCopies directly (see
+                         ApplyPaperSizeChange), same fields the Save button already
+                         persists via UpdatePrintGeometryAsync. -->
+                    <TextBlock Text="Paper size" Style="{StaticResource EditorSectionHeader}" />
+                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                        <RadioButton x:Name="SingleLayoutRadio" GroupName="PrintLayoutGeometry" Content="Single"
+                                     IsChecked="True" Margin="0,0,8,0" Checked="PaperSizeRadio_Checked" />
+                        <RadioButton x:Name="StripLayoutRadio" GroupName="PrintLayoutGeometry" Content="Strip"
+                                     Checked="PaperSizeRadio_Checked" />
+                    </StackPanel>
+                    <Grid Margin="0,8,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Margin="0,0,4,0">
+                            <TextBlock Text="Width (in)" Style="{StaticResource EditorLabel}" Margin="0,0,0,2" />
+                            <TextBox x:Name="PrintWidthBox" TextChanged="PaperSizeBox_TextChanged" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Margin="4,0,0,0">
+                            <TextBlock Text="Height (in)" Style="{StaticResource EditorLabel}" Margin="0,0,0,2" />
+                            <TextBox x:Name="PrintHeightBox" TextChanged="PaperSizeBox_TextChanged" />
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock Text="Strip copies" Style="{StaticResource EditorLabel}" Margin="0,8,0,2" />
+                    <TextBox x:Name="StripCopiesBox" HorizontalAlignment="Left" Width="70" TextChanged="PaperSizeBox_TextChanged" />
+                    <TextBlock Text="Only applies when Strip is selected -- e.g. 2 photos stacked on a 2x6." Style="{StaticResource EditorLabel}"
+                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,0" />
+
+                    <!-- Frame library: frames an admin adds here show up in the
+                         guest-facing FramePicker screen. Independent of this
+                         window's own Save/Cancel; add/delete/toggle apply
+                         immediately, same as before in AdminWindow. -->
+                    <TextBlock Text="Frame library" Style="{StaticResource EditorSectionHeader}" />
+                    <ItemsControl x:Name="FramesList">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="0,4">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding Name}" Style="{StaticResource EditorLabel}"
+                                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0" />
+                                        <Button Grid.Column="1" Content="Delete" Padding="8,4" Tag="{Binding FrameId}" Click="DeleteFrameButton_Click" />
+                                    </Grid>
+                                    <CheckBox IsChecked="{Binding IsActive, Mode=OneWay}" Content="Active" Tag="{Binding FrameId}"
+                                              Margin="0,4,0,0" Click="FrameActiveCheckBox_Click" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock x:Name="FramesEmptyText" Text="No frames added yet -- FramePicker won't show for guests until one exists."
+                               Style="{StaticResource EditorLabel}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Visibility="Collapsed" />
+
+                    <TextBlock Text="New frame name" Style="{StaticResource EditorLabel}" Margin="0,10,0,2" />
+                    <TextBox x:Name="NewFrameNameBox" />
+                    <Button x:Name="BrowseFrameImageButton" Content="Browse..." Padding="8,4" Margin="0,6,0,0"
+                            HorizontalAlignment="Left" Click="BrowseFrameImageButton_Click" />
+                    <TextBlock x:Name="SelectedFrameImageText" Text="No image selected." Style="{StaticResource EditorLabel}"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
+                    <Button x:Name="AddFrameButton" Content="Add Frame" Style="{StaticResource PrimaryButton}" Padding="14,7"
+                            HorizontalAlignment="Left" Margin="0,8,0,0" Click="AddFrameButton_Click" />
+                    <TextBlock x:Name="FrameStatusText" Style="{StaticResource EditorLabel}"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
                 </StackPanel>
             </ScrollViewer>
 

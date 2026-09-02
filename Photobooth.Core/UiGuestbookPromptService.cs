@@ -55,4 +55,20 @@ public class UiGuestbookPromptService : IGuestbookPromptService
         _pendingStop?.TrySetResult();
         _pendingStop = null;
     }
+
+    /// <summary>Cancels whichever wait is outstanding -- called when
+    /// BoothStateMachine's guest-idle timeout fires on AskToRecordAsync (a
+    /// guest who walked away without tapping Record or Skip), same
+    /// "orphaned wait gets explicitly cancelled, not left to resolve into a
+    /// future guest's tap" reasoning UiFeedbackService/UiFrameSelectionService/
+    /// UiFilterSelectionService's own CancelPending already establishes.
+    /// Also called on every return to Idle (see KioskViewModel.ResetForNextGuest)
+    /// as a belt-and-suspenders cleanup.</summary>
+    public void CancelPending()
+    {
+        _pendingAsk?.TrySetCanceled();
+        _pendingAsk = null;
+        _pendingStop?.TrySetCanceled();
+        _pendingStop = null;
+    }
 }

@@ -52,12 +52,12 @@ public partial class AdminWindow : Window
     /// this isn't simply relative to this window's own process directory.</summary>
     public static string CapturesDirectory { get; } = BoothCompositionRoot.ResolveCapturesDirectory();
 
-    private string? _pendingFrameImagePath;
     private List<FrameRecord> _stickerFrames = new();
     private int _stickerPreviewIndex;
     private string? _pendingThemeLogoPath;
     private string? _existingThemeLogoPath;
     private PrintTemplate _currentPrintTemplate = PrintTemplate.Default;
+    private BoothTheme _currentTheme = BoothTheme.Default;
 
     private string? _pendingWatermarkPath;
     private string? _existingWatermarkPath;
@@ -182,7 +182,6 @@ public partial class AdminWindow : Window
 
     private Dictionary<string, FrameworkElement> SectionPanels => _sectionPanels ??= new()
     {
-        ["PrintLayout"] = PrintLayoutSectionPanel,
         ["General"] = GeneralSectionPanel,
         ["CaptureSettings"] = CaptureSettingsSectionPanel,
         ["CameraSettings"] = CameraSettingsSectionPanel,
@@ -242,6 +241,18 @@ public partial class AdminWindow : Window
         }
     }
 
+    /// <summary>Print Layout is its own full-screen editor window
+    /// (PrintTemplateEditorWindow), not a ShowSection panel -- see
+    /// OpenPrintTemplateEditorAsync's own doc comment.</summary>
+    private async void PrintLayoutMenuLink_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        NavMenuToggle.IsChecked = false;
+        await OpenPrintTemplateEditorAsync();
+    }
+
+    private async void PrintLayoutBreadcrumbLink_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        => await OpenPrintTemplateEditorAsync();
+
     private void PreviousSection_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         if (sender is FrameworkElement { Tag: string key })
@@ -264,11 +275,12 @@ public partial class AdminWindow : Window
     /// CloseButton_Click).</summary>
     private void LaunchEvent_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) => Close();
 
-    /// <summary>Countdown/Glam/PIN (General) and the print template (Print
-    /// Layout) save together through one call (LocationRepository.
-    /// UpdateSettingsAsync); both sections' Save buttons trigger this same
-    /// handler, so status/enabled state is mirrored to both status texts and
-    /// both buttons rather than just whichever one was clicked.</summary>
+    /// <summary>Countdown/Glam/PIN save through LocationRepository.
+    /// UpdateSettingsAsync, which also takes a PrintTemplate parameter for its
+    /// geometry columns -- always passed through as _currentPrintTemplate
+    /// unchanged here, since print geometry now saves independently via
+    /// PrintTemplateEditorWindow's own UpdatePrintGeometryAsync (see
+    /// OpenPrintTemplateEditorAsync), so General's Save can't clobber it.</summary>
     private void SetSettingsStatus(string text, bool isError)
     {
         System.Windows.Media.Brush brush = isError
@@ -276,8 +288,6 @@ public partial class AdminWindow : Window
             : (System.Windows.Media.Brush)FindResource("MutedBrush");
         SettingsStatusText.Text = text;
         SettingsStatusText.Foreground = brush;
-        PrintLayoutStatusText.Text = text;
-        PrintLayoutStatusText.Foreground = brush;
     }
 
     private async void SaveSettingsButton_Click(object sender, RoutedEventArgs e)
@@ -285,22 +295,6 @@ public partial class AdminWindow : Window
         if (!int.TryParse(CountdownSecondsBox.Text, out int countdownSeconds) || countdownSeconds <= 0)
         {
             SetSettingsStatus("Countdown must be a whole number of seconds greater than 0.", isError: true);
-            return;
-        }
-
-        string layout = StripLayoutRadio.IsChecked == true ? "Strip" : "Single";
-        if (!double.TryParse(PrintWidthBox.Text, out double widthInches)
-            || !double.TryParse(PrintHeightBox.Text, out double heightInches)
-            || !int.TryParse(StripCopiesBox.Text, out int stripCopies))
-        {
-            SetSettingsStatus("Print width/height and strip copies must be numbers.", isError: true);
-            return;
-        }
-
-        var printTemplate = new PrintTemplate(layout, widthInches, heightInches, stripCopies);
-        if (!printTemplate.IsValid)
-        {
-            SetSettingsStatus("Print width/height must be greater than 0 and strip copies at least 1.", isError: true);
             return;
         }
 
@@ -312,11 +306,11 @@ public partial class AdminWindow : Window
         }
 
         SaveSettingsButton.IsEnabled = false;
-        SavePrintLayoutButton.IsEnabled = false;
         try
         {
-            await _locations.UpdateSettingsAsync(_locationId, countdownSeconds, GlamFilterCheckBox.IsChecked == true, printTemplate, adminPin);
-            SetSettingsStatus("Saved -- takes effect for the next guest session.", isError: false);
+            await _locations.UpdateSettingsAsync(_locationId, countdownSeconds, GlamFilterCheckBox.IsChecked == true, _currentPrintTemplate, adminPin);
+            BoothSettingsChanged.Publish(_locationId);
+            SetSettingsStatus("Saved -- applied to the live kiosk.", isError: false);
         }
         catch (Exception ex)
         {
@@ -325,7 +319,6 @@ public partial class AdminWindow : Window
         finally
         {
             SaveSettingsButton.IsEnabled = true;
-            SavePrintLayoutButton.IsEnabled = true;
         }
     }
 
@@ -402,9 +395,10 @@ public partial class AdminWindow : Window
         try
         {
             await _locations.UpdateThemeAsync(_locationId, theme);
+            BoothSettingsChanged.Publish(_locationId);
             _existingThemeLogoPath = logoPath;
             _pendingThemeLogoPath = null;
-            ThemeStatusText.Text = "Saved -- takes effect for the next guest session.";
+            ThemeStatusText.Text = "Saved -- applied to the live kiosk.";
             ThemeStatusText.Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush");
         }
         catch (Exception ex)
@@ -418,8 +412,11 @@ public partial class AdminWindow : Window
         }
     }
 
-    private async void EditPrintTemplateButton_Click(object sender, RoutedEventArgs e) => await OpenPrintTemplateEditorAsync();
-
+    /// <summary>Opens the merged Print Layout editor (paper size, print
+    /// template elements, and the Frame library) -- reached from the nav menu
+    /// (PrintLayoutMenuLink_MouseLeftButtonDown), General's own breadcrumb
+    /// (PrintLayoutBreadcrumbLink_MouseLeftButtonDown), and chained into from
+    /// the Screen Editor's "Print Layout &gt;" breadcrumb below.</summary>
     private async Task OpenPrintTemplateEditorAsync()
     {
         // _currentPrintTemplate.Elements is always empty here -- LocationRepository.
@@ -449,16 +446,14 @@ public partial class AdminWindow : Window
         }
     }
 
-    private async void EditScreenLayoutButton_Click(object sender, RoutedEventArgs e) => await EditScreenLayoutButtonAsync();
-
-    /// <summary>Callable form of EditScreenLayoutButton_Click -- also chained into
-    /// from OpenPrintTemplateEditorAsync when the print editor's own "&lt; Screen
-    /// Editor" breadcrumb is clicked, same chaining EditScreenLayoutButton_Click
-    /// already does the other direction via requestedNavigation == "PrintLayout".</summary>
+    /// <summary>Opens the Screen Editor -- chained into from
+    /// OpenPrintTemplateEditorAsync when the print editor's own "&lt; Screen
+    /// Editor" breadcrumb is clicked, and this method's own chain back the other
+    /// direction via requestedNavigation == "PrintLayout" below.</summary>
     private async Task EditScreenLayoutButtonAsync()
     {
         var existing = await new ScreenTemplateElementRepository().GetAllByLocationAsync(_locationId);
-        var editor = new ScreenTemplateEditorWindow(existing, _locationId, _currentScreenSettings) { Owner = this };
+        var editor = new ScreenTemplateEditorWindow(existing, _locationId, _currentScreenSettings, _currentTheme) { Owner = this };
         bool saved = editor.ShowDialog() == true;
         string? requestedNavigation = editor.RequestedNavigation;
         if (saved)
@@ -533,13 +528,9 @@ public partial class AdminWindow : Window
                 AdminPinBox.Text = location.AdminPin;
 
                 _currentPrintTemplate = location.PrintTemplate;
-                SingleLayoutRadio.IsChecked = _currentPrintTemplate.Layout != "Strip";
-                StripLayoutRadio.IsChecked = _currentPrintTemplate.Layout == "Strip";
-                PrintWidthBox.Text = _currentPrintTemplate.WidthInches.ToString();
-                PrintHeightBox.Text = _currentPrintTemplate.HeightInches.ToString();
-                StripCopiesBox.Text = _currentPrintTemplate.StripCopies.ToString();
 
                 BoothTheme theme = location.Theme;
+                _currentTheme = theme;
                 AccentColorBox.Text = theme.AccentColorHex;
                 CanvasColorBox.Text = theme.CanvasColorHex;
                 InkColorBox.Text = theme.InkColorHex;
@@ -763,15 +754,13 @@ public partial class AdminWindow : Window
         }
     }
 
+    /// <summary>Frame library CRUD (add/delete/browse/toggle-active) now lives
+    /// entirely in PrintTemplateEditorWindow (see the merged Print Layout
+    /// editor) -- this window only still needs the frame *list* itself, to
+    /// feed the Effects & Stickers card's quick prev/next preview below.</summary>
     private async Task LoadFramesAsync()
     {
         var frames = await _frames.GetAllByLocationAsync(_locationId);
-        FramesList.ItemsSource = frames;
-        FramesEmptyText.Visibility = frames.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-
-        // Same list, reused for the Effects & Stickers card's quick prev/next
-        // preview -- see the Stickers card's own comment for why this reuses
-        // the Frame library instead of a second asset store.
         _stickerFrames = frames;
         _stickerPreviewIndex = 0;
         UpdateStickerPreviewText();
@@ -867,82 +856,6 @@ public partial class AdminWindow : Window
         if (dialog.ShowDialog() == true)
         {
             PostProcessingApplicationPathBox.Text = dialog.FileName;
-        }
-    }
-
-    private void BrowseFrameImageButton_Click(object sender, RoutedEventArgs e)
-    {
-        var dialog = new Microsoft.Win32.OpenFileDialog
-        {
-            Filter = "Image files (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg",
-            Title = "Choose a frame overlay image",
-        };
-        if (dialog.ShowDialog() == true)
-        {
-            _pendingFrameImagePath = dialog.FileName;
-            SelectedFrameImageText.Text = System.IO.Path.GetFileName(dialog.FileName);
-        }
-    }
-
-    /// <summary>Copies the chosen image into a local Assets/Frames folder (same
-    /// "own local copy, not a reference to wherever the admin picked it from"
-    /// reasoning MockCameraService's captures/ folder already uses) and inserts
-    /// the Frame row.</summary>
-    private async void AddFrameButton_Click(object sender, RoutedEventArgs e)
-    {
-        string name = NewFrameNameBox.Text.Trim();
-        if (name.Length == 0 || _pendingFrameImagePath is null)
-        {
-            FrameStatusText.Text = "Enter a name and choose an image first.";
-            FrameStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
-            return;
-        }
-
-        AddFrameButton.IsEnabled = false;
-        try
-        {
-            string framesDirectory = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "Frames");
-            System.IO.Directory.CreateDirectory(framesDirectory);
-            string storedFileName = $"{Guid.NewGuid():N}{System.IO.Path.GetExtension(_pendingFrameImagePath)}";
-            string storedPath = System.IO.Path.Combine(framesDirectory, storedFileName);
-            System.IO.File.Copy(_pendingFrameImagePath, storedPath, overwrite: true);
-
-            var existing = await _frames.GetAllByLocationAsync(_locationId);
-            await _frames.InsertAsync(_locationId, name, storedPath, sortOrder: existing.Count);
-
-            NewFrameNameBox.Text = string.Empty;
-            _pendingFrameImagePath = null;
-            SelectedFrameImageText.Text = "No image selected.";
-            FrameStatusText.Text = "Frame added -- available to the next guest.";
-            FrameStatusText.Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush");
-            await LoadFramesAsync();
-        }
-        catch (Exception ex)
-        {
-            FrameStatusText.Text = $"Couldn't add frame: {ex.Message}";
-            FrameStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
-        }
-        finally
-        {
-            AddFrameButton.IsEnabled = true;
-        }
-    }
-
-    private async void FrameActiveCheckBox_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is CheckBox { Tag: int frameId } checkBox)
-        {
-            await _frames.SetActiveAsync(frameId, checkBox.IsChecked == true);
-            await LoadFramesAsync();
-        }
-    }
-
-    private async void DeleteFrameButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button { Tag: int frameId })
-        {
-            await _frames.DeleteAsync(frameId);
-            await LoadFramesAsync();
         }
     }
 
@@ -1242,6 +1155,7 @@ public partial class AdminWindow : Window
         try
         {
             await _locations.UpdateDslrBoothParitySettingsAsync(_locationId, capture, screen, effects, greenScreen, survey, disclaimer, printOptions, sharing);
+            BoothSettingsChanged.Publish(_locationId);
             _currentScreenSettings = screen;
             _existingWatermarkPath = watermarkPath;
             _pendingWatermarkPath = null;
@@ -1257,7 +1171,7 @@ public partial class AdminWindow : Window
             TwilioAuthTokenHintText.Text = sharing.TwilioAuthTokenProtected.Length > 0
                 ? "An auth token is already saved. Leave blank to keep it."
                 : "No auth token saved yet.";
-            statusText.Text = "Saved -- takes effect for the next guest session.";
+            statusText.Text = "Saved -- applied to the live kiosk.";
             statusText.Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush");
         }
         catch (Exception ex)
@@ -1288,7 +1202,8 @@ public partial class AdminWindow : Window
         try
         {
             await _locations.UpdateVirtualAttendantSettingsAsync(_locationId, settings);
-            AttendantSettingsStatusText.Text = "Saved -- takes effect for the very next state transition.";
+            BoothSettingsChanged.Publish(_locationId);
+            AttendantSettingsStatusText.Text = "Saved -- applied to the live kiosk.";
             AttendantSettingsStatusText.Foreground = (Brush)FindResource("MutedBrush");
         }
         catch (Exception ex)
@@ -1304,8 +1219,8 @@ public partial class AdminWindow : Window
 
     /// <summary>Rebuilds the Virtual Attendant tile grid from scratch against the
     /// current clip pool -- called after every load and after any add/delete/
-    /// reorder, same "just reload" simplicity FramesList/SurveyQuestionsList
-    /// etc. already use elsewhere in this file.</summary>
+    /// reorder, same "just reload" simplicity SurveyQuestionsList etc.
+    /// already use elsewhere in this file.</summary>
     private async Task LoadAttendantClipsAsync()
     {
         List<VirtualAttendantClipRecord> clips = await _attendantClips.GetAllByLocationAsync(_locationId);
@@ -1522,6 +1437,7 @@ public partial class AdminWindow : Window
         try
         {
             await _locations.UpdateSlideshowSettingsAsync(_locationId, settings);
+            BoothSettingsChanged.Publish(_locationId);
             SlideshowStatusText.Text = "Saved.";
             SlideshowStatusText.Foreground = (Brush)FindResource("MutedBrush");
         }
@@ -1784,6 +1700,7 @@ public partial class AdminWindow : Window
         try
         {
             await _locations.UpdateRemoteControlEnabledAsync(_locationId, enabled);
+            BoothSettingsChanged.Publish(_locationId);
             RemoteControlStatusText.Text = enabled
                 ? "Saved -- the running kiosk starts listening the next time it returns to Idle."
                 : "Saved -- disabled.";
@@ -1821,6 +1738,7 @@ public partial class AdminWindow : Window
         try
         {
             await _locations.UpdateLockedAsync(_locationId, locked);
+            BoothSettingsChanged.Publish(_locationId);
             _isLocked = locked;
             UpdateLockScreenStatusText();
             // Applies immediately to a live kiosk session, if this dashboard

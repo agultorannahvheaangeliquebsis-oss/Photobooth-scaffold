@@ -635,10 +635,31 @@
 
         <!-- ElementsCanvas is the live view itself (no separate rendered preview
              like PrintTemplateEditorWindow's PreviewImage); these are placed
-             WPF elements, not composited onto a captured photo. -->
+             WPF elements, not composited onto a captured photo. A branding
+             layer sits underneath it (see UpdateBrandingLayer) showing the
+             event's real logo/name the way KioskWindow actually renders them,
+             so this canvas isn't disconnected from the live guest screens. -->
         <Border Grid.Row="1" Grid.Column="1" Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
                 HorizontalAlignment="Center" VerticalAlignment="Center">
-            <Canvas x:Name="ElementsCanvas" Background="#F4F3F0" />
+            <Grid Background="#F4F3F0">
+                <!-- Welcome screen: big centered logo + event name, matching
+                     KioskWindow's IdleScreen layout. -->
+                <StackPanel x:Name="WelcomeBrandingLayer" IsHitTestVisible="False" Visibility="Collapsed"
+                            HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Image x:Name="WelcomeBrandingLogo" MaxHeight="70" Stretch="Uniform" HorizontalAlignment="Center" />
+                    <TextBlock x:Name="WelcomeBrandingEventName" FontFamily="Segoe UI" FontSize="26" FontWeight="Bold"
+                               Foreground="#2A2A28" HorizontalAlignment="Center" Margin="0,10,0,0" />
+                </StackPanel>
+                <!-- Capture/Sharing screens: the small top-center "brand bar",
+                     matching KioskWindow's CHROME: BRAND BAR block. -->
+                <StackPanel x:Name="BrandBarBrandingLayer" IsHitTestVisible="False" Visibility="Collapsed"
+                            Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,16,0,0">
+                    <Image x:Name="BrandBarLogo" Height="18" Margin="0,0,8,0" Stretch="Uniform" />
+                    <TextBlock x:Name="BrandBarEventName" FontFamily="Segoe UI" FontSize="11" FontWeight="SemiBold"
+                               Foreground="#2A2A28" VerticalAlignment="Center" />
+                </StackPanel>
+                <Canvas x:Name="ElementsCanvas" Background="Transparent" />
+            </Grid>
         </Border>
 
         <!-- DESIGN/SETTINGS split, matching dslrBooth's own Screen Editor side

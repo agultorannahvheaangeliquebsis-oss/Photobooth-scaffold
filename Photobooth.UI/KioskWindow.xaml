@@ -335,8 +335,8 @@
                                     Command="{Binding DataContext.SelectFilterCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                     CommandParameter="{Binding}">
                                 <StackPanel>
-                                    <Image Width="150" Height="90" Stretch="UniformToFill" Source="{Binding PreviewImagePath, Converter={StaticResource PathToImageSource}}" />
-                                    <TextBlock Text="{Binding DisplayName}" FontFamily="{StaticResource KioskFont}" FontSize="16"
+                                    <Image Width="150" Height="90" Stretch="UniformToFill" Source="{Binding Option.PreviewImagePath, Converter={StaticResource PathToImageSource}}" />
+                                    <TextBlock Text="{Binding Option.DisplayName}" FontFamily="{StaticResource KioskFont}" FontSize="16"
                                                FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}"
                                                HorizontalAlignment="Center" Margin="0,10,0,0" />
                                 </StackPanel>
@@ -366,8 +366,8 @@
                                     Command="{Binding DataContext.SelectFrameCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                     CommandParameter="{Binding}">
                                 <StackPanel>
-                                    <Image Width="150" Height="90" Stretch="Uniform" Source="{Binding ImagePath, Converter={StaticResource PathToImageSource}}" />
-                                    <TextBlock Text="{Binding Name}" FontFamily="{StaticResource KioskFont}" FontSize="16"
+                                    <Image Width="150" Height="90" Stretch="Uniform" Source="{Binding Option.ImagePath, Converter={StaticResource PathToImageSource}}" />
+                                    <TextBlock Text="{Binding Option.Name}" FontFamily="{StaticResource KioskFont}" FontSize="16"
                                                FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}"
                                                HorizontalAlignment="Center" Margin="0,10,0,0" />
                                 </StackPanel>
@@ -377,7 +377,7 @@
                 </ItemsControl>
                 <Button Style="{StaticResource KioskGhostButton}" Content="NO FRAME" Margin="0,24,0,0"
                         HorizontalAlignment="Center"
-                        Command="{Binding SelectFrameCommand}" CommandParameter="{x:Null}" />
+                        Command="{Binding SelectFrameCommand}" CommandParameter="{Binding FrameRequestToken}" />
             </StackPanel>
         </Grid>
 
@@ -459,9 +459,9 @@
 
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,32,0,0">
                     <Button Style="{StaticResource KioskPrimaryButton}" Content="SUBMIT" Margin="0,0,16,0"
-                            Command="{Binding SubmitFeedbackCommand}" />
+                                Command="{Binding SubmitFeedbackCommand}" CommandParameter="{Binding FeedbackRequestToken}" />
                     <Button Style="{StaticResource KioskGhostButton}" Content="SKIP"
-                            Command="{Binding SkipFeedbackCommand}" />
+                                Command="{Binding SkipFeedbackCommand}" CommandParameter="{Binding FeedbackRequestToken}" />
                 </StackPanel>
             </StackPanel>
         </Grid>

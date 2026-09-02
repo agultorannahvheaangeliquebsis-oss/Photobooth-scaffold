@@ -374,6 +374,47 @@ public class BoothStateMachineTests
     }
 
     [Fact]
+    public async Task RunSessionAsync_CanceledAfterSessionCreation_AbandonsSessionAndClearsLastSession()
+    {
+        var camera = new MockCameraService();
+        var printer = new MockPrinterService();
+        var cloudUpload = new MockCloudUploadService();
+        var paymentService = new MockQrPaymentService();
+        var sessions = new MockSessionRepository();
+        var uploadQueue = new MockPendingUploadQueue();
+        var consent = new MockConsentService();
+        var email = new MockEmailDeliveryService();
+        var branding = new MockPhotoBrandingService();
+        var filter = new MockPhotoFilterService();
+        var settings = new MockBoothSettingsProvider
+        {
+            Settings = new BoothSettings(CountdownSeconds: 0, GlamFilterEnabled: false, PrintTemplate: PrintTemplate.Default)
+            {
+                Screen = ScreenSettings.Default with { FinalScreenTimeoutSeconds = 1 },
+            },
+        };
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
+        var machine = new BoothStateMachine(services, mode: "event");
+        using var cancellation = new CancellationTokenSource();
+        machine.StateChanged += state =>
+        {
+            if (state == BoothState.Capturing)
+            {
+                cancellation.Cancel();
+            }
+        };
+
+        await machine.RunSessionAsync(cancellation.Token);
+
+        var createdSession = Assert.Single(sessions.CreatedSessions);
+        Assert.Equal(createdSession.SessionId, Assert.Single(sessions.AbandonedSessionIds));
+        Assert.Empty(sessions.CompletedSessionIds);
+        Assert.Empty(sessions.FailedSessionIds);
+        Assert.Null(machine.LastSessionId);
+        Assert.Equal(BoothState.Idle, machine.CurrentState);
+    }
+
+    [Fact]
     public async Task RunSessionAsync_VendoMode_RunsPaymentBeforePrintingAndRecordsPaidAmount()
     {
         var camera = new MockCameraService();

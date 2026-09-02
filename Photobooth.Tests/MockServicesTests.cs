@@ -414,6 +414,38 @@ public class UiFrameSelectionServiceTests
 
         Assert.Null(await pending);
     }
+
+    [Fact]
+    public async Task SelectFrameAsync_RejectsStaleSubmissionAfterReplacement()
+    {
+        var selection = new UiFrameSelectionService();
+        var offered = new[] { new FrameOption(1, "Gold Border", "./frames/gold.png") };
+
+        Task<FrameOption?> first = selection.SelectFrameAsync(offered);
+        Guid firstToken = selection.CurrentRequestToken!.Value;
+        Task<FrameOption?> second = selection.SelectFrameAsync(offered);
+        Guid secondToken = selection.CurrentRequestToken!.Value;
+
+        selection.SubmitSelection(offered[0], firstToken);
+        Assert.False(second.IsCompleted);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+
+        selection.SubmitSelection(offered[0], secondToken);
+        Assert.Same(offered[0], await second);
+    }
+
+    [Fact]
+    public async Task SelectFrameAsync_CancelPendingCancelsOutstandingRequest()
+    {
+        var selection = new UiFrameSelectionService();
+        Task<FrameOption?> pending = selection.SelectFrameAsync(
+            new[] { new FrameOption(1, "Gold Border", "./frames/gold.png") });
+
+        selection.CancelPending();
+
+        Assert.Null(selection.CurrentRequestToken);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+    }
 }
 
 public class MockFeedbackServiceTests
@@ -477,6 +509,35 @@ public class UiFeedbackServiceTests
 
         FeedbackResult result = await pending;
         Assert.True(result.IsEmpty);
+    }
+
+    [Fact]
+    public async Task CollectAsync_RejectsStaleSubmissionAfterReplacement()
+    {
+        var feedback = new UiFeedbackService();
+        Task<FeedbackResult> first = feedback.CollectAsync();
+        Guid firstToken = feedback.CurrentRequestToken!.Value;
+        Task<FeedbackResult> second = feedback.CollectAsync();
+        Guid secondToken = feedback.CurrentRequestToken!.Value;
+
+        feedback.SubmitFeedback(new FeedbackResult(1, null), firstToken);
+        Assert.False(second.IsCompleted);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+
+        feedback.SubmitFeedback(new FeedbackResult(5, null), secondToken);
+        Assert.Equal(5, (await second).Rating);
+    }
+
+    [Fact]
+    public async Task CollectAsync_CancelPendingCancelsOutstandingRequest()
+    {
+        var feedback = new UiFeedbackService();
+        Task<FeedbackResult> pending = feedback.CollectAsync();
+
+        feedback.CancelPending();
+
+        Assert.Null(feedback.CurrentRequestToken);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
     }
 }
 

@@ -25,8 +25,11 @@ namespace Photobooth.UI;
 /// element model actually needs. Unlike the print editor, there's no
 /// PrintCompositor-rendered preview underneath: ElementsCanvas itself is the
 /// live view, since these are placed WPF elements, not composited onto a
-/// captured photo. Not yet seen rendered or clicked through -- same
-/// interactive-desktop gap every WPF screen in this project has.
+/// captured photo -- the one exception is a read-only branding layer (see
+/// UpdateBrandingLayer) showing the event's real logo/name behind it, so the
+/// canvas at least isn't visually disconnected from KioskWindow. Not yet seen
+/// rendered or clicked through -- same interactive-desktop gap every WPF
+/// screen in this project has.
 /// </summary>
 public partial class ScreenTemplateEditorWindow : Window
 {
@@ -36,6 +39,14 @@ public partial class ScreenTemplateEditorWindow : Window
     private const double MinElementSizePx = 20;
 
     private readonly int _locationId;
+
+    /// <summary>The event's current logo/colors/name -- rendered read-only
+    /// underneath ElementsCanvas (see UpdateBrandingLayer) so this editor's
+    /// canvas isn't a dead rectangle disconnected from what guests actually
+    /// see on KioskWindow. Passed in from AdminWindow's own already-loaded
+    /// copy rather than re-fetched, same reasoning _screenSettings below
+    /// already follows.</summary>
+    private readonly BoothTheme _theme;
 
     /// <summary>Working copy of the screen-chrome toggles edited by the
     /// SETTINGS tab (see ScreenSettingsCheckBox_Click/RotationRadio_Click/
@@ -106,12 +117,13 @@ public partial class ScreenTemplateEditorWindow : Window
     private bool _suppressPropertyEvents;
     private bool _suppressLayerListEvents;
 
-    public ScreenTemplateEditorWindow(IReadOnlyList<ScreenTemplateElement> existingElements, int locationId, ScreenSettings screenSettings)
+    public ScreenTemplateEditorWindow(IReadOnlyList<ScreenTemplateElement> existingElements, int locationId, ScreenSettings screenSettings, BoothTheme theme)
     {
         InitializeComponent();
 
         _locationId = locationId;
         _screenSettings = screenSettings;
+        _theme = theme;
         foreach (ScreenTemplateElement element in existingElements)
         {
             _elementsByScreen[element.Screen].Add(element);
@@ -443,6 +455,34 @@ public partial class ScreenTemplateEditorWindow : Window
 
         RefreshLayerList();
         SelectElement(-1);
+        UpdateBrandingLayer();
+    }
+
+    /// <summary>Shows the event's real logo/name behind the overlay elements --
+    /// Welcome gets the big centered logo+name KioskWindow's IdleScreen shows,
+    /// Capture/Sharing get the small top-center "brand bar" KioskWindow shows
+    /// during Countdown/Capture/Processing/Review (see KioskWindow.xaml's own
+    /// CHROME: BRAND BAR block). Only these two fields are actually applied to
+    /// the live guest screens today -- Theme's accent/canvas/ink colors aren't
+    /// (see BoothTheme), so they're deliberately not painted here either; doing
+    /// so would make this preview claim a fidelity it doesn't have.</summary>
+    private void UpdateBrandingLayer()
+    {
+        ImageSource? logo = _theme.LogoImagePath is string path && File.Exists(path)
+            ? new BitmapImage(new Uri(IoPath.GetFullPath(path)))
+            : null;
+
+        bool isWelcome = _activeScreen == ScreenTemplateScreen.Welcome;
+        WelcomeBrandingLayer.Visibility = isWelcome ? Visibility.Visible : Visibility.Collapsed;
+        BrandBarBrandingLayer.Visibility = isWelcome ? Visibility.Collapsed : Visibility.Visible;
+
+        WelcomeBrandingLogo.Source = logo;
+        WelcomeBrandingLogo.Visibility = logo is null ? Visibility.Collapsed : Visibility.Visible;
+        WelcomeBrandingEventName.Text = _theme.EventName;
+
+        BrandBarLogo.Source = logo;
+        BrandBarLogo.Visibility = logo is null ? Visibility.Collapsed : Visibility.Visible;
+        BrandBarEventName.Text = _theme.EventName;
     }
 
     private void AddVisualForElement(int index)
@@ -993,6 +1033,7 @@ public partial class ScreenTemplateEditorWindow : Window
         {
             await new ScreenTemplateElementRepository().ReplaceAllAsync(_locationId, all);
             await new LocationRepository().UpdateScreenSettingsAsync(_locationId, _screenSettings);
+            BoothSettingsChanged.Publish(_locationId);
             DialogResult = true;
         }
         catch (Exception ex)

@@ -337,7 +337,9 @@
 
                     <StackPanel Grid.Column="0" Margin="0,0,12,0">
                         <TextBlock Text="SETUP" Style="{StaticResource MenuColumnHeader}" />
-                        <TextBlock Text="Print Layout" Style="{StaticResource MenuLink}" Tag="PrintLayout" MouseLeftButtonDown="MenuLink_Click" />
+                        <!-- Opens PrintTemplateEditorWindow directly, not a ShowSection
+                             panel; see PrintLayoutMenuLink_MouseLeftButtonDown. -->
+                        <TextBlock Text="Print Layout" Style="{StaticResource MenuLink}" MouseLeftButtonDown="PrintLayoutMenuLink_MouseLeftButtonDown" />
                         <TextBlock Text="General" Style="{StaticResource MenuLink}" Tag="General" MouseLeftButtonDown="MenuLink_Click" />
                         <TextBlock Text="Capture Settings" Style="{StaticResource MenuLink}" Tag="CaptureSettings" MouseLeftButtonDown="MenuLink_Click" />
                         <TextBlock Text="Camera Settings" Style="{StaticResource MenuLink}" Tag="CameraSettings" MouseLeftButtonDown="MenuLink_Click" />
@@ -388,90 +390,6 @@
         <ScrollViewer Grid.Row="1" Margin="0,8,0,0">
             <StackPanel>
 
-                <!-- ===== Print Layout ===== -->
-                <StackPanel x:Name="PrintLayoutSectionPanel" Visibility="Collapsed">
-                    <Grid Margin="0,4,0,12">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="" />
-                        <TextBlock Grid.Column="1" Text="Print Layout" FontSize="15" FontWeight="Bold"
-                                   Foreground="{StaticResource InkBrush}" HorizontalAlignment="Center" />
-                        <TextBlock Grid.Column="2" Text="General &gt;" Style="{StaticResource WizardLink}"
-                                   HorizontalAlignment="Right" Tag="General" MouseLeftButtonDown="NextSection_Click" />
-                    </Grid>
-
-                    <TextBlock Text="Print template" Style="{StaticResource SectionHeader}" />
-                    <StackPanel Orientation="Horizontal" Margin="0,2">
-                        <RadioButton x:Name="SingleLayoutRadio" GroupName="PrintLayout" Content="Single"
-                                     Foreground="{StaticResource InkBrush}" IsChecked="True" Margin="0,0,16,0" />
-                        <RadioButton x:Name="StripLayoutRadio" GroupName="PrintLayout" Content="Strip"
-                                     Foreground="{StaticResource InkBrush}" />
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,4">
-                        <TextBlock Text="Paper width (in):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
-                        <TextBox x:Name="PrintWidthBox" Width="60" Margin="0,0,16,0" />
-                        <TextBlock Text="height (in):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="70" />
-                        <TextBox x:Name="PrintHeightBox" Width="60" />
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,4">
-                        <TextBlock Text="Strip copies:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
-                        <TextBox x:Name="StripCopiesBox" Width="60" />
-                    </StackPanel>
-                    <TextBlock Text="Strip copies only applies when Strip is selected -- e.g. 2 photos stacked on a 2x6." Style="{StaticResource Row}"
-                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,2,0,0" />
-                    <Button x:Name="EditPrintTemplateButton" Content="Edit print template..." Padding="8,4"
-                            HorizontalAlignment="Left" Margin="0,8,0,0" Click="EditPrintTemplateButton_Click" />
-                    <!-- Visual Screen Editor (Phase 6), Welcome/Capture/Sharing overlay
-                         elements, same "own editor window, reload after Save" pattern as
-                         EditPrintTemplateButton above. -->
-                    <Button x:Name="EditScreenLayoutButton" Content="Edit screen layout..." Padding="8,4"
-                            HorizontalAlignment="Left" Margin="0,8,0,0" Click="EditScreenLayoutButton_Click" />
-
-                    <TextBlock x:Name="PrintLayoutStatusText" Style="{StaticResource Row}"
-                               Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" />
-                    <Button x:Name="SavePrintLayoutButton" Content="Save Settings" Padding="16,8"
-                            HorizontalAlignment="Left" Margin="0,8,0,0" Click="SaveSettingsButton_Click" />
-
-                    <!-- Frames an admin adds here show up in the guest-facing
-                         FramePicker screen (see MainWindow's FramePickerView):
-                         takes effect for the next guest session, no restart. -->
-                    <TextBlock Text="Frame library" Style="{StaticResource SectionHeader}" />
-                    <ItemsControl x:Name="FramesList">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Grid Margin="0,4">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="{Binding Name}" Style="{StaticResource Row}" VerticalAlignment="Center" />
-                                    <CheckBox Grid.Column="1" IsChecked="{Binding IsActive, Mode=OneWay}" Content="Active"
-                                              Tag="{Binding FrameId}" Margin="8,0" VerticalAlignment="Center" Click="FrameActiveCheckBox_Click" />
-                                    <Button Grid.Column="2" Content="Delete" Padding="8,4" Tag="{Binding FrameId}" Click="DeleteFrameButton_Click" />
-                                </Grid>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                    <TextBlock x:Name="FramesEmptyText" Text="No frames added yet -- FramePicker won't show for guests until one exists."
-                               Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Visibility="Collapsed" />
-
-                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                        <TextBlock Text="New frame name:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
-                        <TextBox x:Name="NewFrameNameBox" Width="140" Margin="0,0,8,0" />
-                        <Button x:Name="BrowseFrameImageButton" Content="Browse..." Padding="8,4" Click="BrowseFrameImageButton_Click" />
-                    </StackPanel>
-                    <TextBlock x:Name="SelectedFrameImageText" Text="No image selected." Style="{StaticResource Row}"
-                               Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
-                    <Button x:Name="AddFrameButton" Content="Add Frame" Padding="16,8"
-                            HorizontalAlignment="Left" Margin="0,8,0,0" Click="AddFrameButton_Click" />
-                    <TextBlock x:Name="FrameStatusText" Style="{StaticResource Row}"
-                               Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
-                </StackPanel>
-
                 <!-- ===== General ===== -->
                 <StackPanel x:Name="GeneralSectionPanel" Visibility="Collapsed">
                     <Grid Margin="0,4,0,12">
@@ -480,8 +398,12 @@
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
+                        <!-- Opens PrintTemplateEditorWindow directly (see
+                             PrintLayoutBreadcrumbLink_MouseLeftButtonDown); Print Layout
+                             is its own full-screen editor window now, not a section panel
+                             in this wizard stack, so this can't just ShowSection anymore. -->
                         <TextBlock Grid.Column="0" Text="&lt; Print Layout" Style="{StaticResource WizardLink}"
-                                   HorizontalAlignment="Left" Tag="PrintLayout" MouseLeftButtonDown="PreviousSection_Click" />
+                                   HorizontalAlignment="Left" MouseLeftButtonDown="PrintLayoutBreadcrumbLink_MouseLeftButtonDown" />
                         <TextBlock Grid.Column="1" Text="General" FontSize="15" FontWeight="Bold"
                                    Foreground="{StaticResource InkBrush}" HorizontalAlignment="Center" />
                         <TextBlock Grid.Column="2" Text="Capture Settings &gt;" Style="{StaticResource WizardLink}"

@@ -66,6 +66,17 @@ public partial class PrintTemplateEditorWindow : Window
     private readonly PrintTemplateRepository _templateRepository = new();
     private readonly LocationRepository _locations = new();
 
+    // Frame library: independent of _elementRepository/_templateRepository above
+    // (frames aren't part of a print template, they're a per-location asset
+    // list guests pick from in FramePicker) -- kept here rather than shared
+    // with AdminWindow's own _frames field, matching this window's existing
+    // "duplicated resources so it still opens standalone" convention (see the
+    // XAML Window.Resources comment). AdminWindow keeps its own _frames field
+    // too, for the Effects & Stickers card's preview, which this window's Save/
+    // Cancel flow has no bearing on.
+    private readonly FrameRepository _frames = new();
+    private string? _pendingFrameImagePath;
+
     private readonly List<PrintTemplateElement> _elements;
     private readonly List<Border> _containers = new();
     private readonly List<Rectangle> _handles = new();
@@ -74,10 +85,8 @@ public partial class PrintTemplateEditorWindow : Window
     private int _canvasHeight;
 
     // The working copy's geometry -- starts as the live setup's, replaced wholesale
-    // by ActivateTemplate when the switcher loads a saved library entry. Never
-    // edited directly in this window (no Width/Height fields here -- those stay in
-    // AdminWindow's own Print Layout section for the live setup, or come from a
-    // preset/an existing saved entry for everything else).
+    // by ActivateTemplate when the switcher loads a saved library entry, or by the
+    // editable Paper size fields (see ApplyPaperSizeChange) for direct edits.
     private string _workingLayout;
     private double _workingWidthInches;
     private double _workingHeightInches;
@@ -100,6 +109,16 @@ public partial class PrintTemplateEditorWindow : Window
     private double _dragStartLeft, _dragStartTop, _dragStartWidth, _dragStartHeight;
     private bool _suppressPropertyEvents;
     private bool _suppressLayerListEvents;
+
+    /// <summary>Starts true, not false: SingleLayoutRadio's IsChecked="True" in
+    /// XAML raises Checked (-> ApplyPaperSizeChange) during InitializeComponent
+    /// itself, before this constructor's own body has set _workingWidthInches/
+    /// etc. or even finished naming sibling fields like PrintWidthBox -- same
+    /// "coerces/raises during InitializeComponent" hazard ScreenTemplateEditorWindow's
+    /// own _suppressScreenSettingsEvents doc comment already describes for
+    /// FinalScreenTimeoutSlider. Set false only once the constructor's initial
+    /// setup (including UpdateCanvasInfoText's own field sync) is done.</summary>
+    private bool _suppressPaperSizeEvents = true;
 
     /// <summary>Set when a breadcrumb link is clicked -- AdminWindow reads this
     /// after ShowDialog returns to chain into the requested section/window, same
@@ -131,9 +150,131 @@ public partial class PrintTemplateEditorWindow : Window
         RefreshPreview();
         UpdateTemplateHeader();
         UpdateCanvasInfoText();
+        _suppressPaperSizeEvents = false;
 
         Loaded += async (_, _) => await LoadTemplateLibraryAsync();
+        Loaded += async (_, _) => await LoadFramesAsync();
     }
+
+    /// <summary>Refreshes the Frame library list from the database -- called on
+    /// load and after every add/delete/toggle-active, same "just reload rather
+    /// than patch the in-memory list" pattern this window's LoadTemplateLibraryAsync
+    /// already uses.</summary>
+    private async Task LoadFramesAsync()
+    {
+        var frames = await _frames.GetAllByLocationAsync(_locationId);
+        FramesList.ItemsSource = frames;
+        FramesEmptyText.Visibility = frames.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void BrowseFrameImageButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Filter = "Image files (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg",
+            Title = "Choose a frame overlay image",
+        };
+        if (dialog.ShowDialog() == true)
+        {
+            _pendingFrameImagePath = dialog.FileName;
+            SelectedFrameImageText.Text = IoPath.GetFileName(dialog.FileName);
+        }
+    }
+
+    /// <summary>Copies the chosen image into a local Assets/Frames folder (same
+    /// "own local copy, not a reference to wherever the admin picked it from"
+    /// reasoning this window's ChangeLogoImageButton_Click/logo-copy code
+    /// already establishes) and inserts the Frame row.</summary>
+    private async void AddFrameButton_Click(object sender, RoutedEventArgs e)
+    {
+        string name = NewFrameNameBox.Text.Trim();
+        if (name.Length == 0 || _pendingFrameImagePath is null)
+        {
+            FrameStatusText.Text = "Enter a name and choose an image first.";
+            FrameStatusText.Foreground = Brushes.Firebrick;
+            return;
+        }
+
+        AddFrameButton.IsEnabled = false;
+        try
+        {
+            string framesDirectory = IoPath.Combine(AppContext.BaseDirectory, "Assets", "Frames");
+            Directory.CreateDirectory(framesDirectory);
+            string storedFileName = $"{Guid.NewGuid():N}{IoPath.GetExtension(_pendingFrameImagePath)}";
+            string storedPath = IoPath.Combine(framesDirectory, storedFileName);
+            File.Copy(_pendingFrameImagePath, storedPath, overwrite: true);
+
+            var existing = await _frames.GetAllByLocationAsync(_locationId);
+            await _frames.InsertAsync(_locationId, name, storedPath, sortOrder: existing.Count);
+
+            NewFrameNameBox.Text = string.Empty;
+            _pendingFrameImagePath = null;
+            SelectedFrameImageText.Text = "No image selected.";
+            FrameStatusText.Text = "Frame added -- available to the next guest.";
+            FrameStatusText.Foreground = (Brush)FindResource("MutedBrush");
+            await LoadFramesAsync();
+        }
+        catch (Exception ex)
+        {
+            FrameStatusText.Text = $"Couldn't add frame: {ex.Message}";
+            FrameStatusText.Foreground = Brushes.Firebrick;
+        }
+        finally
+        {
+            AddFrameButton.IsEnabled = true;
+        }
+    }
+
+    private async void FrameActiveCheckBox_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is CheckBox { Tag: int frameId } checkBox)
+        {
+            await _frames.SetActiveAsync(frameId, checkBox.IsChecked == true);
+            await LoadFramesAsync();
+        }
+    }
+
+    private async void DeleteFrameButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: int frameId })
+        {
+            await _frames.DeleteAsync(frameId);
+            await LoadFramesAsync();
+        }
+    }
+
+    /// <summary>Applies an edited paper-size field (layout/width/height/strip
+    /// copies) to the working copy -- resizes the canvas via LoadWorkingCopy
+    /// (same helper NewTemplateButton_Click uses for a preset) while keeping
+    /// the current element list, rather than wiping it like a brand-new preset
+    /// would.</summary>
+    private void ApplyPaperSizeChange()
+    {
+        if (_suppressPropertyEvents || _suppressPaperSizeEvents)
+        {
+            return;
+        }
+
+        string layout = StripLayoutRadio.IsChecked == true ? "Strip" : "Single";
+        if (!double.TryParse(PrintWidthBox.Text, out double widthInches) || widthInches <= 0
+            || !double.TryParse(PrintHeightBox.Text, out double heightInches) || heightInches <= 0
+            || !int.TryParse(StripCopiesBox.Text, out int stripCopies) || stripCopies < 1)
+        {
+            return;
+        }
+
+        int selectedIndex = _selectedIndex;
+        LoadWorkingCopy(layout, widthInches, heightInches, stripCopies, _elements);
+        UpdateCanvasInfoText();
+        if (selectedIndex >= 0 && selectedIndex < _elements.Count)
+        {
+            SelectElement(selectedIndex);
+        }
+    }
+
+    private void PaperSizeRadio_Checked(object sender, RoutedEventArgs e) => ApplyPaperSizeChange();
+
+    private void PaperSizeBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyPaperSizeChange();
 
     /// <summary>The most recently captured photo, if any -- falls back to a
     /// generated placeholder so the editor works even with an empty ./captures
@@ -987,6 +1128,18 @@ public partial class PrintTemplateEditorWindow : Window
         CanvasInfoText.Text = _workingLayout == "Strip"
             ? $"{sizeText} · {_workingStripCopies} cop{(_workingStripCopies == 1 ? "y" : "ies")}"
             : sizeText;
+
+        // Keeps the editable Paper size fields in sync with _working* whenever
+        // geometry changes from elsewhere (ActivateTemplateAsync/NewTemplateButton_Click) --
+        // guarded so setting these doesn't re-trigger ApplyPaperSizeChange/LoadWorkingCopy.
+        bool wasSuppressed = _suppressPropertyEvents;
+        _suppressPropertyEvents = true;
+        SingleLayoutRadio.IsChecked = _workingLayout != "Strip";
+        StripLayoutRadio.IsChecked = _workingLayout == "Strip";
+        PrintWidthBox.Text = _workingWidthInches.ToString("0.#");
+        PrintHeightBox.Text = _workingHeightInches.ToString("0.#");
+        StripCopiesBox.Text = _workingStripCopies.ToString();
+        _suppressPropertyEvents = wasSuppressed;
     }
 
     private async Task LoadTemplateLibraryAsync()

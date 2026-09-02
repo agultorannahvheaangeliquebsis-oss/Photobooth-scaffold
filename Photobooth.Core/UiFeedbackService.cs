@@ -9,18 +9,39 @@ namespace Photobooth.Core;
 /// </summary>
 public class UiFeedbackService : IFeedbackService
 {
-    private TaskCompletionSource<FeedbackResult>? _pending;
+    private readonly object _sync = new();
+    private PendingRequest? _pending;
 
     public event Action? FeedbackRequested;
+    public event Action<Guid>? FeedbackRequestedWithToken;
+
+    public Guid? CurrentRequestToken
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _pending?.Token;
+            }
+        }
+    }
 
     public Task<FeedbackResult> CollectAsync(CancellationToken ct = default)
     {
         var tcs = new TaskCompletionSource<FeedbackResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _pending = tcs;
+        var request = new PendingRequest(Guid.NewGuid(), tcs);
+        PendingRequest? previous;
+        lock (_sync)
+        {
+            previous = _pending;
+            _pending = request;
+        }
+        CancelRequest(previous);
 
-        ct.Register(() => tcs.TrySetCanceled(ct));
+        request.Cancellation = ct.Register(() => Cancel(request.Token, ct));
 
         FeedbackRequested?.Invoke();
+        FeedbackRequestedWithToken?.Invoke(request.Token);
         return tcs.Task;
     }
 
@@ -28,7 +49,79 @@ public class UiFeedbackService : IFeedbackService
     /// or Skip (an empty FeedbackResult).</summary>
     public void SubmitFeedback(FeedbackResult result)
     {
-        _pending?.TrySetResult(result);
-        _pending = null;
+        PendingRequest? request;
+        lock (_sync)
+        {
+            request = _pending;
+        }
+
+        if (request is not null)
+        {
+            SubmitFeedback(result, request.Token);
+        }
+    }
+
+    public void SubmitFeedback(FeedbackResult result, Guid requestToken)
+    {
+        PendingRequest? request;
+        lock (_sync)
+        {
+            if (_pending?.Token != requestToken)
+            {
+                return;
+            }
+
+            request = _pending;
+            _pending = null;
+        }
+
+        request!.Cancellation.Dispose();
+        request.Source.TrySetResult(result);
+    }
+
+    public void CancelPending()
+    {
+        PendingRequest? request;
+        lock (_sync)
+        {
+            request = _pending;
+            _pending = null;
+        }
+
+        CancelRequest(request);
+    }
+
+    private void Cancel(Guid requestToken, CancellationToken cancellationToken)
+    {
+        PendingRequest? request;
+        lock (_sync)
+        {
+            if (_pending?.Token != requestToken)
+            {
+                return;
+            }
+
+            request = _pending;
+            _pending = null;
+        }
+
+        request!.Cancellation.Dispose();
+        request.Source.TrySetCanceled(cancellationToken);
+    }
+
+    private static void CancelRequest(PendingRequest? request)
+    {
+        if (request is not null)
+        {
+            request.Cancellation.Dispose();
+            request.Source.TrySetCanceled();
+        }
+    }
+
+    private sealed class PendingRequest(Guid token, TaskCompletionSource<FeedbackResult> source)
+    {
+        public Guid Token { get; } = token;
+        public TaskCompletionSource<FeedbackResult> Source { get; } = source;
+        public CancellationTokenRegistration Cancellation { get; set; }
     }
 }

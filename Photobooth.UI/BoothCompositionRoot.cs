@@ -77,7 +77,15 @@ public static class BoothCompositionRoot
         List<LocationRecord> locations = Task.Run(() => locationRepository.GetAllAsync()).GetAwaiter().GetResult();
         LocationRecord target = (locationId is int requestedId ? locations.FirstOrDefault(l => l.LocationId == requestedId) : null)
             ?? locations.First(l => l.LocationId == seedIds.LocationId);
-        seedIds = seedIds with { LocationId = target.LocationId, LocationType = target.Type };
+        var printerRepository = new PrinterRepository();
+        List<PrinterRecord> printers = Task.Run(() => printerRepository.GetByLocationAsync(target.LocationId)).GetAwaiter().GetResult();
+        PrinterRecord targetPrinter = printers.First();
+        seedIds = seedIds with
+        {
+            LocationId = target.LocationId,
+            PrinterId = targetPrinter.PrinterId,
+            LocationType = target.Type
+        };
 
         // Real, not mocked -- a frame pick / star rating+comment / guestbook
         // ask-stop tap / survey answer is just button taps and text input,

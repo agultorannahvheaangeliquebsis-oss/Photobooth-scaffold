@@ -113,7 +113,7 @@ public class BoothStateMachine
     /// any eventual fault is observed and discarded so it can't surface as an
     /// unobserved task exception later.
     /// </summary>
-    private async Task<T> WithGuestIdleTimeoutAsync<T>(Task<T> guestTask, T fallback, CancellationToken ct)
+    private async Task<T> WithGuestIdleTimeoutAsync<T>(Task<T> guestTask, T fallback, CancellationToken ct, Action? cancelGuest = null)
     {
         Task delayTask = Task.Delay(_guestIdleTimeout, ct);
         Task winner = await Task.WhenAny(guestTask, delayTask);
@@ -122,6 +122,7 @@ public class BoothStateMachine
             return await guestTask;
         }
 
+        cancelGuest?.Invoke();
         await delayTask; // throws if ct was cancelled instead of the timeout genuinely elapsing
         _ = guestTask.ContinueWith(t => t.Exception, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
         return fallback;
@@ -371,7 +372,8 @@ public class BoothStateMachine
 
                                 SetState(BoothState.FilterPicker);
                                 FilterOption? chosenFilter = await WithGuestIdleTimeoutAsync(
-                                    _services.FilterSelection.SelectFilterAsync(filterOptions, ct), (FilterOption?)null, ct);
+                                    _services.FilterSelection.SelectFilterAsync(filterOptions, ct), (FilterOption?)null, ct,
+                                    () => (_services.FilterSelection as UiFilterSelectionService)?.CancelPending());
                                 if (chosenFilter is not null)
                                 {
                                     LastCapturedImagePath = chosenFilter.PreviewImagePath;
@@ -436,7 +438,8 @@ public class BoothStateMachine
             {
                 SetState(BoothState.FramePicker);
                 LastSelectedFrame = await WithGuestIdleTimeoutAsync(
-                    _services.FrameSelection.SelectFrameAsync(frames, ct), (FrameOption?)null, ct);
+                    _services.FrameSelection.SelectFrameAsync(frames, ct), (FrameOption?)null, ct,
+                    () => (_services.FrameSelection as UiFrameSelectionService)?.CancelPending());
                 if (LastSelectedFrame is not null)
                 {
                     for (int i = 0; i < processedPoses.Count; i++)
@@ -485,7 +488,9 @@ public class BoothStateMachine
             // reasoning branding/filter ordering already established. A
             // failed or slow upload just means no QR code shows this
             // session -- it never holds up the print.
-            Task uploadTask = UploadInBackgroundAsync(LastCapturedImagePath, ct);
+            string uploadImagePath = LastCapturedImagePath;
+            string? uploadEmail = consent is { EmailOptIn: true, Email: string toEmail } ? toEmail : null;
+            Task<Uri?> uploadTask = UploadInBackgroundAsync(uploadImagePath, sessionId.Value, ct);
 
             if (_mode == "vendo")
             {
@@ -511,7 +516,7 @@ public class BoothStateMachine
             // copy, nor a queued retry that would eventually email one).
             // Fire-and-forget so a still-in-flight upload or a slow email
             // send doesn't hold up Printing.
-            _ = FinalizeUploadAsync(uploadTask, ct);
+            _ = FinalizeUploadAsync(uploadTask, uploadImagePath, uploadEmail, ct);
 
             // GIF/Boomerang/Video have nothing printable -- dslrBooth's own
             // Video/GIF modes are share-only too (see the Sharing Screen
@@ -567,7 +572,15 @@ public class BoothStateMachine
             try
             {
                 SetState(BoothState.Guestbook);
-                if (await _services.GuestbookPrompt.AskToRecordAsync(ct))
+                // Same guest-idle-timeout protection every other guest-interactive
+                // state gets (see WithGuestIdleTimeoutAsync's own doc comment) --
+                // without it, a guest who walks away without tapping Record or Skip
+                // left the machine (and the booth) suspended here forever, since
+                // nothing else ever resolves this wait.
+                bool wantsToRecord = await WithGuestIdleTimeoutAsync(
+                    _services.GuestbookPrompt.AskToRecordAsync(ct), false, ct,
+                    () => (_services.GuestbookPrompt as UiGuestbookPromptService)?.CancelPending());
+                if (wantsToRecord)
                 {
                     await _services.VideoGuestbook.StartRecordingAsync(ct);
                     try
@@ -599,7 +612,8 @@ public class BoothStateMachine
             {
                 SetState(BoothState.Feedback);
                 FeedbackResult feedback = await WithGuestIdleTimeoutAsync(
-                    _services.Feedback.CollectAsync(ct), new FeedbackResult(null, null), ct);
+                    _services.Feedback.CollectAsync(ct), new FeedbackResult(null, null), ct,
+                    () => (_services.Feedback as UiFeedbackService)?.CancelPending());
                 if (!feedback.IsEmpty)
                 {
                     await _services.Sessions.RecordFeedbackAsync(sessionId.Value, feedback.Rating, feedback.Comment, ct);
@@ -639,11 +653,15 @@ public class BoothStateMachine
         }
         catch (OperationCanceledException)
         {
-            // A deliberate guest/admin action (Cancel during Countdown/Capture,
-            // Retake during Review -- see KioskViewModel's Cancel/RetakeCommand),
-            // not a real failure: no Error screen, no FailAsync. The session row
-            // is left as whatever RecordConsentAsync/etc. already wrote for it,
-            // same as a guest who simply walks away mid-session today.
+            // Cancellation is a deliberate guest/admin action, not an error,
+            // but an already-created session still needs a terminal status.
+            if (sessionId is int activeSessionId)
+            {
+                // The session token is canceled here, so cleanup must use an
+                // independent token or the database update would be skipped.
+                await _services.Sessions.AbandonAsync(activeSessionId, CancellationToken.None);
+                LastSessionId = null;
+            }
         }
         catch (Exception ex)
         {
@@ -661,18 +679,25 @@ public class BoothStateMachine
         }
     }
 
-    private async Task UploadInBackgroundAsync(string imagePath, CancellationToken ct)
+    private async Task<Uri?> UploadInBackgroundAsync(string imagePath, int sessionId, CancellationToken ct)
     {
         try
         {
-            LastPhotoUrl = await _services.CloudUpload.UploadAsync(imagePath, ct);
-            PhotoUploaded?.Invoke(LastPhotoUrl);
+            Uri photoUrl = await _services.CloudUpload.UploadAsync(imagePath, ct);
+            if (LastSessionId == sessionId)
+            {
+                LastPhotoUrl = photoUrl;
+                PhotoUploaded?.Invoke(photoUrl);
+            }
+
+            return photoUrl;
         }
         catch (Exception)
         {
             // Deliberately doesn't queue the failure here -- see
             // FinalizeUploadAsync for why that decision waits until the
             // payment gate has cleared.
+            return null;
         }
     }
 
@@ -685,13 +710,15 @@ public class BoothStateMachine
     /// for a declined vendo payment, so neither a same-session email nor a
     /// queued retry-with-email can happen for a guest who didn't pay.
     /// </summary>
-    private async Task FinalizeUploadAsync(Task uploadTask, CancellationToken ct)
+    private async Task FinalizeUploadAsync(
+        Task<Uri?> uploadTask,
+        string imagePath,
+        string? email,
+        CancellationToken ct)
     {
-        await uploadTask; // UploadInBackgroundAsync catches its own failures, never throws
+        Uri? photoUrl = await uploadTask; // UploadInBackgroundAsync catches its own failures, never throws
 
-        string? email = LastConsent is { EmailOptIn: true, Email: string toEmail } ? toEmail : null;
-
-        if (LastPhotoUrl is Uri photoUrl)
+        if (photoUrl is not null)
         {
             if (email is not null)
             {
@@ -707,7 +734,7 @@ public class BoothStateMachine
                 }
             }
         }
-        else if (LastCapturedImagePath is string imagePath)
+        else
         {
             // Upload failed -- the photo isn't lost, queue it (with the
             // email, if any) so the next session or app startup retries it.
