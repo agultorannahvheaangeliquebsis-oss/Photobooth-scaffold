@@ -189,6 +189,7 @@
                     <StackPanel Grid.Column="0" Margin="0,0,12,0">
                         <TextBlock Text="SETUP" Style="{StaticResource MenuColumnHeader}" />
                         <TextBlock Text="Print Layout" Style="{StaticResource QuickLink}" Tag="PrintLayout" MouseLeftButtonDown="SettingsMenuLink_Click" />
+                        <TextBlock Text="Screen Editor" Style="{StaticResource QuickLink}" Tag="ScreenEditor" MouseLeftButtonDown="SettingsMenuLink_Click" />
                         <TextBlock Text="General" Style="{StaticResource QuickLink}" Tag="General" MouseLeftButtonDown="SettingsMenuLink_Click" />
                         <TextBlock Text="Capture Settings" Style="{StaticResource QuickLink}" Tag="CaptureSettings" MouseLeftButtonDown="SettingsMenuLink_Click" />
                         <TextBlock Text="Camera Settings" Style="{StaticResource QuickLink}" Tag="CameraSettings" MouseLeftButtonDown="SettingsMenuLink_Click" />

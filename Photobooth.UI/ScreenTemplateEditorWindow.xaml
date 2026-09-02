@@ -656,44 +656,67 @@
                      logo/event name, "touch to begin" pill, and the four
                      capture-mode tiles (unconditional there too, so no
                      visibility binding needed here). -->
-                <Grid x:Name="WelcomeChromeLayer" IsHitTestVisible="False" Visibility="Collapsed">
-                    <Border x:Name="WelcomeBackgroundFill" Background="{StaticResource KioskCanvasBrush}" />
-                    <Image x:Name="WelcomeBackgroundImageElement" Stretch="UniformToFill" />
+                <Grid x:Name="WelcomeChromeLayer" Visibility="Collapsed">
+                    <Border x:Name="WelcomeBackgroundFill" Background="{StaticResource KioskCanvasBrush}" IsHitTestVisible="False" />
+                    <Image x:Name="WelcomeBackgroundImageElement" Stretch="UniformToFill" IsHitTestVisible="False" />
 
-                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
                         <Image x:Name="WelcomeBrandingLogo" MaxHeight="40" Stretch="Uniform" HorizontalAlignment="Center" Margin="0,0,0,8" />
                         <TextBlock x:Name="WelcomeBrandingEventName" Style="{StaticResource KioskH1}" FontSize="20" />
                         <Border Background="{StaticResource KioskAccentBrush}" CornerRadius="8" Padding="16,7" Margin="0,14,0,0" HorizontalAlignment="Center">
                             <TextBlock Text="TOUCH SCREEN TO BEGIN" FontFamily="{StaticResource KioskFont}" FontSize="10"
                                        FontWeight="SemiBold" Foreground="{StaticResource KioskOnAccentBrush}" />
                         </Border>
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,16,0,0">
-                            <Button Style="{StaticResource KioskModeTile}" Width="66" Height="54" Margin="3">
-                                <StackPanel>
-                                    <TextBlock Text="&#xE722;" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
-                                    <TextBlock Text="PHOTO" FontFamily="{StaticResource KioskFont}" FontSize="8" FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,4,0,0" />
-                                </StackPanel>
-                            </Button>
-                            <Button Style="{StaticResource KioskModeTile}" Width="66" Height="54" Margin="3">
-                                <StackPanel>
-                                    <TextBlock Text="&#xE786;" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
-                                    <TextBlock Text="GIF" FontFamily="{StaticResource KioskFont}" FontSize="8" FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,4,0,0" />
-                                </StackPanel>
-                            </Button>
-                            <Button Style="{StaticResource KioskModeTile}" Width="66" Height="54" Margin="3">
-                                <StackPanel>
-                                    <TextBlock Text="&#xE8EE;" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
-                                    <TextBlock Text="BOOMERANG" FontFamily="{StaticResource KioskFont}" FontSize="6.5" FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,4,0,0" />
-                                </StackPanel>
-                            </Button>
-                            <Button Style="{StaticResource KioskModeTile}" Width="66" Height="54" Margin="3">
-                                <StackPanel>
-                                    <TextBlock Text="&#xE714;" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
-                                    <TextBlock Text="VIDEO" FontFamily="{StaticResource KioskFont}" FontSize="8" FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,4,0,0" />
-                                </StackPanel>
-                            </Button>
-                        </StackPanel>
                     </StackPanel>
+
+                    <!-- Booth Icons group - free-positioned/toggleable/row-or-
+                         column, see LoadWelcomeIconsGroup and IconGroup_Mouse*
+                         in the code-behind. A dedicated Canvas sized 1:1 with
+                         ElementsCanvas (both stretch to the same parent Grid,
+                         which ElementsCanvas's own explicit Width/Height forces
+                         to CanvasWidth x CanvasHeight) so PositionXPercent/
+                         YPercent convert the same way ScreenTemplateElement's
+                         XPercent/YPercent already do. Only WelcomeIconsGroupBorder
+                         itself is hit-test visible - every tile inside is
+                         IsHitTestVisible="False" so a click anywhere on the
+                         group always drags the whole thing rather than a Button
+                         swallowing it (these tiles aren't clickable in the
+                         editor anyway; only the real KioskWindow's tiles are). -->
+                    <Canvas x:Name="WelcomeIconsPositionCanvas">
+                        <Border x:Name="WelcomeIconsGroupBorder" Cursor="SizeAll" Background="Transparent"
+                                BorderBrush="{StaticResource AccentBrush}" BorderThickness="0"
+                                MouseLeftButtonDown="IconGroup_MouseLeftButtonDown"
+                                MouseMove="IconGroup_MouseMove"
+                                MouseLeftButtonUp="IconGroup_MouseLeftButtonUp"
+                                Tag="Welcome">
+                            <StackPanel x:Name="WelcomeIconsStackPanel" Orientation="Horizontal" IsHitTestVisible="False">
+                                <Button x:Name="WelcomeIconPhotoTile" Style="{StaticResource KioskModeTile}" Width="66" Height="54" Margin="3" IsHitTestVisible="False">
+                                    <StackPanel>
+                                        <TextBlock Text="&#xE722;" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
+                                        <TextBlock x:Name="WelcomeIconPhotoLabel" Text="PHOTO" FontFamily="{StaticResource KioskFont}" FontSize="8" FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,4,0,0" />
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="WelcomeIconGifTile" Style="{StaticResource KioskModeTile}" Width="66" Height="54" Margin="3" IsHitTestVisible="False">
+                                    <StackPanel>
+                                        <TextBlock Text="&#xE786;" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
+                                        <TextBlock x:Name="WelcomeIconGifLabel" Text="GIF" FontFamily="{StaticResource KioskFont}" FontSize="8" FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,4,0,0" />
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="WelcomeIconBoomerangTile" Style="{StaticResource KioskModeTile}" Width="66" Height="54" Margin="3" IsHitTestVisible="False">
+                                    <StackPanel>
+                                        <TextBlock Text="&#xE8EE;" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
+                                        <TextBlock x:Name="WelcomeIconBoomerangLabel" Text="BOOMERANG" FontFamily="{StaticResource KioskFont}" FontSize="6.5" FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,4,0,0" />
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="WelcomeIconVideoTile" Style="{StaticResource KioskModeTile}" Width="66" Height="54" Margin="3" IsHitTestVisible="False">
+                                    <StackPanel>
+                                        <TextBlock Text="&#xE714;" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
+                                        <TextBlock x:Name="WelcomeIconVideoLabel" Text="VIDEO" FontFamily="{StaticResource KioskFont}" FontSize="8" FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,4,0,0" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                    </Canvas>
                 </Grid>
 
                 <!-- ===================== CAPTURE CHROME MOCKUP =====================
@@ -701,26 +724,65 @@
                      stand-in for the live camera feed (unavailable in the
                      editor), the accent preview frame, "GET READY" + a sample
                      countdown digit, and the Cancel pill. -->
-                <Grid x:Name="CaptureChromeLayer" IsHitTestVisible="False" Visibility="Collapsed">
-                    <Border x:Name="CaptureBackgroundFill" Background="{StaticResource KioskCanvasBrush}" />
-                    <Image x:Name="CaptureBackgroundImageElement" Stretch="UniformToFill" />
+                <Grid x:Name="CaptureChromeLayer" Visibility="Collapsed">
+                    <Border x:Name="CaptureBackgroundFill" Background="{StaticResource KioskCanvasBrush}" IsHitTestVisible="False" />
+                    <Image x:Name="CaptureBackgroundImageElement" Stretch="UniformToFill" IsHitTestVisible="False" />
 
-                    <Border Background="{StaticResource KioskSurfaceBrush}" Margin="50">
+                    <Border Background="{StaticResource KioskSurfaceBrush}" Margin="50" IsHitTestVisible="False">
                         <TextBlock Text="&#xE722;" FontFamily="Segoe MDL2 Assets" FontSize="34"
                                    Foreground="{StaticResource KioskLineBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
-                    <Border Margin="26" BorderBrush="{StaticResource KioskAccentBrush}" BorderThickness="2" CornerRadius="10" Opacity="0.5" />
+                    <Border Margin="26" BorderBrush="{StaticResource KioskAccentBrush}" BorderThickness="2" CornerRadius="10" Opacity="0.5" IsHitTestVisible="False" />
 
-                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
                         <TextBlock Text="GET READY" FontFamily="{StaticResource KioskFont}" FontSize="13" FontWeight="SemiBold"
                                    Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" />
                         <TextBlock x:Name="CaptureChromeCountdownText" Text="3" FontFamily="{StaticResource KioskFont}" FontSize="56" FontWeight="Light"
                                    HorizontalAlignment="Center" Margin="0,-6,0,0" />
                     </StackPanel>
 
-                    <Border x:Name="CaptureChromeCancelPill" BorderBrush="{StaticResource KioskLineBrush}" BorderThickness="1"
-                            CornerRadius="8" Padding="14,6" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,14">
-                        <TextBlock Text="CANCEL" FontFamily="{StaticResource KioskFont}" FontSize="9" FontWeight="SemiBold" Foreground="{StaticResource KioskMutedBrush}" />
+                    <!-- Cancel button - free-positioned/toggleable, same
+                         IconGroup_Mouse* drag handlers as the Welcome/Sharing
+                         icon groups, but a single-item group (no Layout/
+                         Alignment controls - see CaptureCancelButtonPositionXPercent's
+                         doc comment on ScreenSettings). -->
+                    <Canvas x:Name="CaptureCancelButtonPositionCanvas">
+                        <Border x:Name="CaptureCancelButtonGroupBorder" Cursor="SizeAll" Tag="Capture" Background="Transparent"
+                                MouseLeftButtonDown="IconGroup_MouseLeftButtonDown"
+                                MouseMove="IconGroup_MouseMove"
+                                MouseLeftButtonUp="IconGroup_MouseLeftButtonUp">
+                            <Border x:Name="CaptureChromeCancelPill" BorderBrush="{StaticResource KioskLineBrush}" BorderThickness="1"
+                                    CornerRadius="8" Padding="14,6" IsHitTestVisible="False">
+                                <TextBlock Text="CANCEL" FontFamily="{StaticResource KioskFont}" FontSize="9" FontWeight="SemiBold" Foreground="{StaticResource KioskMutedBrush}" />
+                            </Border>
+                        </Border>
+                    </Canvas>
+
+                    <!-- Thumbnail Strip preview: position/opacity/active-border/
+                         placeholder-numbers all driven live from the Thumbnail
+                         Strip Settings section (see LoadPoseStripGroup), edge-docked
+                         same as the real KioskWindow strip (not free-drag like the
+                         Cancel button/icon groups above). Slot 2 shown "active" to
+                         demo the border highlight against the sample countdown "2". -->
+                    <Border x:Name="CaptureChromePoseStrip" CornerRadius="8" Margin="14" Padding="6" IsHitTestVisible="False">
+                        <UniformGrid x:Name="CaptureChromePoseStripItems" Rows="1" Columns="4">
+                            <Border x:Name="CaptureChromePoseSlot1" Width="26" Height="26" Margin="3" CornerRadius="4" Background="#33FFFFFF">
+                                <TextBlock x:Name="CaptureChromePoseNumber1" Text="1" FontFamily="{StaticResource KioskFont}" FontSize="11" FontWeight="SemiBold"
+                                           Foreground="{StaticResource KioskMutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <Border x:Name="CaptureChromePoseSlot2" Width="26" Height="26" Margin="3" CornerRadius="4" Background="#33FFFFFF">
+                                <TextBlock x:Name="CaptureChromePoseNumber2" Text="2" FontFamily="{StaticResource KioskFont}" FontSize="11" FontWeight="SemiBold"
+                                           Foreground="{StaticResource KioskMutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <Border x:Name="CaptureChromePoseSlot3" Width="26" Height="26" Margin="3" CornerRadius="4" Background="#33FFFFFF">
+                                <TextBlock x:Name="CaptureChromePoseNumber3" Text="3" FontFamily="{StaticResource KioskFont}" FontSize="11" FontWeight="SemiBold"
+                                           Foreground="{StaticResource KioskMutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <Border x:Name="CaptureChromePoseSlot4" Width="26" Height="26" Margin="3" CornerRadius="4" Background="#33FFFFFF">
+                                <TextBlock x:Name="CaptureChromePoseNumber4" Text="4" FontFamily="{StaticResource KioskFont}" FontSize="11" FontWeight="SemiBold"
+                                           Foreground="{StaticResource KioskMutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                        </UniformGrid>
                     </Border>
                 </Grid>
 
@@ -730,11 +792,11 @@
                      on the right, visibility for each wired the same way
                      KioskViewModel drives the real ones (see
                      ScreenTemplateEditorWindow.xaml.cs's UpdateScreenChrome). -->
-                <Grid x:Name="SharingChromeLayer" IsHitTestVisible="False" Visibility="Collapsed">
-                    <Border x:Name="SharingBackgroundFill" Background="{StaticResource KioskCanvasBrush}" />
-                    <Image x:Name="SharingBackgroundImageElement" Stretch="UniformToFill" />
+                <Grid x:Name="SharingChromeLayer" Visibility="Collapsed">
+                    <Border x:Name="SharingBackgroundFill" Background="{StaticResource KioskCanvasBrush}" IsHitTestVisible="False" />
+                    <Image x:Name="SharingBackgroundImageElement" Stretch="UniformToFill" IsHitTestVisible="False" />
 
-                    <Grid Margin="36,26,36,18">
+                    <Grid Margin="36,26,36,18" IsHitTestVisible="False">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="3*" />
                             <ColumnDefinition Width="14" />
@@ -747,50 +809,73 @@
                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
 
+                        <!-- QR/Email/SMS/Print pulled out of this static
+                             StackPanel into their own free-positioned group
+                             below (SharingIconsPositionCanvas) - "Your photo
+                             is ready" and Retake/Done stay here since they're
+                             not part of the icon row this editor now lets an
+                             admin drag/reorder/toggle. -->
                         <StackPanel Grid.Column="2" VerticalAlignment="Top">
                             <TextBlock Text="Your photo is ready" FontFamily="{StaticResource KioskFont}" FontSize="12"
                                        FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}" TextWrapping="Wrap" />
-
-                            <Border x:Name="SharingChromeQrBox" Background="White" CornerRadius="6" Width="56" Height="56"
-                                    Margin="0,10,0,0" HorizontalAlignment="Left">
-                                <TextBlock Text="QR" FontFamily="Segoe UI" FontSize="10" Foreground="#202124"
-                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
-                            </Border>
-                            <TextBlock x:Name="SharingChromeQrLabel" Text="Scan to download" FontFamily="{StaticResource KioskFont}"
-                                       FontSize="8" Foreground="{StaticResource KioskInkBrush}" Margin="0,4,0,0" />
-
-                            <StackPanel x:Name="SharingChromeEmailRow" Margin="0,10,0,0">
-                                <TextBlock x:Name="SharingChromeEmailLabel" Text="EMAIL IT TO ME" FontFamily="{StaticResource KioskFont}"
-                                           FontSize="8" FontWeight="SemiBold" Foreground="{StaticResource KioskMutedBrush}" />
-                                <Border Background="{StaticResource KioskFieldBrush}" BorderBrush="{StaticResource KioskLineBrush}"
-                                        BorderThickness="1" CornerRadius="6" Padding="6,4" Margin="0,2,0,0">
-                                    <TextBlock Text="you@example.com" FontFamily="{StaticResource KioskFont}" FontSize="8" Foreground="{StaticResource KioskMutedBrush}" />
-                                </Border>
-                            </StackPanel>
-
-                            <StackPanel x:Name="SharingChromeSmsRow" Margin="0,8,0,0">
-                                <TextBlock x:Name="SharingChromeSmsLabel" Text="TEXT IT TO ME" FontFamily="{StaticResource KioskFont}"
-                                           FontSize="8" FontWeight="SemiBold" Foreground="{StaticResource KioskMutedBrush}" />
-                                <Border Background="{StaticResource KioskFieldBrush}" BorderBrush="{StaticResource KioskLineBrush}"
-                                        BorderThickness="1" CornerRadius="6" Padding="6,4" Margin="0,2,0,0">
-                                    <TextBlock Text="09xx xxx xxxx" FontFamily="{StaticResource KioskFont}" FontSize="8" Foreground="{StaticResource KioskMutedBrush}" />
-                                </Border>
-                            </StackPanel>
-
-                            <Border x:Name="SharingChromePrintPill" Background="{StaticResource KioskAccentBrush}" CornerRadius="6"
-                                    Padding="12,6" Margin="0,10,0,0" HorizontalAlignment="Left">
-                                <TextBlock Text="PRINT" FontFamily="{StaticResource KioskFont}" FontSize="9" FontWeight="SemiBold" Foreground="{StaticResource KioskOnAccentBrush}" />
-                            </Border>
                             <Border x:Name="SharingChromeRetakePill" BorderBrush="{StaticResource KioskLineBrush}" BorderThickness="1"
-                                    CornerRadius="6" Padding="12,6" Margin="0,8,0,0" HorizontalAlignment="Left">
+                                    CornerRadius="6" Padding="12,6" Margin="0,14,0,0" HorizontalAlignment="Left">
                                 <TextBlock Text="RETAKE" FontFamily="{StaticResource KioskFont}" FontSize="9" Foreground="{StaticResource KioskMutedBrush}" />
                             </Border>
                             <Border x:Name="SharingChromeDonePill" BorderBrush="{StaticResource KioskLineBrush}" BorderThickness="1"
-                                    CornerRadius="6" Padding="12,6" Margin="0,6,0,0" HorizontalAlignment="Left">
+                                    CornerRadius="6" Padding="12,6" Margin="0,8,0,0" HorizontalAlignment="Left">
                                 <TextBlock Text="I'M DONE" FontFamily="{StaticResource KioskFont}" FontSize="9" Foreground="{StaticResource KioskMutedBrush}" />
                             </Border>
                         </StackPanel>
                     </Grid>
+
+                    <!-- Sharing icon row (QR/Email/SMS/Print) - free-
+                         positioned/toggleable/row-or-column, same pattern as
+                         the Welcome Booth Icons group above (see
+                         LoadSharingIconsGroup/IconGroup_Mouse* in the
+                         code-behind). -->
+                    <Canvas x:Name="SharingIconsPositionCanvas">
+                        <Border x:Name="SharingIconsGroupBorder" Cursor="SizeAll" Background="Transparent"
+                                BorderBrush="{StaticResource AccentBrush}" BorderThickness="0"
+                                MouseLeftButtonDown="IconGroup_MouseLeftButtonDown"
+                                MouseMove="IconGroup_MouseMove"
+                                MouseLeftButtonUp="IconGroup_MouseLeftButtonUp"
+                                Tag="Sharing">
+                            <StackPanel x:Name="SharingIconsStackPanel" IsHitTestVisible="False">
+                                <StackPanel x:Name="SharingChromeQrGroup" Margin="4">
+                                    <Border x:Name="SharingChromeQrBox" Background="White" CornerRadius="6" Width="56" Height="56" HorizontalAlignment="Left">
+                                        <TextBlock Text="QR" FontFamily="Segoe UI" FontSize="10" Foreground="#202124"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Border>
+                                    <TextBlock x:Name="SharingChromeQrLabel" Text="Scan to download" FontFamily="{StaticResource KioskFont}"
+                                               FontSize="8" Foreground="{StaticResource KioskInkBrush}" Margin="0,4,0,0" />
+                                </StackPanel>
+
+                                <StackPanel x:Name="SharingChromeEmailRow" Margin="4">
+                                    <TextBlock x:Name="SharingChromeEmailLabel" Text="EMAIL IT TO ME" FontFamily="{StaticResource KioskFont}"
+                                               FontSize="8" FontWeight="SemiBold" Foreground="{StaticResource KioskMutedBrush}" />
+                                    <Border Background="{StaticResource KioskFieldBrush}" BorderBrush="{StaticResource KioskLineBrush}"
+                                            BorderThickness="1" CornerRadius="6" Padding="6,4" Margin="0,2,0,0">
+                                        <TextBlock Text="you@example.com" FontFamily="{StaticResource KioskFont}" FontSize="8" Foreground="{StaticResource KioskMutedBrush}" />
+                                    </Border>
+                                </StackPanel>
+
+                                <StackPanel x:Name="SharingChromeSmsRow" Margin="4">
+                                    <TextBlock x:Name="SharingChromeSmsLabel" Text="TEXT IT TO ME" FontFamily="{StaticResource KioskFont}"
+                                               FontSize="8" FontWeight="SemiBold" Foreground="{StaticResource KioskMutedBrush}" />
+                                    <Border Background="{StaticResource KioskFieldBrush}" BorderBrush="{StaticResource KioskLineBrush}"
+                                            BorderThickness="1" CornerRadius="6" Padding="6,4" Margin="0,2,0,0">
+                                        <TextBlock Text="09xx xxx xxxx" FontFamily="{StaticResource KioskFont}" FontSize="8" Foreground="{StaticResource KioskMutedBrush}" />
+                                    </Border>
+                                </StackPanel>
+
+                                <Border x:Name="SharingChromePrintPill" Background="{StaticResource KioskAccentBrush}" CornerRadius="6"
+                                        Padding="12,6" Margin="4" HorizontalAlignment="Left">
+                                    <TextBlock Text="PRINT" FontFamily="{StaticResource KioskFont}" FontSize="9" FontWeight="SemiBold" Foreground="{StaticResource KioskOnAccentBrush}" />
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </Canvas>
                 </Grid>
 
                 <!-- Small top-center brand bar, matching KioskWindow's own
@@ -805,7 +890,14 @@
                                Foreground="{StaticResource KioskAccentBrush}" VerticalAlignment="Center" />
                 </StackPanel>
 
-                <Canvas x:Name="ElementsCanvas" Background="Transparent" />
+                <!-- No Background here (each element container sets its own,
+                     see AddVisualForElement) - a null Background lets clicks
+                     on canvas area with no admin-placed element fall through
+                     to the icon groups underneath (WelcomeIconsGroupBorder/
+                     SharingIconsGroupBorder/CaptureCancelButtonGroupBorder in
+                     the chrome layers below) instead of this topmost, full-
+                     bleed Canvas swallowing every hit first. -->
+                <Canvas x:Name="ElementsCanvas" />
             </Grid>
         </Border>
 
@@ -951,12 +1043,55 @@
                         </Grid>
 
                         <CheckBox x:Name="BoothIconsEnabledCheckBox" Content="Booth icons" Click="ScreenSettingsCheckBox_Click" />
-                        <TextBlock Text="If off, touching anywhere on the Welcome screen starts a session." Style="{StaticResource EditorLabel}"
+                        <TextBlock Text="Hides the whole Photo/GIF/Boomerang/Video group when off." Style="{StaticResource EditorLabel}"
                                    Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,6,0,10" />
 
                         <CheckBox x:Name="BoothIconLabelsEnabledCheckBox" Content="Booth icon labels" Click="ScreenSettingsCheckBox_Click" />
                         <TextBlock Text="Display text labels below icons." Style="{StaticResource EditorLabel}"
                                    Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,10" />
+
+                        <!-- Per-icon visibility - each Photo/GIF/Boomerang/
+                             Video tile can be hidden individually, on top of
+                             BoothIconsEnabled hiding the whole group above.
+                             Drag the group itself on the DESIGN tab's canvas
+                             to reposition it; Layout/Alignment below control
+                             row-vs-column and how the tiles pack. -->
+                        <TextBlock Text="Icons shown" Style="{StaticResource EditorLabel}" Margin="0,0,0,2" />
+                        <!-- 2x2, not one row: "Boomerang" alone is wider than
+                             this whole side panel, so a single Horizontal
+                             StackPanel clips past the panel's right edge
+                             (confirmed visually) with no wrap of its own. -->
+                        <StackPanel Margin="0,0,0,10">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                <CheckBox x:Name="WelcomePhotoIconEnabledCheckBox" Content="Photo" Width="132" Click="WelcomeIconEnabledCheckBox_Click" />
+                                <CheckBox x:Name="WelcomeGifIconEnabledCheckBox" Content="GIF" Click="WelcomeIconEnabledCheckBox_Click" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <CheckBox x:Name="WelcomeBoomerangIconEnabledCheckBox" Content="Boomerang" Width="132" Click="WelcomeIconEnabledCheckBox_Click" />
+                                <CheckBox x:Name="WelcomeVideoIconEnabledCheckBox" Content="Video" Click="WelcomeIconEnabledCheckBox_Click" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <TextBlock Text="Layout" Style="{StaticResource EditorLabel}" Margin="0,0,0,2" />
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <RadioButton x:Name="WelcomeIconsRowRadio" GroupName="WelcomeIconsLayout" Content="Row"
+                                         Margin="0,0,16,0" Click="WelcomeIconsLayoutRadio_Click" />
+                            <RadioButton x:Name="WelcomeIconsColumnRadio" GroupName="WelcomeIconsLayout" Content="Column"
+                                         Click="WelcomeIconsLayoutRadio_Click" />
+                        </StackPanel>
+
+                        <TextBlock Text="Alignment" Style="{StaticResource EditorLabel}" Margin="0,0,0,2" />
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <Button Style="{StaticResource IconActionButton}" Width="36" Margin="0,0,6,0" Tag="Start" Click="WelcomeIconsAlignButton_Click">
+                                <Path Data="{StaticResource IconAlignLeft}" Stretch="Uniform" Width="15" Height="15" Stroke="{StaticResource InkBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            </Button>
+                            <Button Style="{StaticResource IconActionButton}" Width="36" Margin="0,0,6,0" Tag="Center" Click="WelcomeIconsAlignButton_Click">
+                                <Path Data="{StaticResource IconAlignCenterH}" Stretch="Uniform" Width="15" Height="15" Stroke="{StaticResource InkBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            </Button>
+                            <Button Style="{StaticResource IconActionButton}" Width="36" Tag="End" Click="WelcomeIconsAlignButton_Click">
+                                <Path Data="{StaticResource IconAlignRight}" Stretch="Uniform" Width="15" Height="15" Stroke="{StaticResource InkBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            </Button>
+                        </StackPanel>
 
                         <CheckBox x:Name="WelcomeShowLiveViewCheckBox" Content="Show live view" Click="ScreenSettingsCheckBox_Click" />
                         <TextBlock Text="Displays live camera preview." Style="{StaticResource EditorLabel}"
@@ -1061,7 +1196,7 @@
                                    Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,10" />
 
                         <CheckBox x:Name="ShowCancelButtonCheckBox" Content="Cancel button" Click="ScreenSettingsCheckBox_Click" />
-                        <TextBlock Text="Show cancel button while capturing photos." Style="{StaticResource EditorLabel}"
+                        <TextBlock Text="Show cancel button while capturing photos. Drag it on the DESIGN tab's canvas to reposition." Style="{StaticResource EditorLabel}"
                                    Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,10" />
 
                         <TextBlock Text="Countdown color" Style="{StaticResource EditorLabel}" />
@@ -1088,11 +1223,13 @@
                             <RadioButton x:Name="Rotation270Radio" GroupName="LiveViewRotation" Content="270°" Tag="270" Click="RotationRadio_Click" />
                         </UniformGrid>
 
-                        <TextBlock Text="Photo thumbnails" Style="{StaticResource EditorSectionHeader}" />
-                        <CheckBox x:Name="PhotoThumbnailsEnabledCheckBox" Content="On" Click="ScreenSettingsCheckBox_Click" Margin="0,0,0,6" />
+                        <TextBlock Text="Thumbnail Strip Settings" Style="{StaticResource EditorSectionHeader}" />
+                        <CheckBox x:Name="PhotoThumbnailsEnabledCheckBox" Content="Show thumbnail strip" Click="ScreenSettingsCheckBox_Click" Margin="0,0,0,6" />
                         <TextBlock Text="Where already-taken photos show up on the Capture screen while a guest poses for more." Style="{StaticResource EditorLabel}"
                                    Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6" />
-                        <UniformGrid Rows="1" Columns="4">
+
+                        <TextBlock Text="Position" Style="{StaticResource EditorLabel}" Margin="0,0,0,4" />
+                        <UniformGrid Rows="1" Columns="4" Margin="0,0,0,4">
                             <RadioButton x:Name="PoseTopRadio" GroupName="PoseStripPosition" Tag="Top" ToolTip="Top" Margin="0,0,4,0" Click="PoseStripRadio_Click">
                                 <Grid Width="16" Height="16">
                                     <Path Data="{StaticResource IconFrameRect}" Stroke="{Binding RelativeSource={RelativeSource AncestorType=RadioButton}, Path=Foreground}" StrokeThickness="1.4" />
@@ -1118,6 +1255,35 @@
                                 </Grid>
                             </RadioButton>
                         </UniformGrid>
+                        <TextBlock Text="Orientation follows position automatically -- a row for Top/Bottom, a column for Left/Right." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,10" />
+
+                        <TextBlock Text="Background opacity" Style="{StaticResource EditorLabel}" Margin="0,0,0,4" />
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="50" />
+                            </Grid.ColumnDefinitions>
+                            <Slider x:Name="PoseStripOpacitySlider" Grid.Column="0" Minimum="0" Maximum="100" ValueChanged="PoseStripOpacitySlider_ValueChanged" VerticalAlignment="Center" />
+                            <TextBox x:Name="PoseStripOpacityBox" Grid.Column="1" Margin="8,0,0,0" TextAlignment="Center" TextChanged="PoseStripOpacityBox_TextChanged" />
+                        </Grid>
+
+                        <TextBlock Text="Active shot border color" Style="{StaticResource EditorLabel}" />
+                        <Grid Margin="0,2,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="PoseStripActiveBorderColorSwatch" Grid.Column="0" Width="30" Height="30" CornerRadius="7"
+                                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Margin="0,0,8,0" />
+                            <TextBox x:Name="PoseStripActiveBorderColorBox" Grid.Column="1" TextChanged="PoseStripActiveBorderColorBox_TextChanged" />
+                        </Grid>
+                        <TextBlock Text="Highlights whichever slot is the pose currently being captured." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6" />
+
+                        <CheckBox x:Name="PoseStripShowPlaceholderNumbersCheckBox" Content="Placeholder numbers" Click="ScreenSettingsCheckBox_Click" />
+                        <TextBlock Text="Shows 1, 2, 3... on a slot until that shot is taken." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,10" />
 
                         <TextBlock Text="Say Cheese Image" Style="{StaticResource EditorSectionHeader}" />
                         <TextBlock Text="This image shows while the camera is auto-focusing after countdown has ended." Style="{StaticResource EditorLabel}"
@@ -1170,6 +1336,38 @@
                         </ComboBox>
 
                         <CheckBox x:Name="SharingTextLabelsEnabledCheckBox" Content="Text labels" Click="ScreenSettingsCheckBox_Click" Margin="0,0,0,10" />
+
+                        <!-- Sharing icon row (QR/Email/SMS/Print) - drag the
+                             group on the DESIGN tab's canvas to reposition it.
+                             Each icon's own enabled state is QR/Email/SMS/
+                             Print's real channel toggle, edited via "Sharing
+                             Settings" below (not this editor) since those also
+                             gate whether the channel actually works, not just
+                             whether its icon shows here. -->
+                        <CheckBox x:Name="SharingIconsGroupEnabledCheckBox" Content="Sharing icons" Click="ScreenSettingsCheckBox_Click" />
+                        <TextBlock Text="Hides the whole QR/Email/SMS/Print group when off." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,6,0,10" />
+
+                        <TextBlock Text="Icon layout" Style="{StaticResource EditorLabel}" Margin="0,0,0,2" />
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <RadioButton x:Name="SharingIconsRowRadio" GroupName="SharingIconsLayout" Content="Row"
+                                         Margin="0,0,16,0" Click="SharingIconsLayoutRadio_Click" />
+                            <RadioButton x:Name="SharingIconsColumnRadio" GroupName="SharingIconsLayout" Content="Column"
+                                         Click="SharingIconsLayoutRadio_Click" />
+                        </StackPanel>
+
+                        <TextBlock Text="Icon alignment" Style="{StaticResource EditorLabel}" Margin="0,0,0,2" />
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <Button Style="{StaticResource IconActionButton}" Width="36" Margin="0,0,6,0" Tag="Start" Click="SharingIconsAlignButton_Click">
+                                <Path Data="{StaticResource IconAlignLeft}" Stretch="Uniform" Width="15" Height="15" Stroke="{StaticResource InkBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            </Button>
+                            <Button Style="{StaticResource IconActionButton}" Width="36" Margin="0,0,6,0" Tag="Center" Click="SharingIconsAlignButton_Click">
+                                <Path Data="{StaticResource IconAlignCenterH}" Stretch="Uniform" Width="15" Height="15" Stroke="{StaticResource InkBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            </Button>
+                            <Button Style="{StaticResource IconActionButton}" Width="36" Tag="End" Click="SharingIconsAlignButton_Click">
+                                <Path Data="{StaticResource IconAlignRight}" Stretch="Uniform" Width="15" Height="15" Stroke="{StaticResource InkBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            </Button>
+                        </StackPanel>
 
                         <TextBlock Text="Final screen timeout" Style="{StaticResource EditorLabel}" />
                         <TextBlock Text="Duration to display the Sharing screen." Style="{StaticResource EditorLabel}"

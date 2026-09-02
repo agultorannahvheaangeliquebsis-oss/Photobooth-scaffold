@@ -103,7 +103,16 @@ public record CaptureSettings(string Mode = "Photo", bool AlsoCreateGif = false,
 /// true multi-pose template (PrintTemplate.RequiredPhotoCount > 1), same gate
 /// KioskViewModel.ShowPoseProgress already uses.</summary>
 public record ScreenSettings(
-    bool BoothIconsEnabled = false, bool ShowLiveView = true, bool MirrorLiveView = true, int LiveViewRotation = 0,
+    // Default true, not false: this used to have no on-screen icon UI to gate
+    // (see BUILD_PLAN.md's "BoothIconsEnabled has no on-screen icon UI to
+    // gate" note) so every existing install's stored value -- almost always
+    // the schema's own DEFAULT 0 -- was never a real admin choice, just an
+    // inert leftover. Now that it actually hides the Welcome mode tiles (see
+    // KioskWindow's WelcomeIconsGroup), defaulting a *new* record to true
+    // keeps that behavior change from silently hiding mode selection for
+    // anyone who never touched this checkbox; Script0023's migration
+    // one-time-backfills every existing Location row to match.
+    bool BoothIconsEnabled = true, bool ShowLiveView = true, bool MirrorLiveView = true, int LiveViewRotation = 0,
     bool EnableWebcams = true, int WebcamResolutionQuality = 70, string? AudioInputDeviceName = null,
     string PoseStripPosition = "Bottom")
 {
@@ -113,6 +122,30 @@ public record ScreenSettings(
     // See ScreenTemplateEditorWindow's Welcome settings panel / dslrBooth's
     // own Welcome Screen Settings panel.
     public bool BoothIconLabelsEnabled { get; init; } = true;
+
+    // Booth Icons group -- the Photo/GIF/Boomerang/Video mode tiles. Each
+    // tile's own enabled flag; BoothIconsEnabled/BoothIconLabelsEnabled above
+    // are the group-wide enable/show-labels switches IconGroupLayout would
+    // otherwise carry (see ScreenTemplateEditorWindow's WelcomeIconsLayout
+    // property, which assembles all of these into one IconGroupLayout for the
+    // drag/layout/align editor code).
+    public bool WelcomePhotoIconEnabled { get; init; } = true;
+    public bool WelcomeGifIconEnabled { get; init; } = true;
+    public bool WelcomeBoomerangIconEnabled { get; init; } = true;
+    public bool WelcomeVideoIconEnabled { get; init; } = true;
+
+    /// <summary>Percent-of-canvas anchor for the Booth Icons group's top-left
+    /// corner (see IconGroupLayout). 0.27, not 0.5: XPercent anchors the
+    /// group's left edge, not its center, so 0.5 would start the ~45%-wide
+    /// four-tile row just right of screen-center rather than centering it
+    /// (confirmed visually on a 1920x1080 kiosk render) -- 0.27 approximates
+    /// where the old fixed, actually-centered StackPanel placed it. Only ever
+    /// a first-run default; an admin can drag the group anywhere from
+    /// ScreenTemplateEditorWindow's DESIGN tab.</summary>
+    public double WelcomeIconsPositionXPercent { get; init; } = 0.27;
+    public double WelcomeIconsPositionYPercent { get; init; } = 0.72;
+    public string WelcomeIconsLayout { get; init; } = IconGroupLayout.RowLayout;
+    public string WelcomeIconsAlignment { get; init; } = IconGroupLayout.CenterAlignment;
 
     /// <summary>Camera preview behind the Welcome screen's own elements --
     /// distinct from Capture's ShowLiveView (a different screen), off by
@@ -177,6 +210,14 @@ public record ScreenSettings(
     public bool FlashScreenWhite { get; init; } = true;
     public bool ShowCancelButton { get; init; } = true;
 
+    /// <summary>Percent-of-canvas anchor for the Cancel button's top-left
+    /// corner (see IconGroupLayout; a single-item group, so Layout/Alignment
+    /// don't apply). Defaults to roughly where the old fixed
+    /// VerticalAlignment="Bottom" HorizontalAlignment="Center" placement put
+    /// it, so an existing install doesn't visibly jump.</summary>
+    public double CaptureCancelButtonPositionXPercent { get; init; } = 0.5;
+    public double CaptureCancelButtonPositionYPercent { get; init; } = 0.93;
+
     /// <summary>#RRGGBB. Purely cosmetic -- the countdown overlay's own ring/
     /// number color (see KioskWindow's countdown rendering).</summary>
     public string CountdownColorHex { get; init; } = "#2ED9A0";
@@ -184,6 +225,23 @@ public record ScreenSettings(
     /// <summary>Whether the strip of already-taken photos (positioned by
     /// PoseStripPosition) is shown at all.</summary>
     public bool PhotoThumbnailsEnabled { get; init; } = true;
+
+    /// <summary>0-100 background opacity for the thumbnail strip's backing
+    /// panel (see PhotoThumbnailsEnabled/PoseStripPosition above) -- 0 leaves
+    /// just the slot images/numbers floating over the live feed, 100 is a
+    /// fully opaque panel.</summary>
+    public int PoseStripBackgroundOpacityPercent { get; init; } = 45;
+
+    /// <summary>#RRGGBB border drawn around whichever slot is the pose
+    /// currently being captured, so a guest mid-session can tell which shot
+    /// is "live" among the already-taken thumbnails. Defaults to
+    /// CountdownColorHex's own default so the two read as one accent color
+    /// out of the box.</summary>
+    public string PoseStripActiveBorderColorHex { get; init; } = "#2ED9A0";
+
+    /// <summary>Whether an empty (not-yet-captured) slot shows its pose
+    /// number (1, 2, 3...) as a placeholder, or stays blank until filled.</summary>
+    public bool PoseStripShowPlaceholderNumbers { get; init; } = true;
 
     /// <summary>Shown while the camera auto-focuses right after the
     /// countdown ends, before FlashScreenWhite/capture. Null means no
@@ -216,6 +274,23 @@ public record ScreenSettings(
     /// -- stored so the choice round-trips, same "not yet consumed"
     /// reasoning as BeautyFilterEnabled elsewhere in this file.</summary>
     public string SharingIconsLocation { get; init; } = "Custom";
+
+    /// <summary>Group-wide enable for the QR/Email/SMS/Print icon row (see
+    /// IconGroupLayout) -- distinct from each channel's own EmailEnabled/
+    /// SmsEnabled/QrEnabled/PrintEnabled (SharingSettings, edited via the
+    /// Sharing Settings section, not this editor): those gate whether a
+    /// channel works at all, this just hides the whole row on the Sharing
+    /// screen while leaving every channel's own setting untouched.</summary>
+    public bool SharingIconsGroupEnabled { get; init; } = true;
+
+    /// <summary>Percent-of-canvas anchor for the icon row's top-left corner.
+    /// Defaults to roughly where SharingChromeQrBox/EmailRow/SmsRow already
+    /// sit in the mockup (see ScreenTemplateEditorWindow.xaml's Sharing chrome
+    /// mockup), so an existing install doesn't visibly jump.</summary>
+    public double SharingIconsPositionXPercent { get; init; } = 0.56;
+    public double SharingIconsPositionYPercent { get; init; } = 0.32;
+    public string SharingIconsLayout { get; init; } = IconGroupLayout.ColumnLayout;
+    public string SharingIconsAlignment { get; init; } = IconGroupLayout.StartAlignment;
 
     public bool SharingTextLabelsEnabled { get; init; } = true;
     public int FinalScreenTimeoutSeconds { get; init; } = 30;

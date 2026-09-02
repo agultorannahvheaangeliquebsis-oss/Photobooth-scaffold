@@ -78,6 +78,14 @@ public class BoothStateMachine
     /// common case), same as CountdownTick never firing outside Countdown.</summary>
     public event Action<int, int>? PoseChanged;
 
+    /// <summary>Fires once per pose, right after that pose's own shot (post filters/green
+    /// screen/glam/branding) is done -- pose index (1-based), RequiredPhotoCount, and the
+    /// finished shot's file path. Lets the UI fill that pose's thumbnail slot in the
+    /// Capture screen's pose strip (see KioskViewModel.PoseThumbnails) the instant it's
+    /// ready, rather than waiting for LastCapturedImagePaths at the very end of the loop.
+    /// Same "true multi-pose template only" gate as PoseChanged above.</summary>
+    public event Action<int, int, string>? PosePhotoCaptured;
+
     /// <summary>Fires once per shot during the GIF/Boomerang capture loop, right after that
     /// shot lands (index, FrameCount, the shot's own file path) -- a tethered body can't run
     /// live view mid-loop (see UpdateLiveView's reasoning on the UI side), so the UI shows each
@@ -456,6 +464,10 @@ public class BoothStateMachine
                     LastCapturedImagePath = await _services.Branding.ApplyBrandingAsync(LastCapturedImagePath, settings.Theme.EventName, ct);
 
                     poses.Add(LastCapturedImagePath);
+                    if (requiredPhotoCount > 1)
+                    {
+                        PosePhotoCaptured?.Invoke(poseIndex + 1, requiredPhotoCount, LastCapturedImagePath);
+                    }
                 }
 
                 LastCapturedImagePaths = poses;

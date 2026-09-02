@@ -135,8 +135,32 @@ public partial class AdminWindow : Window
         InitializeComponent();
         _requestedLocationId = locationId;
         _onLockChanged = onLockChanged;
-        Loaded += async (_, _) => await LoadAsync();
-        Loaded += (_, _) => ShowSection(initialSection);
+        Loaded += async (_, _) =>
+        {
+            await LoadAsync();
+
+            // PrintLayout/ScreenEditor have no content of their own -- their
+            // section panel just hosts whichever embedded editor
+            // OpenPrintTemplateEditorAsync/EditScreenLayoutButtonAsync last
+            // built (see PrintLayoutHost/ScreenEditorHost). A plain
+            // ShowSection(initialSection) would flip the panel visible with
+            // an empty host, so a caller requesting either of these opening
+            // sections (e.g. EventLauncherWindow's Settings dropdown) needs
+            // routed through the same editor-loading path the in-window nav
+            // links use instead.
+            if (initialSection == "PrintLayout")
+            {
+                await OpenPrintTemplateEditorAsync();
+            }
+            else if (initialSection == "ScreenEditor")
+            {
+                await EditScreenLayoutButtonAsync();
+            }
+            else
+            {
+                ShowSection(initialSection);
+            }
+        };
     }
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e) => await LoadAsync();

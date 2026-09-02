@@ -50,7 +50,11 @@ public partial class KioskWindow : Window
         _viewModel.Admin.OpenFullSettings = () =>
             new AdminWindow(_viewModel.LocationId, onLockChanged: locked => _viewModel.IsAdminLocked = locked) { Owner = this }.ShowDialog();
 
-        _viewModel.ScreenOverlaysChanged += () => Dispatcher.Invoke(RenderAllScreenOverlays);
+        _viewModel.ScreenOverlaysChanged += () => Dispatcher.Invoke(() =>
+        {
+            RenderAllScreenOverlays();
+            RepositionIconGroups();
+        });
         _viewModel.AttendantCueRequested += clip => Dispatcher.Invoke(() => PlayAttendantCue(clip));
 
         // Canvas.ActualWidth/Height are 0 until the first layout pass -- these
@@ -59,6 +63,12 @@ public partial class KioskWindow : Window
         WelcomeOverlayCanvas.SizeChanged += (_, _) => RenderScreenOverlay(WelcomeOverlayCanvas, ScreenTemplateScreen.Welcome);
         CaptureOverlayCanvas.SizeChanged += (_, _) => RenderScreenOverlay(CaptureOverlayCanvas, ScreenTemplateScreen.Capture);
         SharingOverlayCanvas.SizeChanged += (_, _) => RenderScreenOverlay(SharingOverlayCanvas, ScreenTemplateScreen.Sharing);
+
+        // Same "0 until first layout pass, re-run on resize" reasoning as the
+        // overlay canvases above -- see RepositionIconGroups.
+        WelcomeIconsPositionCanvas.SizeChanged += (_, _) => RepositionWelcomeIconsGroup();
+        CountdownCancelPositionCanvas.SizeChanged += (_, _) => RepositionCancelButton(CountdownCancelPositionCanvas, CountdownCancelButton);
+        CaptureCancelPositionCanvas.SizeChanged += (_, _) => RepositionCancelButton(CaptureCancelPositionCanvas, CaptureCancelButton);
 
         PreviewKeyDown += KioskWindow_PreviewKeyDown;
     }
@@ -113,6 +123,54 @@ public partial class KioskWindow : Window
         RenderScreenOverlay(WelcomeOverlayCanvas, ScreenTemplateScreen.Welcome);
         RenderScreenOverlay(CaptureOverlayCanvas, ScreenTemplateScreen.Capture);
         RenderScreenOverlay(SharingOverlayCanvas, ScreenTemplateScreen.Sharing);
+    }
+
+    private void RepositionIconGroups()
+    {
+        RepositionWelcomeIconsGroup();
+        RepositionCancelButton(CountdownCancelPositionCanvas, CountdownCancelButton);
+        RepositionCancelButton(CaptureCancelPositionCanvas, CaptureCancelButton);
+    }
+
+    /// <summary>Places WelcomeIconsGroupPositioner (the Booth Icons group's
+    /// Visibility/orientation wrapper -- Canvas.Left/Top attach to the
+    /// Canvas's direct child, not the StackPanel two levels down) at
+    /// ScreenSettings.WelcomeIconsPositionXPercent/YPercent times
+    /// WelcomeIconsPositionCanvas's own ActualWidth/ActualHeight, same
+    /// percent-of-canvas convention RenderScreenOverlay already uses for
+    /// ScreenTemplateElement rows. Unlike that method, this doesn't rebuild
+    /// content -- the tiles/labels are real bound WPF elements (Command,
+    /// Visibility), not synthesized from data, so only their position moves.</summary>
+    private void RepositionWelcomeIconsGroup()
+    {
+        double width = WelcomeIconsPositionCanvas.ActualWidth;
+        double height = WelcomeIconsPositionCanvas.ActualHeight;
+        if (width <= 0 || height <= 0)
+        {
+            return; // not yet laid out -- SizeChanged re-runs this once it is
+        }
+
+        Canvas.SetLeft(WelcomeIconsGroupPositioner, _viewModel.WelcomeIconsPositionXPercent * width);
+        Canvas.SetTop(WelcomeIconsGroupPositioner, _viewModel.WelcomeIconsPositionYPercent * height);
+    }
+
+    /// <summary>Shared by CountdownCancelPositionCanvas/CountdownCancelButton
+    /// and CaptureCancelPositionCanvas/CaptureCancelButton -- both Cancel
+    /// buttons share one stored position (see
+    /// KioskViewModel.CaptureCancelButtonPositionXPercent's doc comment),
+    /// same "Countdown and Capture both map to the Screen Editor's Capture
+    /// tab" reasoning CaptureBackgroundBrush already established.</summary>
+    private void RepositionCancelButton(Canvas canvas, Button button)
+    {
+        double width = canvas.ActualWidth;
+        double height = canvas.ActualHeight;
+        if (width <= 0 || height <= 0)
+        {
+            return;
+        }
+
+        Canvas.SetLeft(button, _viewModel.CaptureCancelButtonPositionXPercent * width);
+        Canvas.SetTop(button, _viewModel.CaptureCancelButtonPositionYPercent * height);
     }
 
     /// <summary>Redraws one screen's ScreenTemplateElement rows as live WPF

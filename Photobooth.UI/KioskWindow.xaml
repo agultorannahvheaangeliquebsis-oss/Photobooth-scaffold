@@ -140,58 +140,87 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Capture mode picker. Selection styling is driven off the one
-                     SelectedCaptureMode enum via EnumToTagConverter - see the
-                     KioskModeTile template's Tag trigger. -->
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,48,0,0"
-                            Visibility="{Binding IsIdleBlocked, Converter={StaticResource InverseBoolToVisibility}}">
-
-                    <Button Style="{StaticResource KioskModeTile}"
-                            Command="{Binding SelectModeCommand}" CommandParameter="Photo"
-                            Tag="{Binding SelectedCaptureMode, Converter={StaticResource ModeTag}, ConverterParameter=Photo}">
-                        <StackPanel>
-                            <TextBlock Text="&#xE722;" FontFamily="Segoe MDL2 Assets" FontSize="52"
-                                       Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
-                            <TextBlock Text="PHOTO" FontFamily="{StaticResource KioskFont}" FontSize="22" FontWeight="SemiBold"
-                                       Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,16,0,0" />
-                        </StackPanel>
-                    </Button>
-
-                    <Button Style="{StaticResource KioskModeTile}"
-                            Command="{Binding SelectModeCommand}" CommandParameter="GIF"
-                            Tag="{Binding SelectedCaptureMode, Converter={StaticResource ModeTag}, ConverterParameter=GIF}">
-                        <StackPanel>
-                            <TextBlock Text="&#xE786;" FontFamily="Segoe MDL2 Assets" FontSize="52"
-                                       Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
-                            <TextBlock Text="GIF" FontFamily="{StaticResource KioskFont}" FontSize="22" FontWeight="SemiBold"
-                                       Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,16,0,0" />
-                        </StackPanel>
-                    </Button>
-
-                    <Button Style="{StaticResource KioskModeTile}"
-                            Command="{Binding SelectModeCommand}" CommandParameter="Boomerang"
-                            Tag="{Binding SelectedCaptureMode, Converter={StaticResource ModeTag}, ConverterParameter=Boomerang}">
-                        <StackPanel>
-                            <TextBlock Text="&#xE8EE;" FontFamily="Segoe MDL2 Assets" FontSize="52"
-                                       Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
-                            <TextBlock Text="BOOMERANG" FontFamily="{StaticResource KioskFont}" FontSize="22" FontWeight="SemiBold"
-                                       Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,16,0,0" />
-                        </StackPanel>
-                    </Button>
-
-                    <Button Style="{StaticResource KioskModeTile}"
-                            Command="{Binding SelectModeCommand}" CommandParameter="Video"
-                            Tag="{Binding SelectedCaptureMode, Converter={StaticResource ModeTag}, ConverterParameter=Video}">
-                        <StackPanel>
-                            <TextBlock Text="&#xE714;" FontFamily="Segoe MDL2 Assets" FontSize="52"
-                                       Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
-                            <TextBlock Text="VIDEO" FontFamily="{StaticResource KioskFont}" FontSize="22" FontWeight="SemiBold"
-                                       Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,16,0,0" />
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
             </StackPanel>
         </Grid>
+
+        <!-- Booth Icons group (Photo/GIF/Boomerang/Video mode tiles) -
+             free-positioned via ScreenSettings.WelcomeIconsPositionXPercent/
+             YPercent (see ScreenTemplateEditorWindow's DESIGN tab), row-or-
+             column via WelcomeIconsOrientation, each tile individually
+             hideable via IsWelcome*IconVisible, and the whole group hideable
+             via IsWelcomeIconsGroupVisible (ScreenSettings.BoothIconsEnabled).
+             WelcomeIconsPositionCanvas is a Canvas.SizeChanged-driven overlay,
+             same pattern as WelcomeOverlayCanvas below (see
+             KioskWindow.xaml.cs's RepositionWelcomeIconsGroup) - positioned
+             here as a sibling of IdleScreen (a plain Canvas has no Background,
+             so it's already transparent to hit-testing everywhere except
+             where a real child like a mode tile paints - no
+             IsHitTestVisible="False" needed the way the read-only chrome
+             layers elsewhere in this app use it). -->
+        <Canvas x:Name="WelcomeIconsPositionCanvas"
+                Visibility="{Binding CurrentScreenState, Converter={StaticResource ScreenVisibility}, ConverterParameter=Idle}">
+            <!-- IsIdleBlocked: same gate the mode tiles always had - no
+                 mode selection before an admin has launched the event or
+                 while Show Lock Screen is on (see IdleScreen's own
+                 IsBoothLocked/IsAdminLocked cards). -->
+            <Grid x:Name="WelcomeIconsGroupPositioner" Visibility="{Binding IsIdleBlocked, Converter={StaticResource InverseBoolToVisibility}}">
+            <StackPanel x:Name="WelcomeIconsGroup" Orientation="{Binding WelcomeIconsOrientation}"
+                        Visibility="{Binding IsWelcomeIconsGroupVisible, Converter={StaticResource BoolToVisibility}}">
+
+                <Button Style="{StaticResource KioskModeTile}"
+                        Command="{Binding SelectModeCommand}" CommandParameter="Photo"
+                        Tag="{Binding SelectedCaptureMode, Converter={StaticResource ModeTag}, ConverterParameter=Photo}"
+                        Visibility="{Binding IsWelcomePhotoIconVisible, Converter={StaticResource BoolToVisibility}}">
+                    <StackPanel>
+                        <TextBlock Text="&#xE722;" FontFamily="Segoe MDL2 Assets" FontSize="52"
+                                   Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
+                        <TextBlock Text="PHOTO" FontFamily="{StaticResource KioskFont}" FontSize="22" FontWeight="SemiBold"
+                                   Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,16,0,0"
+                                   Visibility="{Binding IsWelcomeIconLabelsVisible, Converter={StaticResource BoolToVisibility}}" />
+                    </StackPanel>
+                </Button>
+
+                <Button Style="{StaticResource KioskModeTile}"
+                        Command="{Binding SelectModeCommand}" CommandParameter="GIF"
+                        Tag="{Binding SelectedCaptureMode, Converter={StaticResource ModeTag}, ConverterParameter=GIF}"
+                        Visibility="{Binding IsWelcomeGifIconVisible, Converter={StaticResource BoolToVisibility}}">
+                    <StackPanel>
+                        <TextBlock Text="&#xE786;" FontFamily="Segoe MDL2 Assets" FontSize="52"
+                                   Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
+                        <TextBlock Text="GIF" FontFamily="{StaticResource KioskFont}" FontSize="22" FontWeight="SemiBold"
+                                   Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,16,0,0"
+                                   Visibility="{Binding IsWelcomeIconLabelsVisible, Converter={StaticResource BoolToVisibility}}" />
+                    </StackPanel>
+                </Button>
+
+                <Button Style="{StaticResource KioskModeTile}"
+                        Command="{Binding SelectModeCommand}" CommandParameter="Boomerang"
+                        Tag="{Binding SelectedCaptureMode, Converter={StaticResource ModeTag}, ConverterParameter=Boomerang}"
+                        Visibility="{Binding IsWelcomeBoomerangIconVisible, Converter={StaticResource BoolToVisibility}}">
+                    <StackPanel>
+                        <TextBlock Text="&#xE8EE;" FontFamily="Segoe MDL2 Assets" FontSize="52"
+                                   Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
+                        <TextBlock Text="BOOMERANG" FontFamily="{StaticResource KioskFont}" FontSize="22" FontWeight="SemiBold"
+                                   Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,16,0,0"
+                                   Visibility="{Binding IsWelcomeIconLabelsVisible, Converter={StaticResource BoolToVisibility}}" />
+                    </StackPanel>
+                </Button>
+
+                <Button Style="{StaticResource KioskModeTile}"
+                        Command="{Binding SelectModeCommand}" CommandParameter="Video"
+                        Tag="{Binding SelectedCaptureMode, Converter={StaticResource ModeTag}, ConverterParameter=Video}"
+                        Visibility="{Binding IsWelcomeVideoIconVisible, Converter={StaticResource BoolToVisibility}}">
+                    <StackPanel>
+                        <TextBlock Text="&#xE714;" FontFamily="Segoe MDL2 Assets" FontSize="52"
+                                   Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
+                        <TextBlock Text="VIDEO" FontFamily="{StaticResource KioskFont}" FontSize="22" FontWeight="SemiBold"
+                                   Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,16,0,0"
+                                   Visibility="{Binding IsWelcomeIconLabelsVisible, Converter={StaticResource BoolToVisibility}}" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+            </Grid>
+        </Canvas>
 
         <!-- ========================== [2] COUNTDOWN ========================== -->
         <Grid x:Name="CountdownScreen"
@@ -279,11 +308,55 @@
 
             <!-- ScreenSettings.ShowCancelButton: lets a guest back out of a
                  countdown they didn't mean to start, same cancel path Capture's
-                 own Cancel button below uses (see CancelSessionCommand). -->
-            <Button Style="{StaticResource KioskGhostButton}" Content="CANCEL"
-                    Visibility="{Binding IsCancelButtonVisible, Converter={StaticResource BoolToVisibility}}"
-                    Command="{Binding CancelSessionCommand}"
-                    VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,64" Padding="28,14" />
+                 own Cancel button below uses (see CancelSessionCommand).
+                 Free-positioned via ScreenSettings.CaptureCancelButtonPositionXPercent/
+                 YPercent, same as CaptureScreen's own Cancel button below -
+                 both map to the Screen Editor's single "Capture" tab and
+                 share one stored position (see CaptureCancelButtonPositionXPercent's
+                 doc comment on ScreenSettings). -->
+            <Canvas x:Name="CountdownCancelPositionCanvas">
+                <Button x:Name="CountdownCancelButton" Style="{StaticResource KioskGhostButton}" Content="CANCEL"
+                        Visibility="{Binding IsCancelButtonVisible, Converter={StaticResource BoolToVisibility}}"
+                        Command="{Binding CancelSessionCommand}" Padding="28,14" />
+            </Canvas>
+
+            <!-- Pose thumbnail strip: filmstrip of already-taken shots for a
+                 true multi-pose template, docked to whichever edge
+                 ScreenSettings.PoseStripPosition names (see
+                 KioskViewModel.PoseStripHorizontalAlignment/VerticalAlignment/
+                 Orientation, computed from that setting). Each slot shows its
+                 pose number until BoothStateMachine.PosePhotoCaptured fills it
+                 in, and gets ScreenSettings.PoseStripActiveBorderColorHex's
+                 border while it's the pose currently being captured. -->
+            <Border Visibility="{Binding IsPoseThumbnailStripVisible, Converter={StaticResource BoolToVisibility}}"
+                    HorizontalAlignment="{Binding PoseStripHorizontalAlignment}"
+                    VerticalAlignment="{Binding PoseStripVerticalAlignment}"
+                    Background="{Binding PoseStripBackgroundBrush}"
+                    CornerRadius="10" Margin="24" Padding="8">
+                <ItemsControl ItemsSource="{Binding PoseThumbnails}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="{Binding PoseStripOrientation}" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Width="64" Height="64" Margin="4" CornerRadius="6" ClipToBounds="True"
+                                    Background="#22FFFFFF"
+                                    BorderThickness="{Binding ActiveBorderThickness}"
+                                    BorderBrush="{Binding DataContext.PoseStripActiveBorderBrush, RelativeSource={RelativeSource AncestorType=Window}}">
+                                <Grid>
+                                    <Image Source="{Binding ImageSource}" Stretch="UniformToFill"
+                                           Visibility="{Binding HasImage, Converter={StaticResource BoolToVisibility}}" />
+                                    <TextBlock Text="{Binding Number}" FontFamily="{StaticResource KioskFont}" FontSize="22" FontWeight="SemiBold"
+                                               Foreground="{StaticResource KioskMutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Visibility="{Binding ShowNumber, Converter={StaticResource BoolToVisibility}}" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Border>
         </Grid>
 
         <!-- ======================= [3] CAPTURE / SMILE ======================= -->
@@ -307,10 +380,47 @@
                 <TextBlock Text="Hold that smile" Style="{StaticResource KioskPrompt}" Margin="0,16,0,0" />
             </StackPanel>
 
-            <Button Style="{StaticResource KioskGhostButton}" Content="CANCEL"
-                    Visibility="{Binding IsCancelButtonVisible, Converter={StaticResource BoolToVisibility}}"
-                    Command="{Binding CancelSessionCommand}"
-                    VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,64" Padding="28,14" />
+            <!-- Free-positioned, shares CaptureCancelButtonPositionXPercent/
+                 YPercent with CountdownScreen's own Cancel button above -
+                 see that Canvas's doc comment. -->
+            <Canvas x:Name="CaptureCancelPositionCanvas">
+                <Button x:Name="CaptureCancelButton" Style="{StaticResource KioskGhostButton}" Content="CANCEL"
+                        Visibility="{Binding IsCancelButtonVisible, Converter={StaticResource BoolToVisibility}}"
+                        Command="{Binding CancelSessionCommand}" Padding="28,14" />
+            </Canvas>
+
+            <!-- Pose thumbnail strip: see CountdownScreen's own copy above
+                 (both map to ScreenSettings' single "Capture" tab, same as
+                 the Cancel button Canvas just above). -->
+            <Border Visibility="{Binding IsPoseThumbnailStripVisible, Converter={StaticResource BoolToVisibility}}"
+                    HorizontalAlignment="{Binding PoseStripHorizontalAlignment}"
+                    VerticalAlignment="{Binding PoseStripVerticalAlignment}"
+                    Background="{Binding PoseStripBackgroundBrush}"
+                    CornerRadius="10" Margin="24" Padding="8">
+                <ItemsControl ItemsSource="{Binding PoseThumbnails}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="{Binding PoseStripOrientation}" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Width="64" Height="64" Margin="4" CornerRadius="6" ClipToBounds="True"
+                                    Background="#22FFFFFF"
+                                    BorderThickness="{Binding ActiveBorderThickness}"
+                                    BorderBrush="{Binding DataContext.PoseStripActiveBorderBrush, RelativeSource={RelativeSource AncestorType=Window}}">
+                                <Grid>
+                                    <Image Source="{Binding ImageSource}" Stretch="UniformToFill"
+                                           Visibility="{Binding HasImage, Converter={StaticResource BoolToVisibility}}" />
+                                    <TextBlock Text="{Binding Number}" FontFamily="{StaticResource KioskFont}" FontSize="22" FontWeight="SemiBold"
+                                               Foreground="{StaticResource KioskMutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Visibility="{Binding ShowNumber, Converter={StaticResource BoolToVisibility}}" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Border>
         </Grid>
 
         <!-- ===================== [4] PROCESSING / STITCHER ===================== -->
@@ -569,6 +679,18 @@
                     <TextBlock Text="Scan, send, or print a copy." Style="{StaticResource KioskCaption}"
                                FontSize="17" Margin="0,8,0,0" />
 
+                    <!-- QR/Email/SMS icon group - ScreenSettings.SharingIconsGroupEnabled
+                         hides all three at once from the Screen Editor's DESIGN
+                         tab, on top of each one's own real channel toggle
+                         (IsQrEnabled/IsEmailEnabled/IsSmsEnabled) below. Kept in
+                         this screen's normal scrolling flow layout rather than
+                         freely repositioned like the Welcome icons/Capture Cancel
+                         button - these carry real text-entry controls, and a
+                         resolution-adaptive ScrollViewer is safer for that than
+                         fixed percent-of-screen placement across very different
+                         kiosk display sizes. Print (below, outside this group)
+                         keeps its own independent IsPrintButtonVisible toggle. -->
+                    <StackPanel Visibility="{Binding IsSharingIconsGroupVisible, Converter={StaticResource BoolToVisibility}}">
                     <!-- QR: white card because a QR code needs a light quiet
                          zone to scan reliably. Replaced by a status line while
                          the background upload is still in flight. -->
@@ -628,6 +750,7 @@
                                     Content="SEND" Margin="10,0,0,0" MinHeight="60"
                                     Command="{Binding SendSmsCommand}" />
                         </Grid>
+                    </StackPanel>
                     </StackPanel>
 
                     <!-- Twitter/X: SharingSettings.TwitterEnabled, opens the

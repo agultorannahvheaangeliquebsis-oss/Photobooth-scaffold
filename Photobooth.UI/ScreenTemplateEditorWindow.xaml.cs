@@ -135,6 +135,15 @@ public partial class ScreenTemplateEditorWindow : UserControl
     private bool _suppressPropertyEvents;
     private bool _suppressLayerListEvents;
 
+    /// <summary>The icon-group Border currently being dragged (see
+    /// IconGroup_MouseLeftButtonDown) -- WelcomeIconsGroupBorder/
+    /// SharingIconsGroupBorder/CaptureCancelButtonGroupBorder, distinguished
+    /// by their own Tag, not an _containers index like element drag uses,
+    /// since there's exactly one fixed group per screen.</summary>
+    private Border? _draggingIconGroup;
+    private Point _iconGroupDragStartPoint;
+    private double _iconGroupDragStartLeft, _iconGroupDragStartTop;
+
     public ScreenTemplateEditorWindow(IReadOnlyList<ScreenTemplateElement> existingElements, int locationId,
         ScreenSettings screenSettings, BoothTheme theme, SharingSettings sharing, PrintOptions printOptions)
     {
@@ -170,6 +179,11 @@ public partial class ScreenTemplateEditorWindow : UserControl
                 : "No image selected.";
             BoothIconsEnabledCheckBox.IsChecked = _screenSettings.BoothIconsEnabled;
             BoothIconLabelsEnabledCheckBox.IsChecked = _screenSettings.BoothIconLabelsEnabled;
+            WelcomePhotoIconEnabledCheckBox.IsChecked = _screenSettings.WelcomePhotoIconEnabled;
+            WelcomeGifIconEnabledCheckBox.IsChecked = _screenSettings.WelcomeGifIconEnabled;
+            WelcomeBoomerangIconEnabledCheckBox.IsChecked = _screenSettings.WelcomeBoomerangIconEnabled;
+            WelcomeVideoIconEnabledCheckBox.IsChecked = _screenSettings.WelcomeVideoIconEnabled;
+            (_screenSettings.WelcomeIconsLayout == IconGroupLayout.ColumnLayout ? WelcomeIconsColumnRadio : WelcomeIconsRowRadio).IsChecked = true;
             WelcomeShowLiveViewCheckBox.IsChecked = _screenSettings.WelcomeShowLiveView;
             LiveTemplatePreviewCheckBox.IsChecked = _screenSettings.LiveTemplatePreview;
             StretchLiveViewCombo.SelectedIndex = _screenSettings.StretchLiveView switch
@@ -205,6 +219,11 @@ public partial class ScreenTemplateEditorWindow : UserControl
             CountdownColorBox.Text = _screenSettings.CountdownColorHex;
             CountdownColorSwatch.Background = HexToBrush(_screenSettings.CountdownColorHex);
             PhotoThumbnailsEnabledCheckBox.IsChecked = _screenSettings.PhotoThumbnailsEnabled;
+            PoseStripOpacitySlider.Value = _screenSettings.PoseStripBackgroundOpacityPercent;
+            PoseStripOpacityBox.Text = _screenSettings.PoseStripBackgroundOpacityPercent.ToString();
+            PoseStripActiveBorderColorBox.Text = _screenSettings.PoseStripActiveBorderColorHex;
+            PoseStripActiveBorderColorSwatch.Background = HexToBrush(_screenSettings.PoseStripActiveBorderColorHex);
+            PoseStripShowPlaceholderNumbersCheckBox.IsChecked = _screenSettings.PoseStripShowPlaceholderNumbers;
             SayCheeseImageNameText.Text = _screenSettings.SayCheeseImagePath is string sayCheesePath
                 ? IoPath.GetFileName(sayCheesePath)
                 : "No image selected.";
@@ -242,6 +261,8 @@ public partial class ScreenTemplateEditorWindow : UserControl
                 _ => 0,
             };
             SharingTextLabelsEnabledCheckBox.IsChecked = _screenSettings.SharingTextLabelsEnabled;
+            SharingIconsGroupEnabledCheckBox.IsChecked = _screenSettings.SharingIconsGroupEnabled;
+            (_screenSettings.SharingIconsLayout == IconGroupLayout.ColumnLayout ? SharingIconsColumnRadio : SharingIconsRowRadio).IsChecked = true;
             FinalScreenTimeoutSlider.Value = _screenSettings.FinalScreenTimeoutSeconds;
             FinalScreenTimeoutBox.Text = _screenSettings.FinalScreenTimeoutSeconds.ToString();
             ShowOriginalPhotosCheckBox.IsChecked = _screenSettings.ShowOriginalPhotos;
@@ -280,10 +301,12 @@ public partial class ScreenTemplateEditorWindow : UserControl
             FlashScreenWhite = FlashScreenWhiteCheckBox.IsChecked == true,
             ShowCancelButton = ShowCancelButtonCheckBox.IsChecked == true,
             PhotoThumbnailsEnabled = PhotoThumbnailsEnabledCheckBox.IsChecked == true,
+            PoseStripShowPlaceholderNumbers = PoseStripShowPlaceholderNumbersCheckBox.IsChecked == true,
 
             SkipSharingScreen = SkipSharingScreenCheckBox.IsChecked == true,
             ShowDoneButton = ShowDoneButtonCheckBox.IsChecked == true,
             SharingTextLabelsEnabled = SharingTextLabelsEnabledCheckBox.IsChecked == true,
+            SharingIconsGroupEnabled = SharingIconsGroupEnabledCheckBox.IsChecked == true,
             ShowOriginalPhotos = ShowOriginalPhotosCheckBox.IsChecked == true,
             ShowRetakeButton = ShowRetakeButtonCheckBox.IsChecked == true,
         };
@@ -531,6 +554,51 @@ public partial class ScreenTemplateEditorWindow : UserControl
         }
 
         _screenSettings = _screenSettings with { PoseStripPosition = position };
+        UpdateScreenChrome();
+    }
+
+    private void PoseStripOpacitySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressScreenSettingsEvents)
+        {
+            return;
+        }
+
+        int percent = (int)Math.Round(PoseStripOpacitySlider.Value);
+        _screenSettings = _screenSettings with { PoseStripBackgroundOpacityPercent = percent };
+
+        _suppressScreenSettingsEvents = true;
+        PoseStripOpacityBox.Text = percent.ToString();
+        _suppressScreenSettingsEvents = false;
+        UpdateScreenChrome();
+    }
+
+    private void PoseStripOpacityBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressScreenSettingsEvents || !int.TryParse(PoseStripOpacityBox.Text, out int percent))
+        {
+            return;
+        }
+
+        percent = Math.Clamp(percent, 0, 100);
+        _screenSettings = _screenSettings with { PoseStripBackgroundOpacityPercent = percent };
+
+        _suppressScreenSettingsEvents = true;
+        PoseStripOpacitySlider.Value = percent;
+        _suppressScreenSettingsEvents = false;
+        UpdateScreenChrome();
+    }
+
+    private void PoseStripActiveBorderColorBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressScreenSettingsEvents)
+        {
+            return;
+        }
+
+        _screenSettings = _screenSettings with { PoseStripActiveBorderColorHex = PoseStripActiveBorderColorBox.Text };
+        PoseStripActiveBorderColorSwatch.Background = HexToBrush(PoseStripActiveBorderColorBox.Text);
+        UpdateScreenChrome();
     }
 
     private void ScreenTabControl_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -613,11 +681,233 @@ public partial class ScreenTemplateEditorWindow : UserControl
         SharingChromeQrLabel.Visibility = labelVisibility;
         SharingChromeEmailLabel.Visibility = labelVisibility;
         SharingChromeSmsLabel.Visibility = labelVisibility;
+
+        LoadWelcomeIconsGroup();
+        LoadCaptureCancelButtonGroup();
+        LoadPoseStripGroup();
+        LoadSharingIconsGroup();
     }
 
     private static ImageSource? LoadImageOrNull(string? path) => path is string p && File.Exists(p)
         ? new BitmapImage(new Uri(IoPath.GetFullPath(p)))
         : null;
+
+    // ================================= Icon groups (Booth Icons/Sharing
+    // icons/Capture Cancel button) =================================
+    // Free-position/toggle/row-or-column groups, see IconGroupLayout. Each
+    // Load*Group method applies _screenSettings to its group's visuals
+    // (visibility/orientation/position) the same way the rest of
+    // UpdateScreenChrome applies settings to the read-only chrome mockup;
+    // IconGroup_MouseLeftButtonDown/MouseMove/MouseLeftButtonUp below handle
+    // the drag itself, keyed off which Border was grabbed via its Tag.
+
+    private void LoadWelcomeIconsGroup()
+    {
+        WelcomeIconsGroupBorder.Visibility = _screenSettings.BoothIconsEnabled ? Visibility.Visible : Visibility.Collapsed;
+        WelcomeIconsStackPanel.Orientation = _screenSettings.WelcomeIconsLayout == IconGroupLayout.ColumnLayout
+            ? Orientation.Vertical : Orientation.Horizontal;
+
+        WelcomeIconPhotoTile.Visibility = _screenSettings.WelcomePhotoIconEnabled ? Visibility.Visible : Visibility.Collapsed;
+        WelcomeIconGifTile.Visibility = _screenSettings.WelcomeGifIconEnabled ? Visibility.Visible : Visibility.Collapsed;
+        WelcomeIconBoomerangTile.Visibility = _screenSettings.WelcomeBoomerangIconEnabled ? Visibility.Visible : Visibility.Collapsed;
+        WelcomeIconVideoTile.Visibility = _screenSettings.WelcomeVideoIconEnabled ? Visibility.Visible : Visibility.Collapsed;
+
+        Visibility labelVisibility = _screenSettings.BoothIconLabelsEnabled ? Visibility.Visible : Visibility.Collapsed;
+        WelcomeIconPhotoLabel.Visibility = labelVisibility;
+        WelcomeIconGifLabel.Visibility = labelVisibility;
+        WelcomeIconBoomerangLabel.Visibility = labelVisibility;
+        WelcomeIconVideoLabel.Visibility = labelVisibility;
+
+        Canvas.SetLeft(WelcomeIconsGroupBorder, _screenSettings.WelcomeIconsPositionXPercent * CanvasWidth);
+        Canvas.SetTop(WelcomeIconsGroupBorder, _screenSettings.WelcomeIconsPositionYPercent * CanvasHeight);
+    }
+
+    private void LoadCaptureCancelButtonGroup()
+    {
+        Canvas.SetLeft(CaptureCancelButtonGroupBorder, _screenSettings.CaptureCancelButtonPositionXPercent * CanvasWidth);
+        Canvas.SetTop(CaptureCancelButtonGroupBorder, _screenSettings.CaptureCancelButtonPositionYPercent * CanvasHeight);
+    }
+
+    /// <summary>Thumbnail Strip preview -- edge-docked per PoseStripPosition
+    /// (Top/Bottom = a row along that edge, Left/Right = a column), unlike
+    /// the free-drag icon groups above. Slot 2 is always shown "active" as a
+    /// fixed demo of the border-highlight style against the chrome mockup's
+    /// own sample "2" countdown digit.</summary>
+    private void LoadPoseStripGroup()
+    {
+        CaptureChromePoseStrip.Visibility = _screenSettings.PhotoThumbnailsEnabled ? Visibility.Visible : Visibility.Collapsed;
+
+        bool isVertical = _screenSettings.PoseStripPosition is "Left" or "Right";
+        CaptureChromePoseStripItems.Rows = isVertical ? 4 : 1;
+        CaptureChromePoseStripItems.Columns = isVertical ? 1 : 4;
+
+        CaptureChromePoseStrip.HorizontalAlignment = _screenSettings.PoseStripPosition switch
+        {
+            "Left" => HorizontalAlignment.Left,
+            "Right" => HorizontalAlignment.Right,
+            _ => HorizontalAlignment.Stretch,
+        };
+        CaptureChromePoseStrip.VerticalAlignment = _screenSettings.PoseStripPosition switch
+        {
+            "Top" => VerticalAlignment.Top,
+            "Left" or "Right" => VerticalAlignment.Stretch,
+            _ => VerticalAlignment.Bottom,
+        };
+
+        byte alpha = (byte)(Math.Clamp(_screenSettings.PoseStripBackgroundOpacityPercent, 0, 100) * 255 / 100);
+        CaptureChromePoseStrip.Background = new SolidColorBrush(Color.FromArgb(alpha, 0, 0, 0));
+
+        Brush activeBorderBrush = HexToBrush(_screenSettings.PoseStripActiveBorderColorHex);
+        Border[] slots = { CaptureChromePoseSlot1, CaptureChromePoseSlot2, CaptureChromePoseSlot3, CaptureChromePoseSlot4 };
+        for (int i = 0; i < slots.Length; i++)
+        {
+            slots[i].BorderBrush = activeBorderBrush;
+            slots[i].BorderThickness = i == 1 ? new Thickness(2) : new Thickness(0);
+        }
+
+        Visibility numberVisibility = _screenSettings.PoseStripShowPlaceholderNumbers ? Visibility.Visible : Visibility.Collapsed;
+        CaptureChromePoseNumber1.Visibility = numberVisibility;
+        CaptureChromePoseNumber2.Visibility = numberVisibility;
+        CaptureChromePoseNumber3.Visibility = numberVisibility;
+        CaptureChromePoseNumber4.Visibility = numberVisibility;
+    }
+
+    private void LoadSharingIconsGroup()
+    {
+        SharingIconsGroupBorder.Visibility = _screenSettings.SharingIconsGroupEnabled ? Visibility.Visible : Visibility.Collapsed;
+        SharingIconsStackPanel.Orientation = _screenSettings.SharingIconsLayout == IconGroupLayout.ColumnLayout
+            ? Orientation.Vertical : Orientation.Horizontal;
+
+        Canvas.SetLeft(SharingIconsGroupBorder, _screenSettings.SharingIconsPositionXPercent * CanvasWidth);
+        Canvas.SetTop(SharingIconsGroupBorder, _screenSettings.SharingIconsPositionYPercent * CanvasHeight);
+    }
+
+    /// <summary>Booth Icons/Sharing icons/Capture Cancel button toggle
+    /// visibility with checkboxes, but position/reordering purely drags the
+    /// whole group -- same split PrintTemplateEditorWindow's own element drag
+    /// uses, just keyed by the Border's Tag ("Welcome"/"Sharing"/"Capture")
+    /// instead of an _containers index, since there's one fixed group per
+    /// screen rather than an admin-built list.</summary>
+    private void IconGroup_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not Border container)
+        {
+            return;
+        }
+
+        _draggingIconGroup = container;
+        _iconGroupDragStartPoint = e.GetPosition(ElementsCanvas);
+        _iconGroupDragStartLeft = Canvas.GetLeft(container);
+        _iconGroupDragStartTop = Canvas.GetTop(container);
+        container.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void IconGroup_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (_draggingIconGroup is not Border container || sender != container || !container.IsMouseCaptured)
+        {
+            return;
+        }
+
+        Point current = e.GetPosition(ElementsCanvas);
+        double newLeft = Math.Clamp(_iconGroupDragStartLeft + (current.X - _iconGroupDragStartPoint.X), 0, Math.Max(0, CanvasWidth - container.ActualWidth));
+        double newTop = Math.Clamp(_iconGroupDragStartTop + (current.Y - _iconGroupDragStartPoint.Y), 0, Math.Max(0, CanvasHeight - container.ActualHeight));
+        Canvas.SetLeft(container, newLeft);
+        Canvas.SetTop(container, newTop);
+    }
+
+    private void IconGroup_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (_draggingIconGroup is not Border container || sender != container)
+        {
+            return;
+        }
+
+        container.ReleaseMouseCapture();
+        _draggingIconGroup = null;
+
+        double xPercent = Canvas.GetLeft(container) / CanvasWidth;
+        double yPercent = Canvas.GetTop(container) / CanvasHeight;
+        _screenSettings = container.Tag switch
+        {
+            "Welcome" => _screenSettings with { WelcomeIconsPositionXPercent = xPercent, WelcomeIconsPositionYPercent = yPercent },
+            "Sharing" => _screenSettings with { SharingIconsPositionXPercent = xPercent, SharingIconsPositionYPercent = yPercent },
+            "Capture" => _screenSettings with { CaptureCancelButtonPositionXPercent = xPercent, CaptureCancelButtonPositionYPercent = yPercent },
+            _ => _screenSettings,
+        };
+        e.Handled = true;
+    }
+
+    private void WelcomeIconEnabledCheckBox_Click(object sender, RoutedEventArgs e)
+    {
+        _screenSettings = _screenSettings with
+        {
+            WelcomePhotoIconEnabled = WelcomePhotoIconEnabledCheckBox.IsChecked == true,
+            WelcomeGifIconEnabled = WelcomeGifIconEnabledCheckBox.IsChecked == true,
+            WelcomeBoomerangIconEnabled = WelcomeBoomerangIconEnabledCheckBox.IsChecked == true,
+            WelcomeVideoIconEnabled = WelcomeVideoIconEnabledCheckBox.IsChecked == true,
+        };
+        LoadWelcomeIconsGroup();
+    }
+
+    private void WelcomeIconsLayoutRadio_Click(object sender, RoutedEventArgs e)
+    {
+        _screenSettings = _screenSettings with
+        {
+            WelcomeIconsLayout = WelcomeIconsColumnRadio.IsChecked == true ? IconGroupLayout.ColumnLayout : IconGroupLayout.RowLayout,
+        };
+        LoadWelcomeIconsGroup();
+    }
+
+    private void SharingIconsLayoutRadio_Click(object sender, RoutedEventArgs e)
+    {
+        _screenSettings = _screenSettings with
+        {
+            SharingIconsLayout = SharingIconsColumnRadio.IsChecked == true ? IconGroupLayout.ColumnLayout : IconGroupLayout.RowLayout,
+        };
+        LoadSharingIconsGroup();
+    }
+
+    /// <summary>Left/Center/Right snap the group's whole horizontal position
+    /// against the canvas bounds -- a one-shot recompute of PositionXPercent,
+    /// same pattern AlignButton_Click already uses for an individual element,
+    /// not a live-maintained property (Alignment on ScreenSettings just
+    /// round-trips the last choice, same "stored so it round-trips, not
+    /// itself re-applied" reasoning SharingIconsLocation already documents).</summary>
+    private void WelcomeIconsAlignButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string alignment })
+        {
+            return;
+        }
+
+        double left = alignment switch
+        {
+            IconGroupLayout.StartAlignment => 0,
+            IconGroupLayout.EndAlignment => CanvasWidth - WelcomeIconsGroupBorder.ActualWidth,
+            _ => (CanvasWidth - WelcomeIconsGroupBorder.ActualWidth) / 2,
+        };
+        Canvas.SetLeft(WelcomeIconsGroupBorder, left);
+        _screenSettings = _screenSettings with { WelcomeIconsPositionXPercent = left / CanvasWidth, WelcomeIconsAlignment = alignment };
+    }
+
+    private void SharingIconsAlignButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string alignment })
+        {
+            return;
+        }
+
+        double left = alignment switch
+        {
+            IconGroupLayout.StartAlignment => 0,
+            IconGroupLayout.EndAlignment => CanvasWidth - SharingIconsGroupBorder.ActualWidth,
+            _ => (CanvasWidth - SharingIconsGroupBorder.ActualWidth) / 2,
+        };
+        Canvas.SetLeft(SharingIconsGroupBorder, left);
+        _screenSettings = _screenSettings with { SharingIconsPositionXPercent = left / CanvasWidth, SharingIconsAlignment = alignment };
+    }
 
     /// <summary>Shows the event's real logo/name over the chrome mockup --
     /// Welcome gets the big centered logo+name inside WelcomeChromeLayer

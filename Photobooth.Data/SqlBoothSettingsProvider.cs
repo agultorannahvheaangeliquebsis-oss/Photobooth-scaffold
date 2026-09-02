@@ -54,7 +54,13 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
                    TwitterEnabled, PrintEnabled,
                    WelcomeBackgroundColorHex, WelcomeBackgroundImagePath,
                    CaptureBackgroundColorHex, CaptureBackgroundImagePath,
-                   SharingBackgroundColorHex, SharingBackgroundImagePath
+                   SharingBackgroundColorHex, SharingBackgroundImagePath,
+                   WelcomePhotoIconEnabled, WelcomeGifIconEnabled, WelcomeBoomerangIconEnabled, WelcomeVideoIconEnabled,
+                   WelcomeIconsPositionXPercent, WelcomeIconsPositionYPercent, WelcomeIconsLayout, WelcomeIconsAlignment,
+                   CaptureCancelButtonPositionXPercent, CaptureCancelButtonPositionYPercent,
+                   SharingIconsGroupEnabled, SharingIconsPositionXPercent, SharingIconsPositionYPercent,
+                   SharingIconsLayout, SharingIconsAlignment,
+                   PoseStripBackgroundOpacityPercent, PoseStripActiveBorderColorHex, PoseStripShowPlaceholderNumbers
             FROM Location WHERE LocationId = @LocationId;
             """,
             connection);
@@ -136,6 +142,24 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
                 CaptureBackgroundImagePath = reader.IsDBNull(104) ? null : reader.GetString(104),
                 SharingBackgroundColorHex = reader.GetString(105),
                 SharingBackgroundImagePath = reader.IsDBNull(106) ? null : reader.GetString(106),
+                WelcomePhotoIconEnabled = reader.GetBoolean(107),
+                WelcomeGifIconEnabled = reader.GetBoolean(108),
+                WelcomeBoomerangIconEnabled = reader.GetBoolean(109),
+                WelcomeVideoIconEnabled = reader.GetBoolean(110),
+                WelcomeIconsPositionXPercent = reader.GetDouble(111),
+                WelcomeIconsPositionYPercent = reader.GetDouble(112),
+                WelcomeIconsLayout = reader.GetString(113),
+                WelcomeIconsAlignment = reader.GetString(114),
+                CaptureCancelButtonPositionXPercent = reader.GetDouble(115),
+                CaptureCancelButtonPositionYPercent = reader.GetDouble(116),
+                SharingIconsGroupEnabled = reader.GetBoolean(117),
+                SharingIconsPositionXPercent = reader.GetDouble(118),
+                SharingIconsPositionYPercent = reader.GetDouble(119),
+                SharingIconsLayout = reader.GetString(120),
+                SharingIconsAlignment = reader.GetString(121),
+                PoseStripBackgroundOpacityPercent = reader.GetInt32(122),
+                PoseStripActiveBorderColorHex = reader.GetString(123),
+                PoseStripShowPlaceholderNumbers = reader.GetBoolean(124),
             };
             effects = new EffectsSettings(
                 reader.GetBoolean(24), reader.GetString(25), reader.IsDBNull(26) ? null : reader.GetString(26),

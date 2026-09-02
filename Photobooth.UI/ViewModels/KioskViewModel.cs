@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
+using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -218,11 +220,8 @@ public class KioskViewModel : ObservableObject, IDisposable
 
         _stateMachine.StateChanged += state => OnUi(() => ApplyState(state));
         _stateMachine.CountdownTick += value => OnUi(() => CountdownValue = value);
-        _stateMachine.PoseChanged += (pose, total) => OnUi(() =>
-        {
-            ShowPoseProgress = total > 1;
-            PoseProgressText = $"Pose {pose} of {total}";
-        });
+        _stateMachine.PoseChanged += (pose, total) => OnUi(() => OnPoseChanged(pose, total));
+        _stateMachine.PosePhotoCaptured += (pose, total, path) => OnUi(() => OnPosePhotoCaptured(pose, path));
         _stateMachine.FrameCaptured += (frame, total, path) => OnUi(() => OnFrameCaptured(frame, total, path));
         _stateMachine.ErrorOccurred += message => OnUi(() =>
         {
@@ -655,6 +654,148 @@ public class KioskViewModel : ObservableObject, IDisposable
         get => _isRetakeVisible;
         private set => SetProperty(ref _isRetakeVisible, value);
     }
+
+    // ===== Booth Icons group (Welcome), Sharing icon row, Capture Cancel
+    // button -- free-positioned/toggleable/row-or-column groups edited via
+    // ScreenTemplateEditorWindow's DESIGN tab (see IconGroupLayout). Percent
+    // properties are top-left-of-group anchors, same 0-1-of-screen convention
+    // GetOverlayElements' ScreenTemplateElement.XPercent/YPercent already use;
+    // KioskWindow converts them to pixels against WelcomeIconsPositionCanvas/
+    // SharingIconsPositionCanvas/CaptureCancelPositionCanvas's own
+    // ActualWidth/ActualHeight, the same SizeChanged-driven pattern
+    // RenderScreenOverlay already uses for ScreenTemplateElement rows.
+
+    private bool _isWelcomeIconsGroupVisible = true;
+
+    /// <summary>ScreenSettings.BoothIconsEnabled.</summary>
+    public bool IsWelcomeIconsGroupVisible
+    {
+        get => _isWelcomeIconsGroupVisible;
+        private set => SetProperty(ref _isWelcomeIconsGroupVisible, value);
+    }
+
+    private bool _isWelcomeIconLabelsVisible = true;
+
+    /// <summary>ScreenSettings.BoothIconLabelsEnabled.</summary>
+    public bool IsWelcomeIconLabelsVisible
+    {
+        get => _isWelcomeIconLabelsVisible;
+        private set => SetProperty(ref _isWelcomeIconLabelsVisible, value);
+    }
+
+    private bool _isWelcomePhotoIconVisible = true;
+    public bool IsWelcomePhotoIconVisible { get => _isWelcomePhotoIconVisible; private set => SetProperty(ref _isWelcomePhotoIconVisible, value); }
+
+    private bool _isWelcomeGifIconVisible = true;
+    public bool IsWelcomeGifIconVisible { get => _isWelcomeGifIconVisible; private set => SetProperty(ref _isWelcomeGifIconVisible, value); }
+
+    private bool _isWelcomeBoomerangIconVisible = true;
+    public bool IsWelcomeBoomerangIconVisible { get => _isWelcomeBoomerangIconVisible; private set => SetProperty(ref _isWelcomeBoomerangIconVisible, value); }
+
+    private bool _isWelcomeVideoIconVisible = true;
+    public bool IsWelcomeVideoIconVisible { get => _isWelcomeVideoIconVisible; private set => SetProperty(ref _isWelcomeVideoIconVisible, value); }
+
+    private Orientation _welcomeIconsOrientation = Orientation.Horizontal;
+
+    /// <summary>ScreenSettings.WelcomeIconsLayout ("Row"/"Column"), converted
+    /// once per settings reload for a direct StackPanel.Orientation binding.</summary>
+    public Orientation WelcomeIconsOrientation
+    {
+        get => _welcomeIconsOrientation;
+        private set => SetProperty(ref _welcomeIconsOrientation, value);
+    }
+
+    private double _welcomeIconsPositionXPercent = 0.5;
+    public double WelcomeIconsPositionXPercent { get => _welcomeIconsPositionXPercent; private set => SetProperty(ref _welcomeIconsPositionXPercent, value); }
+
+    private double _welcomeIconsPositionYPercent = 0.72;
+    public double WelcomeIconsPositionYPercent { get => _welcomeIconsPositionYPercent; private set => SetProperty(ref _welcomeIconsPositionYPercent, value); }
+
+    private double _captureCancelButtonPositionXPercent = 0.5;
+
+    /// <summary>ScreenSettings.CaptureCancelButtonPositionXPercent -- shared
+    /// by both the Countdown and Capture screens' own Cancel button (both map
+    /// to the Screen Editor's single "Capture" tab, same as
+    /// CaptureBackgroundBrush above).</summary>
+    public double CaptureCancelButtonPositionXPercent { get => _captureCancelButtonPositionXPercent; private set => SetProperty(ref _captureCancelButtonPositionXPercent, value); }
+
+    private double _captureCancelButtonPositionYPercent = 0.93;
+    public double CaptureCancelButtonPositionYPercent { get => _captureCancelButtonPositionYPercent; private set => SetProperty(ref _captureCancelButtonPositionYPercent, value); }
+
+    // ===== Pose thumbnail strip -- the Capture screen's filmstrip of
+    // already-taken shots, docked to whichever edge ScreenSettings.
+    // PoseStripPosition names (see ScreenTemplateEditorWindow's "Thumbnail
+    // Strip Settings" section). Alignment/Orientation are computed once per
+    // settings reload (ReloadSettingsCoreAsync), same "compute where the
+    // setting is read" pattern CountdownColorBrush/LiveViewTransform above
+    // already use; PoseThumbnails itself is (re)built per multi-pose session
+    // by the PoseChanged/PosePhotoCaptured handlers below, not here.
+
+    private bool _isPoseThumbnailStripVisible;
+
+    /// <summary>ScreenSettings.PhotoThumbnailsEnabled, gated by the same
+    /// "true multi-pose template" condition ShowPoseProgress already uses --
+    /// set alongside ShowPoseProgress in the PoseChanged handler below.</summary>
+    public bool IsPoseThumbnailStripVisible
+    {
+        get => _isPoseThumbnailStripVisible;
+        private set => SetProperty(ref _isPoseThumbnailStripVisible, value);
+    }
+
+    private HorizontalAlignment _poseStripHorizontalAlignment = HorizontalAlignment.Stretch;
+    public HorizontalAlignment PoseStripHorizontalAlignment { get => _poseStripHorizontalAlignment; private set => SetProperty(ref _poseStripHorizontalAlignment, value); }
+
+    private VerticalAlignment _poseStripVerticalAlignment = VerticalAlignment.Bottom;
+    public VerticalAlignment PoseStripVerticalAlignment { get => _poseStripVerticalAlignment; private set => SetProperty(ref _poseStripVerticalAlignment, value); }
+
+    private Orientation _poseStripOrientation = Orientation.Horizontal;
+
+    /// <summary>Row for Top/Bottom, column for Left/Right -- follows
+    /// PoseStripPosition automatically, no separate admin control.</summary>
+    public Orientation PoseStripOrientation { get => _poseStripOrientation; private set => SetProperty(ref _poseStripOrientation, value); }
+
+    private Brush _poseStripBackgroundBrush = new SolidColorBrush(Color.FromArgb(115, 0, 0, 0));
+
+    /// <summary>ScreenSettings.PoseStripBackgroundOpacityPercent, converted to
+    /// a black brush with that alpha -- the strip's own backing panel.</summary>
+    public Brush PoseStripBackgroundBrush { get => _poseStripBackgroundBrush; private set => SetProperty(ref _poseStripBackgroundBrush, value); }
+
+    private Brush _poseStripActiveBorderBrush = HexToBrush("#2ED9A0");
+
+    /// <summary>ScreenSettings.PoseStripActiveBorderColorHex -- the border
+    /// drawn around whichever slot is the pose currently being captured.</summary>
+    public Brush PoseStripActiveBorderBrush { get => _poseStripActiveBorderBrush; private set => SetProperty(ref _poseStripActiveBorderBrush, value); }
+
+    /// <summary>One slot per PrintTemplate.RequiredPhotoCount, rebuilt at the
+    /// start of each multi-pose session (see the PoseChanged handler in the
+    /// constructor) and filled in as PosePhotoCaptured lands each shot. Empty
+    /// for a single-photo template/session, same as PoseThumbnailStripVisible
+    /// staying false in that case.</summary>
+    public ObservableCollection<PoseThumbnailSlot> PoseThumbnails { get; } = new();
+
+    private bool _isSharingIconsGroupVisible = true;
+
+    /// <summary>ScreenSettings.SharingIconsGroupEnabled.</summary>
+    public bool IsSharingIconsGroupVisible
+    {
+        get => _isSharingIconsGroupVisible;
+        private set => SetProperty(ref _isSharingIconsGroupVisible, value);
+    }
+
+    private Orientation _sharingIconsOrientation = Orientation.Vertical;
+
+    /// <summary>ScreenSettings.SharingIconsLayout ("Row"/"Column").</summary>
+    public Orientation SharingIconsOrientation
+    {
+        get => _sharingIconsOrientation;
+        private set => SetProperty(ref _sharingIconsOrientation, value);
+    }
+
+    private double _sharingIconsPositionXPercent = 0.56;
+    public double SharingIconsPositionXPercent { get => _sharingIconsPositionXPercent; private set => SetProperty(ref _sharingIconsPositionXPercent, value); }
+
+    private double _sharingIconsPositionYPercent = 0.32;
+    public double SharingIconsPositionYPercent { get => _sharingIconsPositionYPercent; private set => SetProperty(ref _sharingIconsPositionYPercent, value); }
 
     private bool _isFlashing;
 
@@ -1568,6 +1709,8 @@ public class KioskViewModel : ObservableObject, IDisposable
         SelectedFeedbackRating = 0;
         FeedbackComment = string.Empty;
         SurveyAnswers.Clear();
+        PoseThumbnails.Clear();
+        IsPoseThumbnailStripVisible = false;
         Admin.PrintsThisSession = 0;
         Admin.LastUploadUrl = null;
         PrintsRemaining = _settings.PrintOptions.PrintLimitPerSession;
@@ -1649,6 +1792,39 @@ public class KioskViewModel : ObservableObject, IDisposable
             IsCancelButtonVisible = settings.Screen.ShowCancelButton
                 && (CurrentScreenState == KioskScreen.Countdown || CurrentScreenState == KioskScreen.Capture);
             IsRetakeVisible = settings.Screen.ShowRetakeButton && CurrentScreenState == KioskScreen.Review;
+
+            IsWelcomeIconsGroupVisible = settings.Screen.BoothIconsEnabled;
+            IsWelcomeIconLabelsVisible = settings.Screen.BoothIconLabelsEnabled;
+            IsWelcomePhotoIconVisible = settings.Screen.WelcomePhotoIconEnabled;
+            IsWelcomeGifIconVisible = settings.Screen.WelcomeGifIconEnabled;
+            IsWelcomeBoomerangIconVisible = settings.Screen.WelcomeBoomerangIconEnabled;
+            IsWelcomeVideoIconVisible = settings.Screen.WelcomeVideoIconEnabled;
+            WelcomeIconsOrientation = settings.Screen.WelcomeIconsLayout == IconGroupLayout.ColumnLayout
+                ? Orientation.Vertical : Orientation.Horizontal;
+            WelcomeIconsPositionXPercent = settings.Screen.WelcomeIconsPositionXPercent;
+            WelcomeIconsPositionYPercent = settings.Screen.WelcomeIconsPositionYPercent;
+
+            CaptureCancelButtonPositionXPercent = settings.Screen.CaptureCancelButtonPositionXPercent;
+            CaptureCancelButtonPositionYPercent = settings.Screen.CaptureCancelButtonPositionYPercent;
+
+            (PoseStripHorizontalAlignment, PoseStripVerticalAlignment, PoseStripOrientation) = settings.Screen.PoseStripPosition switch
+            {
+                "Top" => (HorizontalAlignment.Stretch, VerticalAlignment.Top, Orientation.Horizontal),
+                "Left" => (HorizontalAlignment.Left, VerticalAlignment.Stretch, Orientation.Vertical),
+                "Right" => (HorizontalAlignment.Right, VerticalAlignment.Stretch, Orientation.Vertical),
+                _ => (HorizontalAlignment.Stretch, VerticalAlignment.Bottom, Orientation.Horizontal),
+            };
+            byte poseStripAlpha = (byte)(Math.Clamp(settings.Screen.PoseStripBackgroundOpacityPercent, 0, 100) * 255 / 100);
+            var poseStripBackgroundBrush = new SolidColorBrush(Color.FromArgb(poseStripAlpha, 0, 0, 0));
+            poseStripBackgroundBrush.Freeze();
+            PoseStripBackgroundBrush = poseStripBackgroundBrush;
+            PoseStripActiveBorderBrush = HexToBrush(settings.Screen.PoseStripActiveBorderColorHex);
+
+            IsSharingIconsGroupVisible = settings.Screen.SharingIconsGroupEnabled;
+            SharingIconsOrientation = settings.Screen.SharingIconsLayout == IconGroupLayout.ColumnLayout
+                ? Orientation.Vertical : Orientation.Horizontal;
+            SharingIconsPositionXPercent = settings.Screen.SharingIconsPositionXPercent;
+            SharingIconsPositionYPercent = settings.Screen.SharingIconsPositionYPercent;
 
             if (overlayElements is not null)
             {
@@ -1781,6 +1957,46 @@ public class KioskViewModel : ObservableObject, IDisposable
         IsFlashing = true;
         _flashTimer.Stop();
         _flashTimer.Start();
+    }
+
+    /// <summary>Fires right before each pose's own Countdown starts (see
+    /// BoothStateMachine.PoseChanged). Rebuilds PoseThumbnails to `total` empty
+    /// slots the first time this fires in a session (pose == 1) -- there's no
+    /// separate "session started" hook, and this is the earliest point the
+    /// real pose count for the guest's chosen template is known -- then marks
+    /// the slot for the pose about to be shot as the active one.</summary>
+    private void OnPoseChanged(int pose, int total)
+    {
+        ShowPoseProgress = total > 1;
+        PoseProgressText = $"Pose {pose} of {total}";
+        IsPoseThumbnailStripVisible = _settings.Screen.PhotoThumbnailsEnabled && total > 1;
+
+        if (pose == 1)
+        {
+            PoseThumbnails.Clear();
+            for (int number = 1; number <= total; number++)
+            {
+                PoseThumbnails.Add(new PoseThumbnailSlot(number, _settings.Screen.PoseStripShowPlaceholderNumbers));
+            }
+        }
+
+        foreach (PoseThumbnailSlot slot in PoseThumbnails)
+        {
+            slot.IsActive = slot.Number == pose;
+        }
+    }
+
+    /// <summary>Fills that pose's own thumbnail slot the instant its shot is
+    /// ready (see BoothStateMachine.PosePhotoCaptured) -- the slot stops
+    /// reading as "active" once its own image lands.</summary>
+    private void OnPosePhotoCaptured(int pose, string path)
+    {
+        PoseThumbnailSlot? slot = PoseThumbnails.FirstOrDefault(s => s.Number == pose);
+        if (slot is not null)
+        {
+            slot.ImageSource = LoadImageFromPath(path);
+            slot.IsActive = false;
+        }
     }
 
     /// <summary>GIF/Boomerang only: shows each shot on the Capture screen (which already

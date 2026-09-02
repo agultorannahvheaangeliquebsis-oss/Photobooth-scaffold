@@ -65,7 +65,13 @@ public class LocationRepository
                    TwitterEnabled, PrintEnabled,
                    WelcomeBackgroundColorHex, WelcomeBackgroundImagePath,
                    CaptureBackgroundColorHex, CaptureBackgroundImagePath,
-                   SharingBackgroundColorHex, SharingBackgroundImagePath
+                   SharingBackgroundColorHex, SharingBackgroundImagePath,
+                   WelcomePhotoIconEnabled, WelcomeGifIconEnabled, WelcomeBoomerangIconEnabled, WelcomeVideoIconEnabled,
+                   WelcomeIconsPositionXPercent, WelcomeIconsPositionYPercent, WelcomeIconsLayout, WelcomeIconsAlignment,
+                   CaptureCancelButtonPositionXPercent, CaptureCancelButtonPositionYPercent,
+                   SharingIconsGroupEnabled, SharingIconsPositionXPercent, SharingIconsPositionYPercent,
+                   SharingIconsLayout, SharingIconsAlignment,
+                   PoseStripBackgroundOpacityPercent, PoseStripActiveBorderColorHex, PoseStripShowPlaceholderNumbers
             FROM Location ORDER BY LocationId;
             """,
             connection);
@@ -131,6 +137,24 @@ public class LocationRepository
                     CaptureBackgroundImagePath = reader.IsDBNull(109) ? null : reader.GetString(109),
                     SharingBackgroundColorHex = reader.GetString(110),
                     SharingBackgroundImagePath = reader.IsDBNull(111) ? null : reader.GetString(111),
+                    WelcomePhotoIconEnabled = reader.GetBoolean(112),
+                    WelcomeGifIconEnabled = reader.GetBoolean(113),
+                    WelcomeBoomerangIconEnabled = reader.GetBoolean(114),
+                    WelcomeVideoIconEnabled = reader.GetBoolean(115),
+                    WelcomeIconsPositionXPercent = reader.GetDouble(116),
+                    WelcomeIconsPositionYPercent = reader.GetDouble(117),
+                    WelcomeIconsLayout = reader.GetString(118),
+                    WelcomeIconsAlignment = reader.GetString(119),
+                    CaptureCancelButtonPositionXPercent = reader.GetDouble(120),
+                    CaptureCancelButtonPositionYPercent = reader.GetDouble(121),
+                    SharingIconsGroupEnabled = reader.GetBoolean(122),
+                    SharingIconsPositionXPercent = reader.GetDouble(123),
+                    SharingIconsPositionYPercent = reader.GetDouble(124),
+                    SharingIconsLayout = reader.GetString(125),
+                    SharingIconsAlignment = reader.GetString(126),
+                    PoseStripBackgroundOpacityPercent = reader.GetInt32(127),
+                    PoseStripActiveBorderColorHex = reader.GetString(128),
+                    PoseStripShowPlaceholderNumbers = reader.GetBoolean(129),
                 },
                 new EffectsSettings(
                     reader.GetBoolean(28), reader.GetString(29), reader.IsDBNull(30) ? null : reader.GetString(30),
@@ -260,7 +284,19 @@ public class LocationRepository
                 ShowRetakeButton = @ShowRetakeButton,
                 WelcomeBackgroundColorHex = @WelcomeBackgroundColorHex, WelcomeBackgroundImagePath = @WelcomeBackgroundImagePath,
                 CaptureBackgroundColorHex = @CaptureBackgroundColorHex, CaptureBackgroundImagePath = @CaptureBackgroundImagePath,
-                SharingBackgroundColorHex = @SharingBackgroundColorHex, SharingBackgroundImagePath = @SharingBackgroundImagePath
+                SharingBackgroundColorHex = @SharingBackgroundColorHex, SharingBackgroundImagePath = @SharingBackgroundImagePath,
+                WelcomePhotoIconEnabled = @WelcomePhotoIconEnabled, WelcomeGifIconEnabled = @WelcomeGifIconEnabled,
+                WelcomeBoomerangIconEnabled = @WelcomeBoomerangIconEnabled, WelcomeVideoIconEnabled = @WelcomeVideoIconEnabled,
+                WelcomeIconsPositionXPercent = @WelcomeIconsPositionXPercent, WelcomeIconsPositionYPercent = @WelcomeIconsPositionYPercent,
+                WelcomeIconsLayout = @WelcomeIconsLayout, WelcomeIconsAlignment = @WelcomeIconsAlignment,
+                CaptureCancelButtonPositionXPercent = @CaptureCancelButtonPositionXPercent,
+                CaptureCancelButtonPositionYPercent = @CaptureCancelButtonPositionYPercent,
+                SharingIconsGroupEnabled = @SharingIconsGroupEnabled, SharingIconsPositionXPercent = @SharingIconsPositionXPercent,
+                SharingIconsPositionYPercent = @SharingIconsPositionYPercent, SharingIconsLayout = @SharingIconsLayout,
+                SharingIconsAlignment = @SharingIconsAlignment,
+                PoseStripBackgroundOpacityPercent = @PoseStripBackgroundOpacityPercent,
+                PoseStripActiveBorderColorHex = @PoseStripActiveBorderColorHex,
+                PoseStripShowPlaceholderNumbers = @PoseStripShowPlaceholderNumbers
             WHERE LocationId = @LocationId;
             """,
             connection);
@@ -315,6 +351,24 @@ public class LocationRepository
         command.Parameters.AddWithValue("@CaptureBackgroundImagePath", (object?)screen.CaptureBackgroundImagePath ?? DBNull.Value);
         command.Parameters.AddWithValue("@SharingBackgroundColorHex", screen.SharingBackgroundColorHex);
         command.Parameters.AddWithValue("@SharingBackgroundImagePath", (object?)screen.SharingBackgroundImagePath ?? DBNull.Value);
+        command.Parameters.AddWithValue("@WelcomePhotoIconEnabled", screen.WelcomePhotoIconEnabled);
+        command.Parameters.AddWithValue("@WelcomeGifIconEnabled", screen.WelcomeGifIconEnabled);
+        command.Parameters.AddWithValue("@WelcomeBoomerangIconEnabled", screen.WelcomeBoomerangIconEnabled);
+        command.Parameters.AddWithValue("@WelcomeVideoIconEnabled", screen.WelcomeVideoIconEnabled);
+        command.Parameters.AddWithValue("@WelcomeIconsPositionXPercent", screen.WelcomeIconsPositionXPercent);
+        command.Parameters.AddWithValue("@WelcomeIconsPositionYPercent", screen.WelcomeIconsPositionYPercent);
+        command.Parameters.AddWithValue("@WelcomeIconsLayout", screen.WelcomeIconsLayout);
+        command.Parameters.AddWithValue("@WelcomeIconsAlignment", screen.WelcomeIconsAlignment);
+        command.Parameters.AddWithValue("@CaptureCancelButtonPositionXPercent", screen.CaptureCancelButtonPositionXPercent);
+        command.Parameters.AddWithValue("@CaptureCancelButtonPositionYPercent", screen.CaptureCancelButtonPositionYPercent);
+        command.Parameters.AddWithValue("@SharingIconsGroupEnabled", screen.SharingIconsGroupEnabled);
+        command.Parameters.AddWithValue("@SharingIconsPositionXPercent", screen.SharingIconsPositionXPercent);
+        command.Parameters.AddWithValue("@SharingIconsPositionYPercent", screen.SharingIconsPositionYPercent);
+        command.Parameters.AddWithValue("@SharingIconsLayout", screen.SharingIconsLayout);
+        command.Parameters.AddWithValue("@SharingIconsAlignment", screen.SharingIconsAlignment);
+        command.Parameters.AddWithValue("@PoseStripBackgroundOpacityPercent", screen.PoseStripBackgroundOpacityPercent);
+        command.Parameters.AddWithValue("@PoseStripActiveBorderColorHex", screen.PoseStripActiveBorderColorHex);
+        command.Parameters.AddWithValue("@PoseStripShowPlaceholderNumbers", screen.PoseStripShowPlaceholderNumbers);
     }
 
     /// <summary>Updates the admin-editable brand identity for a location -- colors,
@@ -451,7 +505,19 @@ public class LocationRepository
                 ShowRetakeButton = @ShowRetakeButton,
                 WelcomeBackgroundColorHex = @WelcomeBackgroundColorHex, WelcomeBackgroundImagePath = @WelcomeBackgroundImagePath,
                 CaptureBackgroundColorHex = @CaptureBackgroundColorHex, CaptureBackgroundImagePath = @CaptureBackgroundImagePath,
-                SharingBackgroundColorHex = @SharingBackgroundColorHex, SharingBackgroundImagePath = @SharingBackgroundImagePath
+                SharingBackgroundColorHex = @SharingBackgroundColorHex, SharingBackgroundImagePath = @SharingBackgroundImagePath,
+                WelcomePhotoIconEnabled = @WelcomePhotoIconEnabled, WelcomeGifIconEnabled = @WelcomeGifIconEnabled,
+                WelcomeBoomerangIconEnabled = @WelcomeBoomerangIconEnabled, WelcomeVideoIconEnabled = @WelcomeVideoIconEnabled,
+                WelcomeIconsPositionXPercent = @WelcomeIconsPositionXPercent, WelcomeIconsPositionYPercent = @WelcomeIconsPositionYPercent,
+                WelcomeIconsLayout = @WelcomeIconsLayout, WelcomeIconsAlignment = @WelcomeIconsAlignment,
+                CaptureCancelButtonPositionXPercent = @CaptureCancelButtonPositionXPercent,
+                CaptureCancelButtonPositionYPercent = @CaptureCancelButtonPositionYPercent,
+                SharingIconsGroupEnabled = @SharingIconsGroupEnabled, SharingIconsPositionXPercent = @SharingIconsPositionXPercent,
+                SharingIconsPositionYPercent = @SharingIconsPositionYPercent, SharingIconsLayout = @SharingIconsLayout,
+                SharingIconsAlignment = @SharingIconsAlignment,
+                PoseStripBackgroundOpacityPercent = @PoseStripBackgroundOpacityPercent,
+                PoseStripActiveBorderColorHex = @PoseStripActiveBorderColorHex,
+                PoseStripShowPlaceholderNumbers = @PoseStripShowPlaceholderNumbers
             WHERE LocationId = @LocationId;
             """,
             connection);
