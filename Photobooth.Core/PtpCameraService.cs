@@ -61,7 +61,15 @@ public class PtpCameraService : ICameraService
             {
                 return await CaptureOnceAsync(ct);
             }
-            catch (InvalidOperationException) when (attempt < MaxCaptureAttempts)
+            // Only a bridge-reported failure is retried -- a connect timeout
+            // (BridgeUnreachableException) means the bridge process itself isn't
+            // there to retry against (crashed, never started, camera cable
+            // unplugged), so retrying it would just silently repeat the same
+            // ~3s connect timeout up to MaxCaptureAttempts times (formerly up to
+            // ~9-10s total) before finally telling the guest/attendant anything
+            // is wrong. Failing on the first attempt instead surfaces that
+            // "is the bridge process running?" error immediately.
+            catch (BridgeReportedCaptureErrorException) when (attempt < MaxCaptureAttempts)
             {
                 await Task.Delay(CaptureRetryDelay, ct);
             }
@@ -78,7 +86,7 @@ public class PtpCameraService : ICameraService
         }
         catch (TimeoutException)
         {
-            throw new InvalidOperationException(
+            throw new BridgeUnreachableException(
                 "Could not connect to Photobooth.CameraBridge.Host -- is the bridge process running?");
         }
 
@@ -90,7 +98,7 @@ public class PtpCameraService : ICameraService
 
         if (response is null)
         {
-            throw new InvalidOperationException("Bridge closed the pipe without responding to CAPTURE.");
+            throw new BridgeReportedCaptureErrorException("Bridge closed the pipe without responding to CAPTURE.");
         }
 
         if (response.StartsWith("OK ", StringComparison.Ordinal))
@@ -98,6 +106,18 @@ public class PtpCameraService : ICameraService
             return response.Substring(3);
         }
 
-        throw new InvalidOperationException($"Camera bridge reported an error: {response}");
+        throw new BridgeReportedCaptureErrorException($"Camera bridge reported an error: {response}");
     }
+
+    /// <summary>The bridge process couldn't be reached at all (connect timeout) --
+    /// distinct from <see cref="BridgeReportedCaptureErrorException"/> purely so
+    /// CaptureAsync's retry loop can tell them apart; still an
+    /// InvalidOperationException to any external catch.</summary>
+    private sealed class BridgeUnreachableException(string message) : InvalidOperationException(message);
+
+    /// <summary>The bridge process was reached but a specific capture attempt
+    /// failed (an ERR response, or the pipe closing mid-response) -- the class
+    /// this retry loop exists for (see MaxCaptureAttempts's doc comment). Still
+    /// an InvalidOperationException to any external catch.</summary>
+    private sealed class BridgeReportedCaptureErrorException(string message) : InvalidOperationException(message);
 }

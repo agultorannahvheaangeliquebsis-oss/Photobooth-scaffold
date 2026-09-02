@@ -149,9 +149,27 @@ public class KioskViewModel : ObservableObject, IDisposable
         ShareOnTwitterCommand = new RelayCommand(ShareOnTwitter);
         SelectFilterCommand = new RelayCommand(SelectFilter);
         SelectFrameCommand = new RelayCommand(SelectFrame);
-        RecordGuestbookMessageCommand = new RelayCommand(() => _guestbookPrompt?.SubmitRecordDecision(true));
-        SkipGuestbookMessageCommand = new RelayCommand(() => _guestbookPrompt?.SubmitRecordDecision(false));
-        StopGuestbookRecordingCommand = new RelayCommand(() => _guestbookPrompt?.SubmitStop());
+        RecordGuestbookMessageCommand = new RelayCommand(parameter =>
+        {
+            if (parameter is Guid requestToken)
+            {
+                _guestbookPrompt?.SubmitRecordDecision(true, requestToken);
+            }
+        });
+        SkipGuestbookMessageCommand = new RelayCommand(parameter =>
+        {
+            if (parameter is Guid requestToken)
+            {
+                _guestbookPrompt?.SubmitRecordDecision(false, requestToken);
+            }
+        });
+        StopGuestbookRecordingCommand = new RelayCommand(parameter =>
+        {
+            if (parameter is Guid requestToken)
+            {
+                _guestbookPrompt?.SubmitStop(requestToken);
+            }
+        });
         SelectFeedbackStarCommand = new RelayCommand(SelectFeedbackStar);
         SubmitFeedbackCommand = new RelayCommand(SubmitFeedback);
         SkipFeedbackCommand = new RelayCommand(parameter =>
@@ -236,8 +254,16 @@ public class KioskViewModel : ObservableObject, IDisposable
         _guestbookPrompt = guestbookPrompt;
         if (_guestbookPrompt is not null)
         {
-            _guestbookPrompt.RecordDecisionRequested += () => OnUi(() => GuestbookSubScreen = GuestbookSubScreen.Ask);
-            _guestbookPrompt.StopRequested += () => OnUi(() => GuestbookSubScreen = GuestbookSubScreen.Recording);
+            _guestbookPrompt.RecordDecisionRequestedWithToken += token => OnUi(() =>
+            {
+                GuestbookAskRequestToken = token;
+                GuestbookSubScreen = GuestbookSubScreen.Ask;
+            });
+            _guestbookPrompt.StopRequestedWithToken += token => OnUi(() =>
+            {
+                GuestbookStopRequestToken = token;
+                GuestbookSubScreen = GuestbookSubScreen.Recording;
+            });
         }
 
         _survey = survey;
@@ -699,6 +725,20 @@ public class KioskViewModel : ObservableObject, IDisposable
     public RelayCommand RecordGuestbookMessageCommand { get; }
     public RelayCommand SkipGuestbookMessageCommand { get; }
     public RelayCommand StopGuestbookRecordingCommand { get; }
+
+    private Guid? _guestbookAskRequestToken;
+    public Guid? GuestbookAskRequestToken
+    {
+        get => _guestbookAskRequestToken;
+        private set => SetProperty(ref _guestbookAskRequestToken, value);
+    }
+
+    private Guid? _guestbookStopRequestToken;
+    public Guid? GuestbookStopRequestToken
+    {
+        get => _guestbookStopRequestToken;
+        private set => SetProperty(ref _guestbookStopRequestToken, value);
+    }
 
     // ============================================================ feedback ==
 
@@ -1381,6 +1421,8 @@ public class KioskViewModel : ObservableObject, IDisposable
         FilterRequestToken = null;
         FrameRequestToken = null;
         FeedbackRequestToken = null;
+        GuestbookAskRequestToken = null;
+        GuestbookStopRequestToken = null;
         _captureModeOverride.Mode = null;
         _selectedCaptureMode = CaptureMode.Photo;
         RaisePropertyChanged(nameof(SelectedCaptureMode));

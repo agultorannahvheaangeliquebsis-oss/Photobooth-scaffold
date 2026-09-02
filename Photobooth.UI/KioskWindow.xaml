@@ -407,9 +407,9 @@
                 <TextBlock Text="A quick video note for the guest of honor." Style="{StaticResource KioskPrompt}" Margin="0,16,0,0" />
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,40,0,0">
                     <Button Style="{StaticResource KioskPrimaryButton}" Content="YES, RECORD" Margin="0,0,16,0"
-                            Command="{Binding RecordGuestbookMessageCommand}" />
+                            Command="{Binding RecordGuestbookMessageCommand}" CommandParameter="{Binding GuestbookAskRequestToken}" />
                     <Button Style="{StaticResource KioskGhostButton}" Content="NO THANKS"
-                            Command="{Binding SkipGuestbookMessageCommand}" />
+                            Command="{Binding SkipGuestbookMessageCommand}" CommandParameter="{Binding GuestbookAskRequestToken}" />
                 </StackPanel>
             </StackPanel>
 
@@ -421,7 +421,7 @@
                 <TextBlock Text="Say your message, then tap Stop." Style="{StaticResource KioskPrompt}" Margin="0,16,0,0" />
                 <Button Style="{StaticResource KioskPrimaryButton}" Content="&#x25A0; STOP" Margin="0,40,0,0"
                         HorizontalAlignment="Center"
-                        Command="{Binding StopGuestbookRecordingCommand}" />
+                        Command="{Binding StopGuestbookRecordingCommand}" CommandParameter="{Binding GuestbookStopRequestToken}" />
             </StackPanel>
         </Grid>
 

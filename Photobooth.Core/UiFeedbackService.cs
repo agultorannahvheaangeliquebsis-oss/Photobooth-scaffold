@@ -35,13 +35,31 @@ public class UiFeedbackService : IFeedbackService
         {
             previous = _pending;
             _pending = request;
+
+            // Registered while still holding _sync, not after releasing it: if
+            // ct is already cancelled, Register invokes Cancel(...)
+            // synchronously on this same thread -- lock is re-entrant
+            // per-thread, so Cancel's own lock acquisition below succeeds
+            // immediately, and _pending already equals `request` (assigned
+            // just above), so it resolves tcs.Task as cancelled right here
+            // instead of leaving request.Cancellation pointing at a
+            // not-yet-assigned field, or (if Register instead ran before this
+            // assignment) silently dropping the cancellation because Cancel's
+            // own staleness check would never match a request nothing has
+            // published yet.
+            request.Cancellation = ct.Register(() => Cancel(request.Token, ct));
         }
         CancelRequest(previous);
 
-        request.Cancellation = ct.Register(() => Cancel(request.Token, ct));
+        // If the registration above already resolved (and cleared _pending) --
+        // e.g. ct was already cancelled -- don't announce a prompt nothing
+        // will ever answer.
+        if (!tcs.Task.IsCompleted)
+        {
+            FeedbackRequested?.Invoke();
+            FeedbackRequestedWithToken?.Invoke(request.Token);
+        }
 
-        FeedbackRequested?.Invoke();
-        FeedbackRequestedWithToken?.Invoke(request.Token);
         return tcs.Task;
     }
 

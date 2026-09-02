@@ -118,4 +118,74 @@ public class UiGuestbookPromptServiceTests
 
         Assert.True(task.IsCompletedSuccessfully);
     }
+
+    [Fact]
+    public async Task AskToRecordAsync_RejectsStaleSubmissionAfterReplacement()
+    {
+        var service = new UiGuestbookPromptService();
+        Task<bool> first = service.AskToRecordAsync();
+        Guid firstToken = service.CurrentAskRequestToken!.Value;
+        Task<bool> second = service.AskToRecordAsync();
+        Guid secondToken = service.CurrentAskRequestToken!.Value;
+
+        service.SubmitRecordDecision(true, firstToken);
+        Assert.False(second.IsCompleted);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+
+        service.SubmitRecordDecision(false, secondToken);
+        Assert.False(await second);
+    }
+
+    [Fact]
+    public async Task WaitForStopAsync_RejectsStaleSubmissionAfterReplacement()
+    {
+        var service = new UiGuestbookPromptService();
+        Task first = service.WaitForStopAsync();
+        Guid firstToken = service.CurrentStopRequestToken!.Value;
+        Task second = service.WaitForStopAsync();
+        Guid secondToken = service.CurrentStopRequestToken!.Value;
+
+        service.SubmitStop(firstToken);
+        Assert.False(second.IsCompleted);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+
+        service.SubmitStop(secondToken);
+        await second;
+    }
+
+    [Fact]
+    public async Task AskToRecordAsync_AlreadyCancelledToken_CompletesCancelledWithoutRaisingRecordDecisionRequested()
+    {
+        var service = new UiGuestbookPromptService();
+        bool requested = false;
+        service.RecordDecisionRequested += () => requested = true;
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        // ct.Register fires synchronously here, before AskToRecordAsync ever
+        // returns -- this must resolve the returned task as cancelled and
+        // skip announcing a prompt nothing will ever answer, not leave the
+        // task pending forever or announce a dead request.
+        Task<bool> pending = service.AskToRecordAsync(cts.Token);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+        Assert.False(requested);
+        Assert.Null(service.CurrentAskRequestToken);
+    }
+
+    [Fact]
+    public async Task CancelPending_CancelsBothAnOutstandingAskAndAnOutstandingStop()
+    {
+        var service = new UiGuestbookPromptService();
+        Task<bool> pendingAsk = service.AskToRecordAsync();
+        Task pendingStop = service.WaitForStopAsync();
+
+        service.CancelPending();
+
+        Assert.Null(service.CurrentAskRequestToken);
+        Assert.Null(service.CurrentStopRequestToken);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pendingAsk);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pendingStop);
+    }
 }

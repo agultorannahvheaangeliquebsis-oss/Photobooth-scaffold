@@ -35,13 +35,24 @@ public class UiFrameSelectionService : IFrameSelectionService
         {
             previous = _pending;
             _pending = request;
+
+            // Registered while still holding _sync -- see UiFeedbackService's
+            // CollectAsync for why: a synchronously-firing Register (ct
+            // already cancelled) needs _pending already pointing at `request`
+            // for Cancel's own staleness check to resolve it correctly.
+            request.Cancellation = ct.Register(() => Cancel(request.Token, ct));
         }
         CancelRequest(previous);
 
-        request.Cancellation = ct.Register(() => Cancel(request.Token, ct));
+        // If the registration above already resolved (and cleared _pending) --
+        // e.g. ct was already cancelled -- don't announce a prompt nothing
+        // will ever answer.
+        if (!tcs.Task.IsCompleted)
+        {
+            SelectionRequested?.Invoke(options);
+            SelectionRequestedWithToken?.Invoke(options, request.Token);
+        }
 
-        SelectionRequested?.Invoke(options);
-        SelectionRequestedWithToken?.Invoke(options, request.Token);
         return tcs.Task;
     }
 

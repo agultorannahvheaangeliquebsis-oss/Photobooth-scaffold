@@ -446,6 +446,28 @@ public class UiFrameSelectionServiceTests
         Assert.Null(selection.CurrentRequestToken);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
     }
+
+    [Fact]
+    public async Task SelectFrameAsync_AlreadyCancelledToken_CompletesCancelledWithoutRaisingSelectionRequested()
+    {
+        var selection = new UiFrameSelectionService();
+        bool requested = false;
+        selection.SelectionRequested += _ => requested = true;
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        // ct.Register fires synchronously here, before SelectFrameAsync ever
+        // returns -- this must resolve the returned task as cancelled and
+        // skip announcing a prompt nothing will ever answer, not leave the
+        // task pending forever or announce a dead request.
+        Task<FrameOption?> pending = selection.SelectFrameAsync(
+            new[] { new FrameOption(1, "Gold Border", "./frames/gold.png") }, cts.Token);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+        Assert.False(requested);
+        Assert.Null(selection.CurrentRequestToken);
+    }
 }
 
 public class MockFeedbackServiceTests
@@ -538,6 +560,27 @@ public class UiFeedbackServiceTests
 
         Assert.Null(feedback.CurrentRequestToken);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+    }
+
+    [Fact]
+    public async Task CollectAsync_AlreadyCancelledToken_CompletesCancelledWithoutRaisingFeedbackRequested()
+    {
+        var feedback = new UiFeedbackService();
+        bool requested = false;
+        feedback.FeedbackRequested += () => requested = true;
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        // ct.Register fires synchronously here, before CollectAsync ever
+        // returns -- this must resolve the returned task as cancelled and
+        // skip announcing a prompt nothing will ever answer, not leave the
+        // task pending forever or announce a dead request.
+        Task<FeedbackResult> pending = feedback.CollectAsync(cts.Token);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+        Assert.False(requested);
+        Assert.Null(feedback.CurrentRequestToken);
     }
 }
 

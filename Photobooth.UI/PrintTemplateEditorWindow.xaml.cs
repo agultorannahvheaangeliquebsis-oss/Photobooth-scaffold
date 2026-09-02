@@ -1485,6 +1485,13 @@ public partial class PrintTemplateEditorWindow : Window
                 await _locations.UpdatePrintGeometryAsync(_locationId, _workingLayout, _workingWidthInches, _workingHeightInches, _workingStripCopies);
             }
 
+            // Same "push to any live kiosk, not just this dashboard" reasoning
+            // every other settings-writing path publishes on -- see AdminWindow's
+            // Save handlers and ScreenTemplateEditorWindow's own Save. Without
+            // this, a template edit only reaches a running kiosk after its next
+            // return to Idle happens to trigger a second, unrelated reload.
+            BoothSettingsChanged.Publish(_locationId);
+
             _isDirty = false;
             DialogResult = true;
         }
