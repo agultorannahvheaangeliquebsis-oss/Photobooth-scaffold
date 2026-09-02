@@ -899,13 +899,26 @@ public class BoothStateMachineTests
 
         var states = new List<BoothState>();
         machine.StateChanged += state => states.Add(state);
+        var frameCaptures = new List<(int Frame, int Total, string Path)>();
+        machine.FrameCaptured += (frame, total, path) => frameCaptures.Add((frame, total, path));
 
         await machine.RunSessionAsync();
 
         Assert.Equal(3, gifComposer.LastFrameCount);
         Assert.False(gifComposer.LastReversed);
+        // Playback speed is independent of the capture-time FrameDelayMs (10ms above) --
+        // GIF mode's sequence is forward-only, so 3000ms / 3 frames = 1000ms/frame, a fixed
+        // ~3s total loop matching a standard Boomerang-style clip length regardless of how
+        // fast the burst itself ran.
+        Assert.Equal(1000, gifComposer.LastFrameDelayMs);
         Assert.NotNull(machine.LastCapturedImagePath);
         Assert.Contains("_gif", machine.LastCapturedImagePath);
+        // FrameCaptured lets the UI show each just-captured frame the instant it
+        // lands instead of freezing after the loop's single Capturing state
+        // change -- see KioskViewModel.OnFrameCaptured.
+        Assert.Equal(3, frameCaptures.Count);
+        Assert.Equal(new[] { (1, 3), (2, 3), (3, 3) }, frameCaptures.Select(f => (f.Frame, f.Total)));
+        Assert.All(frameCaptures, f => Assert.False(string.IsNullOrEmpty(f.Path)));
         // GIF mode skips the single-still GDI+ pipeline entirely (see
         // BoothStateMachine's isBurstMode branch) -- confirms branding/
         // filter/frame-picker didn't run against the composed animation.
@@ -938,6 +951,10 @@ public class BoothStateMachineTests
 
         Assert.Equal(4, gifComposer.LastFrameCount);
         Assert.True(gifComposer.LastReversed);
+        // Boomerang's sequence is forward + reversed-minus-both-ends: 2*4-2 = 6 frames, so
+        // 3000ms / 6 = 500ms/frame -- same fixed ~3s total loop target as GIF mode, despite
+        // this test's much faster 10ms capture-time FrameDelayMs.
+        Assert.Equal(500, gifComposer.LastFrameDelayMs);
         Assert.NotNull(machine.LastCapturedImagePath);
         Assert.Contains("_boomerang", machine.LastCapturedImagePath);
     }

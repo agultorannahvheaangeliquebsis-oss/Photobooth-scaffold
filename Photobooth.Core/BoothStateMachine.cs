@@ -15,6 +15,11 @@ public class BoothStateMachine
     /// <summary>Flat per-print price charged in vendo mode. Event mode is a flat fee paid outside the app (the booking), so sessions there stay free_event.</summary>
     private const decimal VendoPricePerPrint = 150m;
 
+    /// <summary>Target total playback length for a composed GIF/Boomerang loop, in
+    /// milliseconds -- matches a standard Instagram Boomerang's ~2-3s looped clip.
+    /// See the GIF/Boomerang branch below for how this turns into a per-frame delay.</summary>
+    private const int TargetLoopDurationMs = 3000;
+
     private readonly BoothServices _services;
     private readonly string _mode;
 
@@ -57,6 +62,13 @@ public class BoothStateMachine
     /// "Pose 2 of 4". Never fires for a template that predates PhotoSlot elements (the
     /// common case), same as CountdownTick never firing outside Countdown.</summary>
     public event Action<int, int>? PoseChanged;
+
+    /// <summary>Fires once per shot during the GIF/Boomerang capture loop, right after that
+    /// shot lands (index, FrameCount, the shot's own file path) -- a tethered body can't run
+    /// live view mid-loop (see UpdateLiveView's reasoning on the UI side), so the UI shows each
+    /// just-captured frame the instant it lands instead, reading as continuous motion rather
+    /// than a frozen screen between flashes. Never fires for Photo/Video mode.</summary>
+    public event Action<int, int, string>? FrameCaptured;
 
     /// <summary>Fires when the background upload for the current session's photo finishes -- may land during Reviewing, Printing, or Complete, whichever is showing when the network call happens to finish.</summary>
     public event Action<Uri>? PhotoUploaded;
@@ -228,14 +240,27 @@ public class BoothStateMachine
                 for (int i = 0; i < settings.Capture.FrameCount; i++)
                 {
                     framePaths.Add(await _services.Camera.CaptureAsync(ct));
+                    FrameCaptured?.Invoke(i + 1, settings.Capture.FrameCount, framePaths[^1]);
                     if (i < settings.Capture.FrameCount - 1)
                     {
                         await Task.Delay(settings.Capture.FrameDelayMs, ct);
                     }
                 }
 
+                // Playback speed is deliberately independent of FrameDelayMs (which only
+                // paces the capture burst above): a real Boomerang/GIF booth shoots a fast
+                // burst and loops it back at a fixed, comfortable length regardless of how
+                // fast the shots were taken, rather than a loop that plays slower the slower
+                // the burst ran. Sequence length matches GdiGifComposerService's own splice
+                // math (forward + reversed-minus-both-ends for Boomerang, forward-only for
+                // GIF); Math.Max guards a 1-frame capture, where reversing has nothing to add.
+                int sequenceLength = settings.Capture.Mode == "Boomerang"
+                    ? Math.Max(2 * settings.Capture.FrameCount - 2, 1)
+                    : settings.Capture.FrameCount;
+                int playbackFrameDelayMs = Math.Max(TargetLoopDurationMs / sequenceLength, 1);
+
                 LastCapturedImagePath = await _services.GifComposer.ComposeAsync(
-                    framePaths, reversed: settings.Capture.Mode == "Boomerang", settings.Capture.FrameDelayMs, ct);
+                    framePaths, reversed: settings.Capture.Mode == "Boomerang", playbackFrameDelayMs, ct);
                 LastCapturedImagePaths = new[] { LastCapturedImagePath };
             }
             else if (settings.Capture.Mode == "Video")

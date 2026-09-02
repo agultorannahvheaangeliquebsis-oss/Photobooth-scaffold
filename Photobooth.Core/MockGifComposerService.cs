@@ -16,6 +16,11 @@ public class MockGifComposerService : IGifComposerService
     /// <summary>The reversed flag passed to the most recent ComposeAsync call.</summary>
     public bool LastReversed { get; private set; }
 
+    /// <summary>The frameDelayMs passed to the most recent ComposeAsync call -- lets tests
+    /// confirm BoothStateMachine's playback-duration computation (independent of capture
+    /// cadence) actually reaches the composer.</summary>
+    public int LastFrameDelayMs { get; private set; }
+
     public async Task<string> ComposeAsync(IReadOnlyList<string> framePaths, bool reversed, int frameDelayMs, CancellationToken ct = default)
     {
         if (framePaths.Count == 0)
@@ -28,6 +33,7 @@ public class MockGifComposerService : IGifComposerService
 
         LastFrameCount = framePaths.Count;
         LastReversed = reversed;
+        LastFrameDelayMs = frameDelayMs;
 
         string firstFrame = framePaths[0];
         string directory = Path.GetDirectoryName(firstFrame) is { Length: > 0 } dir ? dir : ".";

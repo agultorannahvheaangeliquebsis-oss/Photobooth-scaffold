@@ -6,6 +6,7 @@ using System.Windows.Threading;
 using Photobooth.Core;
 using Photobooth.Data;
 using Photobooth.UI.Services;
+using Serilog;
 
 namespace Photobooth.UI.ViewModels;
 
@@ -36,6 +37,11 @@ public class KioskViewModel : ObservableObject, IDisposable
     /// timer: fast enough to feel live, slow enough that a pipe round trip per
     /// frame doesn't pile up (see <see cref="_liveViewFetchInProgress"/>).</summary>
     private static readonly TimeSpan LiveViewInterval = TimeSpan.FromMilliseconds(150);
+
+    /// <summary>Must match BoothStateMachine's own TargetLoopDurationMs -- the review-screen
+    /// GIF/Boomerang preview timer derives its interval from this and the decoded frame count,
+    /// same target total playback length the composed file was actually encoded with.</summary>
+    private const int TargetLoopDurationMs = 3000;
 
     private readonly BoothServices _services;
     private readonly BoothStateMachine _stateMachine;
@@ -72,6 +78,9 @@ public class KioskViewModel : ObservableObject, IDisposable
     private readonly DispatcherTimer _liveViewTimer;
     private readonly DispatcherTimer _flashTimer;
     private readonly DispatcherTimer _shareTimer;
+    private readonly DispatcherTimer _gifPreviewTimer;
+    private List<ImageSource>? _gifPreviewFrames;
+    private int _gifPreviewFrameIndex;
 
     private BoothSettings _settings = new(CountdownSeconds: 3, GlamFilterEnabled: false, PrintTemplate: PrintTemplate.Default);
     private bool _liveViewFetchInProgress;
@@ -116,7 +125,7 @@ public class KioskViewModel : ObservableObject, IDisposable
         _services = services with { Settings = _captureModeOverride };
         _stateMachine = new BoothStateMachine(_services, mode);
 
-        Admin = new KioskAdminViewModel(_services.Settings, _services.UploadQueue, () => _stateMachine.RetryQueuedUploadsAsync());
+        Admin = new KioskAdminViewModel(_services.Settings);
 
         StartSessionCommand = new RelayCommand(StartSession, () => CanStartSession);
         SelectModeCommand = new RelayCommand(SelectMode, _ => CurrentScreenState == KioskScreen.Idle);
@@ -141,18 +150,31 @@ public class KioskViewModel : ObservableObject, IDisposable
         SendEmailCommand.ExceptionHandler = ex => ShareStatus = $"Email failed: {ex.Message}";
         SendSmsCommand.ExceptionHandler = ex => ShareStatus = $"SMS failed: {ex.Message}";
 
-        _liveViewTimer = new DispatcherTimer { Interval = LiveViewInterval };
+        // DispatcherPriority.Normal, _dispatcher explicitly -- not the parameterless
+        // DispatcherTimer() constructor, which binds to Dispatcher.CurrentDispatcher
+        // for whatever thread is *executing this constructor*. Same threadpool-thread
+        // trap the _dispatcher assignment above already works around: BuildKioskViewModel
+        // runs this constructor via Task.Run, so the parameterless ctor would create a
+        // brand-new Dispatcher on a pooled thread nobody ever pumps -- every one of these
+        // timers would silently never fire a single Tick (confirmed via a live repro: events
+        // that cross threads through OnUi/_dispatcher.Invoke fired correctly, but the GIF
+        // preview timer's own Tick handler never once ran across a multi-second window after
+        // its Start(), even though decoding and Interval assignment both completed fine).
+        _liveViewTimer = new DispatcherTimer(DispatcherPriority.Normal, _dispatcher) { Interval = LiveViewInterval };
         _liveViewTimer.Tick += async (_, _) => await PollLiveViewFrameAsync();
 
-        _flashTimer = new DispatcherTimer { Interval = FlashDuration };
+        _flashTimer = new DispatcherTimer(DispatcherPriority.Normal, _dispatcher) { Interval = FlashDuration };
         _flashTimer.Tick += (_, _) =>
         {
             _flashTimer.Stop();
             IsFlashing = false;
         };
 
-        _shareTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _shareTimer = new DispatcherTimer(DispatcherPriority.Normal, _dispatcher) { Interval = TimeSpan.FromSeconds(1) };
         _shareTimer.Tick += (_, _) => TickShareTimer();
+
+        _gifPreviewTimer = new DispatcherTimer(DispatcherPriority.Normal, _dispatcher);
+        _gifPreviewTimer.Tick += (_, _) => AdvanceGifPreviewFrame();
 
         _stateMachine.StateChanged += state => OnUi(() => ApplyState(state));
         _stateMachine.CountdownTick += value => OnUi(() => CountdownValue = value);
@@ -161,8 +183,14 @@ public class KioskViewModel : ObservableObject, IDisposable
             ShowPoseProgress = total > 1;
             PoseProgressText = $"Pose {pose} of {total}";
         });
+        _stateMachine.FrameCaptured += (frame, total, path) => OnUi(() => OnFrameCaptured(frame, total, path));
         _stateMachine.ErrorOccurred += message => OnUi(() =>
         {
+            // Worth a permanent log line (not just the on-screen ErrorMessage): a booth
+            // running unattended at an event has nobody to read the Error screen before it
+            // times back out to Idle, so %LocalAppData%\Photobooth\logs is the only record
+            // left afterward -- same reasoning as App.xaml.cs's DispatcherUnhandledException.
+            Log.Error("Session error: {Message}", message);
             ErrorMessage = message;
             Admin.ErrorsThisRun++;
         });
@@ -1028,6 +1056,7 @@ public class KioskViewModel : ObservableObject, IDisposable
 
     private void ResetForNextGuest()
     {
+        StopGifPreviewAnimation();
         TemplatePreview = null;
         PreviewUnavailableReason = null;
         QrCodeImage = null;
@@ -1137,9 +1166,15 @@ public class KioskViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>A single shutter-click flash for Photo mode's one still. Skipped for
+    /// GIF/Boomerang/Video: those go through OnFrameCaptured instead, which shows the guest
+    /// each shot as it lands rather than flashing the screen white repeatedly -- a burst
+    /// capture should read as continuous motion (as close to a real boomerang/GIF booth's
+    /// "recording" feel as a tethered body's PTP-only capture loop can get), not a series of
+    /// camera-flash clicks.</summary>
     private void UpdateFlash(BoothState state)
     {
-        if (state != BoothState.Capturing)
+        if (state != BoothState.Capturing || SelectedCaptureMode != CaptureMode.Photo)
         {
             return;
         }
@@ -1147,6 +1182,18 @@ public class KioskViewModel : ObservableObject, IDisposable
         IsFlashing = true;
         _flashTimer.Stop();
         _flashTimer.Start();
+    }
+
+    /// <summary>GIF/Boomerang only: shows each shot on the Capture screen (which already
+    /// renders LiveViewStream, per KioskWindow.xaml) the instant it lands, instead of a flash
+    /// -- live view itself can't run mid-loop on a tethered body (see UpdateLiveView), so
+    /// this is the closest available substitute for "the guest sees themselves moving" during
+    /// the ~FrameCount * FrameDelayMs capture window.</summary>
+    private void OnFrameCaptured(int frame, int total, string path)
+    {
+        ShowPoseProgress = total > 1;
+        PoseProgressText = $"{frame} of {total}";
+        LiveViewStream = LoadImageFromPath(path) ?? LiveViewStream;
     }
 
     private async Task PollLiveViewFrameAsync()
@@ -1209,6 +1256,7 @@ public class KioskViewModel : ObservableObject, IDisposable
     /// </summary>
     private async Task BuildTemplatePreviewAsync(IReadOnlyList<string> capturePaths)
     {
+        StopGifPreviewAnimation();
         TemplatePreview = null;
         PreviewUnavailableReason = null;
 
@@ -1224,6 +1272,19 @@ public class KioskViewModel : ObservableObject, IDisposable
             // Video mode: nothing to composite onto paper (which is also why
             // BoothStateMachine skips Printing for it entirely).
             PreviewUnavailableReason = "Your video is ready to share.";
+            return;
+        }
+
+        if (extension == ".gif")
+        {
+            // GIF/Boomerang only, neither of which is printable (isNonPrintableCapture in
+            // BoothStateMachine), so there's no template to composite onto here anyway --
+            // and PrintCompositor.RenderPreview couldn't show the animation even if there
+            // were: it draws through GDI+'s Graphics.DrawImage, which only ever paints a
+            // multi-frame GIF's *current* (first) frame, silently discarding every other
+            // frame -- including the whole reversed half of a Boomerang. Play the real file
+            // back frame by frame instead.
+            StartGifPreviewAnimation(capturePaths[0]);
             return;
         }
 
@@ -1255,6 +1316,78 @@ public class KioskViewModel : ObservableObject, IDisposable
                 }
             });
         }
+    }
+
+    /// <summary>Decodes every frame of the composed GIF (via WPF's built-in GifBitmapDecoder --
+    /// no new dependency, same "no third-party imaging library" preference GdiGifComposerService
+    /// already established) and cycles TemplatePreview through them on a timer. Runs the decode
+    /// off the UI thread since it reads the whole file; GdiGifComposerService always encodes
+    /// every frame with the same delay, so a single timer interval is accurate rather than
+    /// needing to read each frame's own Graphic Control Extension.</summary>
+    private void StartGifPreviewAnimation(string path)
+    {
+        _ = Task.Run(() =>
+        {
+            List<ImageSource>? frames;
+            try
+            {
+                using var stream = File.OpenRead(Path.GetFullPath(path));
+                var decoder = new GifBitmapDecoder(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+                frames = decoder.Frames.Select(frame => (ImageSource)frame).ToList();
+                foreach (ImageSource frame in frames)
+                {
+                    frame.Freeze();
+                }
+            }
+            catch (Exception)
+            {
+                frames = null;
+            }
+
+            OnUi(() =>
+            {
+                if (frames is not { Count: > 0 })
+                {
+                    TemplatePreview = LoadImageFromPath(path);
+                    if (TemplatePreview is null)
+                    {
+                        PreviewUnavailableReason = "Your photo is ready to share.";
+                    }
+                    return;
+                }
+
+                _gifPreviewFrames = frames;
+                _gifPreviewFrameIndex = 0;
+                TemplatePreview = frames[0];
+
+                if (frames.Count > 1)
+                {
+                    // Matches BoothStateMachine's own playbackFrameDelayMs computation
+                    // (TargetLoopDurationMs / sequence length) via the actual decoded frame
+                    // count, rather than re-deriving sequence length from FrameCount/mode here.
+                    _gifPreviewTimer.Interval = TimeSpan.FromMilliseconds(Math.Max(TargetLoopDurationMs / frames.Count, 50));
+                    _gifPreviewTimer.Start();
+                }
+            });
+        });
+    }
+
+    private void AdvanceGifPreviewFrame()
+    {
+        if (_gifPreviewFrames is not { Count: > 0 } frames)
+        {
+            _gifPreviewTimer.Stop();
+            return;
+        }
+
+        _gifPreviewFrameIndex = (_gifPreviewFrameIndex + 1) % frames.Count;
+        TemplatePreview = frames[_gifPreviewFrameIndex];
+    }
+
+    private void StopGifPreviewAnimation()
+    {
+        _gifPreviewTimer.Stop();
+        _gifPreviewFrames = null;
     }
 
     // ============================================================== helpers ==
@@ -1338,6 +1471,7 @@ public class KioskViewModel : ObservableObject, IDisposable
         _liveViewTimer.Stop();
         _flashTimer.Stop();
         _shareTimer.Stop();
+        _gifPreviewTimer.Stop();
         _ = _liveView.StopAsync();
         GC.SuppressFinalize(this);
     }

@@ -38,7 +38,37 @@ public class PtpCameraService : ICameraService
         }
     }
 
+    /// <summary>How many times a bridge-reported (not connect-timeout) capture
+    /// failure gets retried before giving up, and how long to wait between
+    /// attempts. Exists for a specific transient case confirmed on the webcam
+    /// fallback used when no D3500 is attached: that device has no real live
+    /// view API, so the bridge's LIVEVIEW handler fakes one by running a full
+    /// CapturePhoto() per poll (see CameraBridge.Host's HandleLiveViewFrame).
+    /// If a GIF/Boomerang/Video capture lands immediately after one of those
+    /// polls, the webcam wrapper can throw "Could not capture photo from
+    /// webcam" from having no recovery gap between shots -- a brief wait and
+    /// retry clears it. A real D3500 reports HaveLiveView=true and never hits
+    /// this fallback path, so this also just adds tolerance for an ordinary
+    /// transient hiccup there.</summary>
+    private const int MaxCaptureAttempts = 3;
+    private static readonly TimeSpan CaptureRetryDelay = TimeSpan.FromMilliseconds(400);
+
     public async Task<string> CaptureAsync(CancellationToken ct = default)
+    {
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await CaptureOnceAsync(ct);
+            }
+            catch (InvalidOperationException) when (attempt < MaxCaptureAttempts)
+            {
+                await Task.Delay(CaptureRetryDelay, ct);
+            }
+        }
+    }
+
+    private async Task<string> CaptureOnceAsync(CancellationToken ct)
     {
         using var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
 
