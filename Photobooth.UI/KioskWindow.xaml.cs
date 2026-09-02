@@ -59,6 +59,30 @@ public partial class KioskWindow : Window
         WelcomeOverlayCanvas.SizeChanged += (_, _) => RenderScreenOverlay(WelcomeOverlayCanvas, ScreenTemplateScreen.Welcome);
         CaptureOverlayCanvas.SizeChanged += (_, _) => RenderScreenOverlay(CaptureOverlayCanvas, ScreenTemplateScreen.Capture);
         SharingOverlayCanvas.SizeChanged += (_, _) => RenderScreenOverlay(SharingOverlayCanvas, ScreenTemplateScreen.Sharing);
+
+        PreviewKeyDown += KioskWindow_PreviewKeyDown;
+    }
+
+    /// <summary>ScreenSettings.SessionTriggerF13/SessionTriggerKeys -- a
+    /// touch-only booth's Idle screen tap target (IsTouchStartEnabled) is one
+    /// session trigger; this is the other, for a booth with an attendant
+    /// keyboard/foot-pedal-as-F13 nearby. Each key still funnels through
+    /// KioskViewModel.TryStartSessionFromKey, which gates by its own toggle
+    /// and by CanStartSession (via StartSession), so this handler doesn't
+    /// need to duplicate either check.</summary>
+    private void KioskWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case Key.F13:
+                _viewModel.TryStartSessionFromKey(isF13: true);
+                e.Handled = true;
+                break;
+            case Key.Space or Key.S or Key.PageUp or Key.PageDown:
+                _viewModel.TryStartSessionFromKey(isF13: false);
+                e.Handled = true;
+                break;
+        }
     }
 
     /// <summary>

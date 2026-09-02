@@ -13,7 +13,29 @@ namespace Photobooth.Core;
 /// </summary>
 public record PrintTemplate(string Layout, double WidthInches, double HeightInches, int StripCopies)
 {
-    public static readonly PrintTemplate Default = new("Single", WidthInches: 4, HeightInches: 6, StripCopies: 1);
+    public static readonly PrintTemplate Default = new("Single", WidthInches: 4, HeightInches: 6, StripCopies: 1) { Name = "Default" };
+
+    /// <summary>0 for the location's one "live" print setup (the Location row's own
+    /// PrintLayout/PrintWidthInches/PrintHeightInches/PrintStripCopies columns plus
+    /// whatever PrintTemplateElement rows have PrintTemplateId IS NULL -- what every
+    /// pre-library PrintTemplate already was). A positive id identifies one saved row
+    /// in the new PrintTemplate library table (see PrintTemplateRepository) --
+    /// PrintTemplateEditorWindow's switcher loads a library entry's Layout/dimensions/
+    /// Elements into its in-memory working copy, still with this same Id, so Save can
+    /// tell "editing the live setup" (Id == 0) apart from "editing a saved template
+    /// that hasn't been activated onto the live setup yet".</summary>
+    public int Id { get; init; } = 0;
+
+    /// <summary>Admin-chosen label shown in PrintTemplateEditorWindow's template
+    /// switcher and "Edit templates" list. Only meaningful once Id > 0 -- the live
+    /// setup (Id == 0) has no row of its own to name.</summary>
+    public string Name { get; init; } = "Untitled";
+
+    /// <summary>Whether this saved template appears in the guest-facing "Choose
+    /// Template" picker (see ScreenSettings.ChooseTemplateEnabled) -- guests only
+    /// ever pick from favorited templates, same as dslrBooth's own favorite-star
+    /// convention. Only meaningful once Id > 0.</summary>
+    public bool IsFavorite { get; init; } = false;
 
     /// <summary>Admin-placed logo/text overlays, drawn on top of the photo in every
     /// cell (see PrintCompositor.DrawTemplate). An init-only property outside the

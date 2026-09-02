@@ -129,7 +129,7 @@ public class BoothStateMachineTests
         var email = new MockEmailDeliveryService();
         var branding = new MockPhotoBrandingService();
         var filter = new MockPhotoFilterService();
-        var settings = new MockBoothSettingsProvider { Settings = new BoothSettings(CountdownSeconds: 3, GlamFilterEnabled: true, PrintTemplate: PrintTemplate.Default) };
+        var settings = new MockBoothSettingsProvider { Settings = new BoothSettings(CountdownSeconds: 3, GlamFilterEnabled: true, PrintTemplate: PrintTemplate.Default) { Screen = ScreenSettings.Default with { FinalScreenTimeoutSeconds = 1 } } };
         var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
         var machine = new BoothStateMachine(services, mode: "event");
 
@@ -161,6 +161,7 @@ public class BoothStateMachineTests
             Settings = new BoothSettings(CountdownSeconds: 3, GlamFilterEnabled: true, PrintTemplate: PrintTemplate.Default)
             {
                 GreenScreen = new GreenScreenSettings(Enabled: true, BackgroundImagePath: "./backgrounds/beach.jpg"),
+                Screen = ScreenSettings.Default with { FinalScreenTimeoutSeconds = 1 },
             },
         };
         var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
@@ -199,6 +200,7 @@ public class BoothStateMachineTests
                 // Enabled with nothing to composite against yet -- e.g. an
                 // admin turned the toggle on before picking a background.
                 GreenScreen = new GreenScreenSettings(Enabled: true, BackgroundImagePath: null),
+                Screen = ScreenSettings.Default with { FinalScreenTimeoutSeconds = 1 },
             },
         };
         var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
@@ -223,7 +225,7 @@ public class BoothStateMachineTests
         var email = new MockEmailDeliveryService();
         var branding = new MockPhotoBrandingService();
         var filter = new MockPhotoFilterService();
-        var settings = new MockBoothSettingsProvider { Settings = new BoothSettings(CountdownSeconds: 5, GlamFilterEnabled: false, PrintTemplate: PrintTemplate.Default) };
+        var settings = new MockBoothSettingsProvider { Settings = new BoothSettings(CountdownSeconds: 5, GlamFilterEnabled: false, PrintTemplate: PrintTemplate.Default) { Screen = ScreenSettings.Default with { FinalScreenTimeoutSeconds = 1 } } };
         var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
         var machine = new BoothStateMachine(services, mode: "event");
 
@@ -252,7 +254,7 @@ public class BoothStateMachineTests
         var branding = new MockPhotoBrandingService();
         var filter = new MockPhotoFilterService();
         var stripTemplate = new PrintTemplate("Strip", WidthInches: 2, HeightInches: 6, StripCopies: 2);
-        var settings = new MockBoothSettingsProvider { Settings = new BoothSettings(CountdownSeconds: 3, GlamFilterEnabled: false, PrintTemplate: stripTemplate) };
+        var settings = new MockBoothSettingsProvider { Settings = new BoothSettings(CountdownSeconds: 3, GlamFilterEnabled: false, PrintTemplate: stripTemplate) { Screen = ScreenSettings.Default with { FinalScreenTimeoutSeconds = 1 } } };
         var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
         var machine = new BoothStateMachine(services, mode: "event");
 
@@ -1331,7 +1333,10 @@ public class BoothStateMachineTests
         };
         var settings = new MockBoothSettingsProvider
         {
-            Settings = new BoothSettings(CountdownSeconds: 3, GlamFilterEnabled: false, PrintTemplate: multiPoseTemplate),
+            Settings = new BoothSettings(CountdownSeconds: 3, GlamFilterEnabled: false, PrintTemplate: multiPoseTemplate)
+            {
+                Screen = ScreenSettings.Default with { FinalScreenTimeoutSeconds = 1 },
+            },
         };
         var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
         var machine = new BoothStateMachine(services, mode: "event");

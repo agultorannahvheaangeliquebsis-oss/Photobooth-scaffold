@@ -8,7 +8,15 @@ namespace Photobooth.Core;
 /// </summary>
 public class MockBoothSettingsProvider : IBoothSettingsProvider
 {
-    public BoothSettings Settings { get; set; } = new(CountdownSeconds: 3, GlamFilterEnabled: false, PrintTemplate: PrintTemplate.Default);
+    /// <summary>Screen.FinalScreenTimeoutSeconds overridden down from
+    /// ScreenSettings.Default's real-world 30s -- BoothStateMachine now
+    /// blocks on that value for its Complete-state dwell (see
+    /// RunSessionAsync), and a dev/test run needs that dwell to be near-
+    /// instant, not a real 30-second wait on every single session it runs.</summary>
+    public BoothSettings Settings { get; set; } = new(CountdownSeconds: 3, GlamFilterEnabled: false, PrintTemplate: PrintTemplate.Default)
+    {
+        Screen = ScreenSettings.Default with { FinalScreenTimeoutSeconds = 1 },
+    };
 
     public Task<BoothSettings> GetSettingsAsync(CancellationToken ct = default) => Task.FromResult(Settings);
 }

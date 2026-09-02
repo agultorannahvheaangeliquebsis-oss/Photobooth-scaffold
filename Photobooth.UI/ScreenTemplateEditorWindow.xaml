@@ -35,6 +35,20 @@
                 <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
                 <Setter Property="Margin" Value="0,4,0,2" />
             </Style>
+            <!-- Breadcrumb-style link to the separate Print Layout editor
+                 window (PrintTemplateEditorWindow), same "Print Layout >" nav
+                 dslrBooth's own Screen Editor header carries. Clicking it
+                 closes this dialog and asks AdminWindow to open that other
+                 editor next (see PrintLayoutLink_MouseLeftButtonDown /
+                 OpenPrintLayoutRequested), since the two are separate windows
+                 rather than tabs of one page. -->
+            <Style x:Key="BreadcrumbLink" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+                <Setter Property="Cursor" Value="Hand" />
+            </Style>
 
             <!-- ===================== Icon geometries ===================== -->
             <!-- Small line-icon set for the tool rail, alignment grid, tab
@@ -311,6 +325,66 @@
                 </Setter>
             </Style>
 
+            <!-- ===================== Dropdowns ===================== -->
+            <!-- Stretch live view / Sharing icons location: default ComboBox
+                 chrome paints its own light popup background regardless of
+                 CanvasBrush, same unreadable-on-dark problem TabControl had
+                 above, so this gets the same field-colored retemplate. -->
+            <Style TargetType="ComboBoxItem">
+                <Setter Property="Padding" Value="8,6" />
+                <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ComboBoxItem">
+                            <Border x:Name="Bd" Background="Transparent" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsHighlighted" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+            <Style TargetType="ComboBox">
+                <Setter Property="Background" Value="{StaticResource FieldBrush}" />
+                <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+                <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Padding" Value="8,6" />
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ComboBox">
+                            <Grid>
+                                <ToggleButton x:Name="Toggle" Focusable="False" IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                                              ClickMode="Press">
+                                    <ToggleButton.Template>
+                                        <ControlTemplate TargetType="ToggleButton">
+                                            <Border Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="6" />
+                                        </ControlTemplate>
+                                    </ToggleButton.Template>
+                                </ToggleButton>
+                                <ContentPresenter IsHitTestVisible="False" Content="{TemplateBinding SelectionBoxItem}"
+                                                   ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                   Margin="{TemplateBinding Padding}" VerticalAlignment="Center" HorizontalAlignment="Left" />
+                                <Popup x:Name="Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True" Focusable="False" PopupAnimation="Slide">
+                                    <Border Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="6"
+                                            MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}" MaxHeight="200">
+                                        <ScrollViewer>
+                                            <ItemsPresenter />
+                                        </ScrollViewer>
+                                    </Border>
+                                </Popup>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
             <!-- ===================== Layers list ===================== -->
             <Style TargetType="ListBox">
                 <Setter Property="Background" Value="{StaticResource FieldBrush}" />
@@ -494,6 +568,12 @@
                 <TextBlock x:Name="EditingSubtitleText" Text="Editing the Welcome screen" FontSize="11.5" FontFamily="Segoe UI"
                            Foreground="{StaticResource MutedBrush}" Margin="0,2,0,0" />
             </StackPanel>
+
+            <TextBlock Grid.Column="2" Style="{StaticResource BreadcrumbLink}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                       MouseLeftButtonDown="PrintLayoutLink_MouseLeftButtonDown">
+                <Run Text="Print Layout" />
+                <Run Text=" &gt;" />
+            </TextBlock>
 
             <!-- One tab per guest-facing screen (see ScreenTemplateScreen);
                  switching tabs swaps which screen's working element list
@@ -684,7 +764,71 @@
                     <StackPanel x:Name="WelcomeSettingsPanel">
                         <CheckBox x:Name="BoothIconsEnabledCheckBox" Content="Booth icons" Click="ScreenSettingsCheckBox_Click" />
                         <TextBlock Text="If off, touching anywhere on the Welcome screen starts a session." Style="{StaticResource EditorLabel}"
-                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,6,0,10" />
+
+                        <CheckBox x:Name="BoothIconLabelsEnabledCheckBox" Content="Booth icon labels" Click="ScreenSettingsCheckBox_Click" />
+                        <TextBlock Text="Display text labels below icons." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,10" />
+
+                        <CheckBox x:Name="WelcomeShowLiveViewCheckBox" Content="Show live view" Click="ScreenSettingsCheckBox_Click" />
+                        <TextBlock Text="Displays live camera preview." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,10" />
+
+                        <CheckBox x:Name="LiveTemplatePreviewCheckBox" Content="Live template preview" Click="ScreenSettingsCheckBox_Click" />
+                        <TextBlock Text="Display live view within the photo placeholders in the template." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,10" />
+
+                        <TextBlock Text="Stretch live view" Style="{StaticResource EditorLabel}" Margin="0,0,0,4" />
+                        <ComboBox x:Name="StretchLiveViewCombo" SelectionChanged="StretchLiveViewCombo_SelectionChanged" Margin="0,0,0,10">
+                            <ComboBoxItem Content="Fill Screen With Cropping" />
+                            <ComboBoxItem Content="Fit Screen" />
+                            <ComboBoxItem Content="Stretch To Fill" />
+                        </ComboBox>
+
+                        <CheckBox x:Name="BrowseButtonEnabledCheckBox" Content="Browse Button" Click="ScreenSettingsCheckBox_Click" />
+                        <TextBlock Text="Allow guests to see previous sessions." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,10" />
+
+                        <CheckBox x:Name="ChooseTemplateEnabledCheckBox" Content="Choose Template" Click="ScreenSettingsCheckBox_Click" />
+                        <TextBlock Text="Allow guests to choose the print template from your favorited ones." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,10" />
+
+                        <TextBlock Text="Start screen video" Style="{StaticResource EditorLabel}" />
+                        <TextBlock Text="Animation will play in a loop before the Welcome screen appears." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6" />
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="StartScreenVideoNameText" Grid.Column="0" Text="No video selected." Style="{StaticResource EditorLabel}"
+                                       Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0" />
+                            <Button x:Name="ChooseStartScreenVideoButton" Grid.Column="1" Content="Choose..." Padding="12,6" Margin="8,0,0,0" Click="ChooseStartScreenVideoButton_Click" />
+                        </Grid>
+
+                        <TextBlock Style="{StaticResource BreadcrumbLink}" Margin="0,0,0,14" MouseLeftButtonDown="VirtualAttendantLink_MouseLeftButtonDown">
+                            <Run Text="Virtual Attendant" />
+                            <Run Text=" &gt;" />
+                        </TextBlock>
+
+                        <TextBlock Text="Unlock button opacity" Style="{StaticResource EditorLabel}" Margin="0,0,0,4" />
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="50" />
+                            </Grid.ColumnDefinitions>
+                            <Slider x:Name="UnlockButtonOpacitySlider" Grid.Column="0" Minimum="0" Maximum="100" ValueChanged="UnlockButtonOpacitySlider_ValueChanged" VerticalAlignment="Center" />
+                            <TextBox x:Name="UnlockButtonOpacityBox" Grid.Column="1" Margin="8,0,0,0" TextAlignment="Center" TextChanged="UnlockButtonOpacityBox_TextChanged" />
+                        </Grid>
+
+                        <TextBlock Text="Session trigger" Style="{StaticResource EditorSectionHeader}" />
+                        <CheckBox x:Name="SessionTriggerTouchScreenCheckBox" Content="Touch Screen" Click="ScreenSettingsCheckBox_Click" Margin="0,0,0,6" />
+                        <CheckBox x:Name="SessionTriggerF13CheckBox" Content="F13" Click="ScreenSettingsCheckBox_Click" Margin="0,0,0,6" />
+                        <CheckBox x:Name="SessionTriggerKeysCheckBox" Content="Space, S, Page Up, Page Down Keys" Click="ScreenSettingsCheckBox_Click" Margin="0,0,0,10" />
+
+                        <CheckBox x:Name="GuestQrCodeEnabledCheckBox" Content="Guest QR code" Click="ScreenSettingsCheckBox_Click" />
+                        <TextBlock Text="Enable guests to scan a QR code with a camera app to control the booth from their phone." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,0" />
                     </StackPanel>
 
                     <StackPanel x:Name="CaptureSettingsPanel" Visibility="Collapsed">
@@ -692,7 +836,39 @@
                         <TextBlock Text="Displays the camera feed behind the Capture screen elements." Style="{StaticResource EditorLabel}"
                                    Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,10" />
 
+                        <CheckBox x:Name="CropLiveViewCheckBox" Content="Crop live view" Click="ScreenSettingsCheckBox_Click" />
+                        <TextBlock Text="Crop live view on the Capture screen to match template aspect ratio or target video size." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,10" />
+
                         <CheckBox x:Name="MirrorLiveViewCheckBox" Content="Mirror live view" Click="ScreenSettingsCheckBox_Click" Margin="0,0,0,10" />
+
+                        <CheckBox x:Name="AutoTriggerCameraCheckBox" Content="Auto trigger camera" Click="ScreenSettingsCheckBox_Click" />
+                        <TextBlock Text="Capture photo at the end of countdown." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,10" />
+
+                        <CheckBox x:Name="FlashScreenWhiteCheckBox" Content="Flash screen white" Click="ScreenSettingsCheckBox_Click" />
+                        <TextBlock Text="Screen turns white at the end of countdown before the photo is captured." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,10" />
+
+                        <CheckBox x:Name="ShowCancelButtonCheckBox" Content="Cancel button" Click="ScreenSettingsCheckBox_Click" />
+                        <TextBlock Text="Show cancel button while capturing photos." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,10" />
+
+                        <TextBlock Text="Countdown color" Style="{StaticResource EditorLabel}" />
+                        <Grid Margin="0,2,0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="CountdownColorSwatch" Grid.Column="0" Width="30" Height="30" CornerRadius="7"
+                                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Margin="0,0,8,0" />
+                            <TextBox x:Name="CountdownColorBox" Grid.Column="1" TextChanged="CountdownColorBox_TextChanged" />
+                        </Grid>
+
+                        <TextBlock Style="{StaticResource BreadcrumbLink}" Margin="0,0,0,10" MouseLeftButtonDown="CountdownSettingsLink_MouseLeftButtonDown">
+                            <Run Text="Countdown settings" />
+                            <Run Text=" &gt;" />
+                        </TextBlock>
 
                         <TextBlock Text="Rotation" Style="{StaticResource EditorLabel}" Margin="0,0,0,4" />
                         <UniformGrid Rows="1" Columns="4">
@@ -702,7 +878,8 @@
                             <RadioButton x:Name="Rotation270Radio" GroupName="LiveViewRotation" Content="270°" Tag="270" Click="RotationRadio_Click" />
                         </UniformGrid>
 
-                        <TextBlock Text="Pose thumbnails" Style="{StaticResource EditorSectionHeader}" />
+                        <TextBlock Text="Photo thumbnails" Style="{StaticResource EditorSectionHeader}" />
+                        <CheckBox x:Name="PhotoThumbnailsEnabledCheckBox" Content="On" Click="ScreenSettingsCheckBox_Click" Margin="0,0,0,6" />
                         <TextBlock Text="Where already-taken photos show up on the Capture screen while a guest poses for more." Style="{StaticResource EditorLabel}"
                                    Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6" />
                         <UniformGrid Rows="1" Columns="4">
@@ -731,11 +908,63 @@
                                 </Grid>
                             </RadioButton>
                         </UniformGrid>
+
+                        <TextBlock Text="Say Cheese Image" Style="{StaticResource EditorSectionHeader}" />
+                        <TextBlock Text="This image shows while the camera is auto-focusing after countdown has ended." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="SayCheeseImageNameText" Grid.Column="0" Text="No image selected." Style="{StaticResource EditorLabel}"
+                                       Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0" />
+                            <Button x:Name="ChooseSayCheeseImageButton" Grid.Column="1" Content="Choose..." Padding="12,6" Margin="8,0,0,0" Click="ChooseSayCheeseImageButton_Click" />
+                        </Grid>
                     </StackPanel>
 
                     <StackPanel x:Name="SharingSettingsPanel" Visibility="Collapsed">
-                        <TextBlock Text="Sharing has no screen-specific settings yet. Design its layout from the canvas and Design tab."
-                                   Style="{StaticResource EditorLabel}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                        <CheckBox x:Name="SkipSharingScreenCheckBox" Content="Skip Sharing Screen" Click="ScreenSettingsCheckBox_Click" />
+                        <TextBlock Text="Guests go straight to a new session instead of seeing the Sharing screen." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,10" />
+
+                        <CheckBox x:Name="ShowDoneButtonCheckBox" Content="Done button" Click="ScreenSettingsCheckBox_Click" />
+                        <TextBlock Text="Lets guests end the Sharing screen manually instead of waiting for the timeout." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,10" />
+
+                        <TextBlock Text="Sharing icons location" Style="{StaticResource EditorLabel}" Margin="0,0,0,4" />
+                        <ComboBox x:Name="SharingIconsLocationCombo" SelectionChanged="SharingIconsLocationCombo_SelectionChanged" Margin="0,0,0,10">
+                            <ComboBoxItem Content="Custom" />
+                            <ComboBoxItem Content="Bottom Row" />
+                            <ComboBoxItem Content="Grid" />
+                        </ComboBox>
+
+                        <CheckBox x:Name="SharingTextLabelsEnabledCheckBox" Content="Text labels" Click="ScreenSettingsCheckBox_Click" Margin="0,0,0,10" />
+
+                        <TextBlock Text="Final screen timeout" Style="{StaticResource EditorLabel}" />
+                        <TextBlock Text="Duration to display the Sharing screen." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,4" />
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="50" />
+                            </Grid.ColumnDefinitions>
+                            <Slider x:Name="FinalScreenTimeoutSlider" Grid.Column="0" Minimum="5" Maximum="120" ValueChanged="FinalScreenTimeoutSlider_ValueChanged" VerticalAlignment="Center" />
+                            <TextBox x:Name="FinalScreenTimeoutBox" Grid.Column="1" Margin="8,0,0,0" TextAlignment="Center" TextChanged="FinalScreenTimeoutBox_TextChanged" />
+                        </Grid>
+
+                        <CheckBox x:Name="ShowOriginalPhotosCheckBox" Content="Show original photos" Click="ScreenSettingsCheckBox_Click" />
+                        <TextBlock Text="Show single images without template." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,10" />
+
+                        <CheckBox x:Name="ShowRetakeButtonCheckBox" Content="Retake button" Click="ScreenSettingsCheckBox_Click" Margin="0,0,0,14" />
+
+                        <TextBlock Style="{StaticResource BreadcrumbLink}" MouseLeftButtonDown="SharingSettingsLink_MouseLeftButtonDown">
+                            <Run Text="Sharing Settings" />
+                            <Run Text=" &gt;" />
+                        </TextBlock>
+                        <TextBlock Text="Which channels are offered (Email/SMS/Twitter/QR/Print) is configured there." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,0" />
                     </StackPanel>
                 </StackPanel>
                 </ScrollViewer>

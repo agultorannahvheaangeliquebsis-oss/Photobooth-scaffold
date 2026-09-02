@@ -4,6 +4,7 @@ using IoPath = System.IO.Path;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -16,7 +17,7 @@ namespace Photobooth.UI;
 
 /// <summary>
 /// Drag-and-drop visual editor for a print template's overlay elements
-/// (Text/Logo/Image/Shape/QR Code/Session Data/Photo Slot). PreviewImage and
+/// (Text/Logo/Image/Shape/QR Code/Session Data/Photo From Booth). PreviewImage and
 /// ElementsCanvas occupy the exact same position/size, so a drag delta
 /// measured on the canvas maps 1:1 onto the rendered preview below it -- no
 /// separate scaling math needed to translate between them. The preview
@@ -25,8 +26,18 @@ namespace Photobooth.UI;
 /// prints, not a second renderer that merely looks similar. Every drag/
 /// resize/property edit re-renders that preview so it stays live.
 ///
-/// A template with one or more Photo Slot elements switches PrintCompositor
-/// into "slot mode" -- every element (including each Photo Slot) is
+/// This window edits one working copy of a print setup -- initially the
+/// location's "live" setup (constructor's `template` param, Id 0), or a
+/// saved PrintTemplate library entry once the switcher activates one (see
+/// ActivateTemplate/_activeLibraryTemplateId). Save always writes the
+/// working elements onto the live rows; if the working copy was activated
+/// from a library entry, Save also copies that entry's Layout/dimensions
+/// onto the location's live geometry columns (LocationRepository.
+/// UpdatePrintGeometryAsync) -- editing here always means "what prints
+/// next", the switcher just lets you start from something already saved.
+///
+/// A template with one or more PhotoSlot elements switches PrintCompositor
+/// into "slot mode" -- every element (including each PhotoSlot) is
 /// positioned once against the whole page instead of being repeated per
 /// strip cell. The preview here reuses one sample photo for every slot
 /// (position/kind is what's being edited, not real pose content); a real
@@ -51,13 +62,36 @@ public partial class PrintTemplateEditorWindow : Window
         new(new Uri("https://example.com/preview"), "Sample Event", DateTime.Now);
 
     private readonly int _locationId;
-    private readonly PrintTemplate _initialTemplate;
+    private readonly PrintTemplateElementRepository _elementRepository = new();
+    private readonly PrintTemplateRepository _templateRepository = new();
+    private readonly LocationRepository _locations = new();
+
     private readonly List<PrintTemplateElement> _elements;
     private readonly List<Border> _containers = new();
     private readonly List<Rectangle> _handles = new();
     private readonly string _samplePhotoPath;
-    private readonly int _canvasWidth;
-    private readonly int _canvasHeight;
+    private int _canvasWidth;
+    private int _canvasHeight;
+
+    // The working copy's geometry -- starts as the live setup's, replaced wholesale
+    // by ActivateTemplate when the switcher loads a saved library entry. Never
+    // edited directly in this window (no Width/Height fields here -- those stay in
+    // AdminWindow's own Print Layout section for the live setup, or come from a
+    // preset/an existing saved entry for everything else).
+    private string _workingLayout;
+    private double _workingWidthInches;
+    private double _workingHeightInches;
+    private int _workingStripCopies;
+
+    // Null while editing the live setup from scratch; set to a PrintTemplate row's
+    // id once the switcher activates it or "New Template" creates one -- see the
+    // class doc comment for what this changes about Save, and DeleteTemplateButton.
+    private int? _activeLibraryTemplateId;
+    private string _templateName = "Live Setup";
+    private bool _templateIsFavorite;
+    private bool _isDirty;
+
+    private List<PrintTemplateRecord> _libraryTemplates = new();
 
     private int _selectedIndex = -1;
     private int _draggingIndex = -1;
@@ -67,13 +101,21 @@ public partial class PrintTemplateEditorWindow : Window
     private bool _suppressPropertyEvents;
     private bool _suppressLayerListEvents;
 
+    /// <summary>Set when a breadcrumb link is clicked -- AdminWindow reads this
+    /// after ShowDialog returns to chain into the requested section/window, same
+    /// pattern ScreenTemplateEditorWindow.RequestedNavigation already uses.</summary>
+    public string? RequestedNavigation { get; private set; }
+
     public PrintTemplateEditorWindow(PrintTemplate template, int locationId)
     {
         InitializeComponent();
 
         _locationId = locationId;
-        _initialTemplate = template;
         _elements = template.Elements.ToList();
+        _workingLayout = template.Layout;
+        _workingWidthInches = template.WidthInches;
+        _workingHeightInches = template.HeightInches;
+        _workingStripCopies = template.StripCopies;
         _samplePhotoPath = FindOrCreateSamplePhoto();
 
         (_canvasWidth, _canvasHeight) = PrintCompositor.ComputePreviewDimensions(template, PreviewWidthPx);
@@ -87,6 +129,10 @@ public partial class PrintTemplateEditorWindow : Window
 
         RefreshLayerList();
         RefreshPreview();
+        UpdateTemplateHeader();
+        UpdateCanvasInfoText();
+
+        Loaded += async (_, _) => await LoadTemplateLibraryAsync();
     }
 
     /// <summary>The most recently captured photo, if any -- falls back to a
@@ -132,11 +178,19 @@ public partial class PrintTemplateEditorWindow : Window
     private List<string> BuildSamplePhotoPaths(int count) =>
         Enumerable.Repeat(_samplePhotoPath, Math.Max(count, 1)).ToList();
 
+    private PrintTemplate BuildWorkingTemplate() => new(_workingLayout, _workingWidthInches, _workingHeightInches, _workingStripCopies)
+    {
+        Elements = _elements,
+    };
+
     private void RefreshPreview()
     {
+        _isDirty = true;
+        UpdateTemplateHeader();
+
         try
         {
-            PrintTemplate workingTemplate = _initialTemplate with { Elements = _elements };
+            PrintTemplate workingTemplate = BuildWorkingTemplate();
             using System.Drawing.Bitmap rendered = PrintCompositor.RenderPreview(
                 BuildSamplePhotoPaths(workingTemplate.RequiredPhotoCount), workingTemplate, PreviewWidthPx, PreviewContext);
             PreviewImage.Source = ToBitmapSource(rendered);
@@ -507,7 +561,7 @@ public partial class PrintTemplateEditorWindow : Window
                 case PrintTemplateElementKind.PhotoSlot:
                     PhotoSlotPropertiesPanel.Visibility = Visibility.Visible;
                     PhotoSlotIndexText.Text = $"Pose {(element.PhotoIndex ?? 0) + 1} of this template's photo slots. " +
-                        "The pose number is assigned when a Photo Slot is added and can't be edited here.";
+                        "The pose number is assigned when a Photo From Booth slot is added and can't be edited here.";
                     break;
             }
         }
@@ -698,6 +752,19 @@ public partial class PrintTemplateEditorWindow : Window
         XPercent: 0.35, YPercent: 0.35, WidthPercent: 0.3, HeightPercent: 0.3,
         ColorHex: "#808080", ShapeType: "Ellipse"));
 
+    /// <summary>A full-bleed Shape rectangle, sent to the back of the layer stack --
+    /// "Background Color" isn't its own PrintTemplateElementKind (PrintCompositor has
+    /// no separate background concept), it's just a Shape covering the whole canvas
+    /// drawn under everything else.</summary>
+    private void AddBackgroundColorButton_Click(object sender, RoutedEventArgs e)
+    {
+        AddElement(new PrintTemplateElement(
+            PrintTemplateElementKind.Shape,
+            XPercent: 0, YPercent: 0, WidthPercent: 1, HeightPercent: 1,
+            ColorHex: "#FFFFFF", ShapeType: "Rectangle"));
+        MoveSelectedLayerTo(0);
+    }
+
     private void AddQrCodeButton_Click(object sender, RoutedEventArgs e) => AddElement(new PrintTemplateElement(
         PrintTemplateElementKind.QrCode,
         XPercent: 0.05, YPercent: 0.75, WidthPercent: 0.2, HeightPercent: 0.2));
@@ -788,10 +855,12 @@ public partial class PrintTemplateEditorWindow : Window
         PrintTemplateElementKind.Text => $"Text: {element.Text}",
         PrintTemplateElementKind.Logo => "Logo",
         PrintTemplateElementKind.Image => "Image",
-        PrintTemplateElementKind.Shape => element.ShapeType == "Ellipse" ? "Ellipse" : "Rectangle",
+        PrintTemplateElementKind.Shape => (element.XPercent, element.YPercent, element.WidthPercent, element.HeightPercent) == (0, 0, 1, 1)
+            ? "Background Color"
+            : element.ShapeType == "Ellipse" ? "Ellipse" : "Rectangle",
         PrintTemplateElementKind.QrCode => "QR Code",
         PrintTemplateElementKind.SessionData => $"Session Data: {element.Text}",
-        PrintTemplateElementKind.PhotoSlot => $"Photo Slot #{(element.PhotoIndex ?? 0) + 1}",
+        PrintTemplateElementKind.PhotoSlot => $"Photo From Booth #{(element.PhotoIndex ?? 0) + 1}",
         _ => element.Kind.ToString(),
     };
 
@@ -902,6 +971,343 @@ public partial class PrintTemplateEditorWindow : Window
     private void AlignCenterVButton_Click(object sender, RoutedEventArgs e) =>
         AlignSelected(xPercent: null, yPercent: _selectedIndex < 0 ? null : (1 - _elements[_selectedIndex].HeightPercent) / 2);
 
+    // ===================== Template header / switcher / library =====================
+
+    private void UpdateTemplateHeader()
+    {
+        TemplateNameText.Text = _templateName;
+        TemplateStatusText.Text = _isDirty ? " · Unsaved changes" : " · Saved";
+        FavoriteStar.Fill = _templateIsFavorite ? (Brush)FindResource("AccentBrush") : Brushes.Transparent;
+        DeleteTemplateButton.IsEnabled = _activeLibraryTemplateId is not null;
+    }
+
+    private void UpdateCanvasInfoText()
+    {
+        string sizeText = $"{_workingLayout} · {_workingWidthInches:0.#} × {_workingHeightInches:0.#}\"";
+        CanvasInfoText.Text = _workingLayout == "Strip"
+            ? $"{sizeText} · {_workingStripCopies} cop{(_workingStripCopies == 1 ? "y" : "ies")}"
+            : sizeText;
+    }
+
+    private async Task LoadTemplateLibraryAsync()
+    {
+        try
+        {
+            _libraryTemplates = await _templateRepository.GetAllByLocationAsync(_locationId);
+        }
+        catch (Exception ex)
+        {
+            EditorStatusText.Text = $"Couldn't load saved templates: {ex.Message}";
+            EditorStatusText.Foreground = Brushes.Firebrick;
+            _libraryTemplates = new List<PrintTemplateRecord>();
+        }
+
+        RefreshTemplateListPanel();
+    }
+
+    private void TemplateSwitcherToggle_Checked(object sender, RoutedEventArgs e) => RefreshTemplateListPanel();
+
+    /// <summary>Builds one row per saved template: a star toggle (favorite, persists
+    /// immediately -- it's a property of the library row, independent of whatever's
+    /// currently on the canvas), the name (click activates it onto the working copy),
+    /// and a delete button (persists immediately, with confirmation). Built in code,
+    /// same dynamic-rows approach AdminWindow's Frame/Guestbook/Attendant sections
+    /// already use for a list that's rebuilt wholesale on every change rather than
+    /// tracked with per-row bindings.</summary>
+    private void RefreshTemplateListPanel()
+    {
+        TemplateListPanel.Children.Clear();
+
+        if (_libraryTemplates.Count == 0)
+        {
+            TemplateListPanel.Children.Add(new TextBlock
+            {
+                Text = "No saved templates yet -- “Save as New” or “New Template” to add one.",
+                FontFamily = new FontFamily("Segoe UI"),
+                FontSize = 12.5,
+                Foreground = (Brush)FindResource("MutedBrush"),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(8),
+            });
+            return;
+        }
+
+        foreach (PrintTemplateRecord record in _libraryTemplates)
+        {
+            var row = new Grid { Margin = new Thickness(0, 0, 0, 2) };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var starButton = new Button
+            {
+                Style = (Style)FindResource("ToolButton"),
+                Padding = new Thickness(6),
+                Content = new System.Windows.Shapes.Path
+                {
+                    Data = (Geometry)FindResource("IconStar"),
+                    Stretch = Stretch.Uniform,
+                    Width = 14,
+                    Height = 14,
+                    StrokeThickness = 1.3,
+                    Stroke = (Brush)FindResource("AccentBrush"),
+                    Fill = record.IsFavorite ? (Brush)FindResource("AccentBrush") : Brushes.Transparent,
+                },
+            };
+            starButton.Click += async (_, _) => await ToggleFavoriteAsync(record);
+            Grid.SetColumn(starButton, 0);
+
+            var nameButton = new Button
+            {
+                Style = (Style)FindResource("AddRowButton"),
+                Content = new TextBlock
+                {
+                    Text = record.Name,
+                    FontFamily = new FontFamily("Segoe UI"),
+                    FontSize = 13,
+                    FontWeight = record.PrintTemplateId == _activeLibraryTemplateId ? FontWeights.Bold : FontWeights.Normal,
+                    Foreground = record.PrintTemplateId == _activeLibraryTemplateId
+                        ? (Brush)FindResource("AccentBrush")
+                        : (Brush)FindResource("InkBrush"),
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
+            };
+            nameButton.Click += async (_, _) => await ActivateTemplateAsync(record);
+            Grid.SetColumn(nameButton, 1);
+
+            var deleteButton = new Button
+            {
+                Style = (Style)FindResource("ToolButton"),
+                Padding = new Thickness(6),
+                Content = new System.Windows.Shapes.Path
+                {
+                    Data = (Geometry)FindResource("IconTrash"),
+                    Stretch = Stretch.Uniform,
+                    Width = 13,
+                    Height = 13,
+                    Stroke = (Brush)FindResource("MutedBrush"),
+                    StrokeThickness = 1.5,
+                    StrokeLineJoin = PenLineJoin.Round,
+                    StrokeStartLineCap = PenLineCap.Round,
+                    StrokeEndLineCap = PenLineCap.Round,
+                },
+            };
+            deleteButton.Click += async (_, _) => await DeleteLibraryTemplateAsync(record);
+            Grid.SetColumn(deleteButton, 2);
+
+            row.Children.Add(starButton);
+            row.Children.Add(nameButton);
+            row.Children.Add(deleteButton);
+            TemplateListPanel.Children.Add(row);
+        }
+    }
+
+    private async Task ToggleFavoriteAsync(PrintTemplateRecord record)
+    {
+        try
+        {
+            await _templateRepository.SetFavoriteAsync(record.PrintTemplateId, !record.IsFavorite);
+            if (record.PrintTemplateId == _activeLibraryTemplateId)
+            {
+                _templateIsFavorite = !record.IsFavorite;
+                UpdateTemplateHeader();
+            }
+            await LoadTemplateLibraryAsync();
+        }
+        catch (Exception ex)
+        {
+            EditorStatusText.Text = $"Couldn't update favorite: {ex.Message}";
+            EditorStatusText.Foreground = Brushes.Firebrick;
+        }
+    }
+
+    private async Task DeleteLibraryTemplateAsync(PrintTemplateRecord record)
+    {
+        MessageBoxResult result = MessageBox.Show(
+            this, $"Delete “{record.Name}”? This can't be undone.", "Delete Template",
+            MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        if (result != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        try
+        {
+            await _templateRepository.DeleteAsync(record.PrintTemplateId);
+            if (record.PrintTemplateId == _activeLibraryTemplateId)
+            {
+                _activeLibraryTemplateId = null;
+                _templateName = "Live Setup";
+                _templateIsFavorite = false;
+                UpdateTemplateHeader();
+            }
+            await LoadTemplateLibraryAsync();
+        }
+        catch (Exception ex)
+        {
+            EditorStatusText.Text = $"Couldn't delete: {ex.Message}";
+            EditorStatusText.Foreground = Brushes.Firebrick;
+        }
+    }
+
+    /// <summary>Loads a saved library entry's Layout/dimensions/Elements as the new
+    /// working copy -- replaces the canvas wholesale (same shape as the constructor's
+    /// own initial build, just re-entrant). Nothing is written to the location's live
+    /// setup until Save (see the class doc comment).</summary>
+    private async Task ActivateTemplateAsync(PrintTemplateRecord record)
+    {
+        TemplateSwitcherToggle.IsChecked = false;
+        NewTemplateButton.IsEnabled = false;
+        try
+        {
+            List<PrintTemplateElement> elements = await _elementRepository.GetAllByTemplateAsync(record.PrintTemplateId);
+            LoadWorkingCopy(record.Layout, record.WidthInches, record.HeightInches, record.StripCopies, elements);
+
+            _activeLibraryTemplateId = record.PrintTemplateId;
+            _templateName = record.Name;
+            _templateIsFavorite = record.IsFavorite;
+            _isDirty = false;
+            UpdateTemplateHeader();
+            UpdateCanvasInfoText();
+            EditorStatusText.Text = $"Loaded “{record.Name}”. Save to make it the live print setup.";
+            EditorStatusText.Foreground = (Brush)FindResource("MutedBrush");
+        }
+        catch (Exception ex)
+        {
+            EditorStatusText.Text = $"Couldn't load template: {ex.Message}";
+            EditorStatusText.Foreground = Brushes.Firebrick;
+        }
+        finally
+        {
+            NewTemplateButton.IsEnabled = true;
+        }
+    }
+
+    /// <summary>Tears down every element visual and rebuilds the canvas from a fresh
+    /// geometry/element list -- shared by ActivateTemplateAsync and NewTemplateButton_Click,
+    /// both of which wholesale-replace the working copy.</summary>
+    private void LoadWorkingCopy(string layout, double widthInches, double heightInches, int stripCopies, List<PrintTemplateElement> elements)
+    {
+        ElementsCanvas.Children.Clear();
+        _containers.Clear();
+        _handles.Clear();
+        _elements.Clear();
+        _elements.AddRange(elements);
+
+        _workingLayout = layout;
+        _workingWidthInches = widthInches;
+        _workingHeightInches = heightInches;
+        _workingStripCopies = stripCopies;
+
+        (_canvasWidth, _canvasHeight) = PrintCompositor.ComputePreviewDimensions(BuildWorkingTemplate(), PreviewWidthPx);
+        PreviewHost.Width = _canvasWidth;
+        PreviewHost.Height = _canvasHeight;
+
+        for (int i = 0; i < _elements.Count; i++)
+        {
+            AddVisualForElement(i);
+        }
+
+        RefreshLayerList();
+        SelectElement(-1);
+        RefreshPreview();
+    }
+
+    private async void NewTemplateButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new NewPrintTemplateWindow($"Untitled-{_libraryTemplates.Count + 1}") { Owner = this };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        NewTemplateButton.IsEnabled = false;
+        try
+        {
+            PrintTemplatePreset preset = dialog.SelectedPreset;
+            int newId = await _templateRepository.InsertAsync(
+                _locationId, dialog.TemplateName, preset.Layout, preset.WidthInches, preset.HeightInches, preset.StripCopies,
+                isFavorite: false, sortOrder: _libraryTemplates.Count);
+            await _elementRepository.ReplaceAllForTemplateAsync(newId, _locationId, preset.Elements);
+
+            LoadWorkingCopy(preset.Layout, preset.WidthInches, preset.HeightInches, preset.StripCopies, preset.Elements.ToList());
+            _activeLibraryTemplateId = newId;
+            _templateName = dialog.TemplateName;
+            _templateIsFavorite = false;
+            _isDirty = false;
+            UpdateTemplateHeader();
+            UpdateCanvasInfoText();
+            await LoadTemplateLibraryAsync();
+
+            EditorStatusText.Text = $"Created “{dialog.TemplateName}”. Save to make it the live print setup.";
+            EditorStatusText.Foreground = (Brush)FindResource("MutedBrush");
+        }
+        catch (Exception ex)
+        {
+            EditorStatusText.Text = $"Couldn't create template: {ex.Message}";
+            EditorStatusText.Foreground = Brushes.Firebrick;
+        }
+        finally
+        {
+            NewTemplateButton.IsEnabled = true;
+        }
+    }
+
+    /// <summary>Snapshots the CURRENT working copy (including any in-window edits not
+    /// yet Saved) under a new name -- doesn't change what's being edited, just also
+    /// saves it to the library.</summary>
+    private async void SaveAsNewButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new TextPromptWindow("Save as New", $"{_templateName} copy", "Saves the current canvas to the template library under a new name.") { Owner = this };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        SaveAsNewButton.IsEnabled = false;
+        try
+        {
+            int newId = await _templateRepository.InsertAsync(
+                _locationId, dialog.Value, _workingLayout, _workingWidthInches, _workingHeightInches, _workingStripCopies,
+                isFavorite: false, sortOrder: _libraryTemplates.Count);
+            await _elementRepository.ReplaceAllForTemplateAsync(newId, _locationId, _elements);
+            await LoadTemplateLibraryAsync();
+
+            EditorStatusText.Text = $"Saved as “{dialog.Value}”.";
+            EditorStatusText.Foreground = (Brush)FindResource("MutedBrush");
+        }
+        catch (Exception ex)
+        {
+            EditorStatusText.Text = $"Couldn't save: {ex.Message}";
+            EditorStatusText.Foreground = Brushes.Firebrick;
+        }
+        finally
+        {
+            SaveAsNewButton.IsEnabled = true;
+        }
+    }
+
+    private async void DeleteTemplateButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_activeLibraryTemplateId is not int templateId)
+        {
+            return;
+        }
+
+        PrintTemplateRecord? record = _libraryTemplates.FirstOrDefault(t => t.PrintTemplateId == templateId);
+        await DeleteLibraryTemplateAsync(record ?? new PrintTemplateRecord(templateId, _templateName, _workingLayout, _workingWidthInches, _workingHeightInches, _workingStripCopies, _templateIsFavorite, 0));
+    }
+
+    private void ScreenEditorLink_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => CloseAndNavigate("ScreenEditor");
+
+    private void GeneralLink_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => CloseAndNavigate("General");
+
+    private void CloseAndNavigate(string target)
+    {
+        RequestedNavigation = target;
+        DialogResult = false;
+    }
+
     private async void SaveButton_Click(object sender, RoutedEventArgs e)
     {
         if (_elements.Any(element => !element.IsValid))
@@ -914,7 +1320,19 @@ public partial class PrintTemplateEditorWindow : Window
         SaveButton.IsEnabled = false;
         try
         {
-            await new PrintTemplateElementRepository().ReplaceAllAsync(_locationId, _elements);
+            await _elementRepository.ReplaceAllAsync(_locationId, _elements);
+
+            // Only a working copy activated from (or newly created into) the library
+            // carries geometry that can differ from the live setup's own -- this
+            // window has no direct Layout/Width/Height editing of its own otherwise,
+            // so there's nothing to write here in the plain "still editing the live
+            // setup" case.
+            if (_activeLibraryTemplateId is not null)
+            {
+                await _locations.UpdatePrintGeometryAsync(_locationId, _workingLayout, _workingWidthInches, _workingHeightInches, _workingStripCopies);
+            }
+
+            _isDirty = false;
             DialogResult = true;
         }
         catch (Exception ex)

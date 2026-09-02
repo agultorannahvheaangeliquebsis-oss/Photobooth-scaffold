@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -138,6 +139,9 @@ public class KioskViewModel : ObservableObject, IDisposable
         SendSmsCommand = new AsyncRelayCommand(SendSmsAsync, () => CanSendSms);
         DoneCommand = new RelayCommand(FinishSharing);
         OpenAdminCommand = new RelayCommand(Admin.Open);
+        CancelSessionCommand = new RelayCommand(CancelSession);
+        RetakeCommand = new RelayCommand(RetakeSession);
+        ShareOnTwitterCommand = new RelayCommand(ShareOnTwitter);
         SelectFilterCommand = new RelayCommand(SelectFilter);
         SelectFrameCommand = new RelayCommand(SelectFrame);
         RecordGuestbookMessageCommand = new RelayCommand(() => _guestbookPrompt?.SubmitRecordDecision(true));
@@ -389,6 +393,28 @@ public class KioskViewModel : ObservableObject, IDisposable
         }
     }
 
+    private bool _isTouchStartEnabled = true;
+
+    /// <summary>ScreenSettings.SessionTriggerTouchScreen -- when off, the
+    /// Idle screen's full-bleed tap target no longer starts a session; F13/
+    /// keyboard triggers (see KioskWindow.xaml.cs's PreviewKeyDown handler)
+    /// still can if their own toggles are on.</summary>
+    public bool IsTouchStartEnabled
+    {
+        get => _isTouchStartEnabled;
+        private set => SetProperty(ref _isTouchStartEnabled, value);
+    }
+
+    private double _unlockButtonOpacity = 0.1;
+
+    /// <summary>ScreenSettings.UnlockButtonOpacityPercent / 100 -- how visible
+    /// the hidden admin-unlock tap target (top-right corner) is.</summary>
+    public double UnlockButtonOpacity
+    {
+        get => _unlockButtonOpacity;
+        private set => SetProperty(ref _unlockButtonOpacity, value);
+    }
+
     /// <summary>Either lock reason -- what the Idle screen's touch-to-start
     /// prompt and mode picker actually bind their Visibility to, since a
     /// single Bool-to-Visibility converter can't express an OR of two
@@ -464,6 +490,60 @@ public class KioskViewModel : ObservableObject, IDisposable
     {
         get => _liveViewTransform;
         private set => SetProperty(ref _liveViewTransform, value);
+    }
+
+    private Stretch _liveViewStretch = Stretch.UniformToFill;
+
+    /// <summary>ScreenSettings.CropLiveView: on (the historical default) fills
+    /// the kiosk edge-to-edge, cropping whatever doesn't fit the aspect ratio,
+    /// same as MainWindow's own live view; off shows the full uncropped frame
+    /// letterboxed instead, for a guest who wants to see their whole body/the
+    /// whole scene rather than a tight crop.</summary>
+    public Stretch LiveViewStretch
+    {
+        get => _liveViewStretch;
+        private set => SetProperty(ref _liveViewStretch, value);
+    }
+
+    private Brush _countdownColorBrush = Brushes.White;
+
+    /// <summary>ScreenSettings.CountdownColorHex, converted once per settings
+    /// reload rather than in a value converter -- same "compute it where the
+    /// setting is read, bind the result directly" pattern LiveViewTransform
+    /// above already uses for Mirror/Rotation.</summary>
+    public Brush CountdownColorBrush
+    {
+        get => _countdownColorBrush;
+        private set => SetProperty(ref _countdownColorBrush, value);
+    }
+
+    private bool _isCancelButtonVisible;
+
+    /// <summary>ScreenSettings.ShowCancelButton, shown only while a session is
+    /// actually cancellable (Countdown/Capture) -- see CancelSessionCommand.</summary>
+    public bool IsCancelButtonVisible
+    {
+        get => _isCancelButtonVisible;
+        private set => SetProperty(ref _isCancelButtonVisible, value);
+    }
+
+    private bool _isDoneButtonVisible = true;
+
+    /// <summary>ScreenSettings.ShowDoneButton.</summary>
+    public bool IsDoneButtonVisible
+    {
+        get => _isDoneButtonVisible;
+        private set => SetProperty(ref _isDoneButtonVisible, value);
+    }
+
+    private bool _isRetakeVisible;
+
+    /// <summary>ScreenSettings.ShowRetakeButton, shown alongside Done on the
+    /// Review screen -- see RetakeCommand.</summary>
+    public bool IsRetakeVisible
+    {
+        get => _isRetakeVisible;
+        private set => SetProperty(ref _isRetakeVisible, value);
     }
 
     private bool _isFlashing;
@@ -795,6 +875,37 @@ public class KioskViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref _qrEnabled, value);
     }
 
+    private bool _isTwitterEnabled;
+
+    /// <summary>SharingSettings.TwitterEnabled -- see ShareOnTwitterCommand.</summary>
+    public bool IsTwitterEnabled
+    {
+        get => _isTwitterEnabled;
+        private set => SetProperty(ref _isTwitterEnabled, value);
+    }
+
+    private bool _isPrintButtonVisible;
+
+    /// <summary>PrintOptions.ShowPrintButton -- the automatic print
+    /// (PrintOptions.PrintAutomatically) already runs before this screen is
+    /// reachable; this is the guest's own manual reprint button, opt-in
+    /// rather than always shown, matching the setting's own default of false.</summary>
+    public bool IsPrintButtonVisible
+    {
+        get => _isPrintButtonVisible;
+        private set => SetProperty(ref _isPrintButtonVisible, value);
+    }
+
+    private bool _isSharingTextLabelsEnabled = true;
+
+    /// <summary>ScreenSettings.SharingTextLabelsEnabled -- the captions next
+    /// to each sharing option ("EMAIL IT TO ME", "Scan to download", etc.).</summary>
+    public bool IsSharingTextLabelsEnabled
+    {
+        get => _isSharingTextLabelsEnabled;
+        private set => SetProperty(ref _isSharingTextLabelsEnabled, value);
+    }
+
     public bool CanPrint => PrintsRemaining > 0 && !IsPrinting && _stateMachine.LastCapturedImagePaths.Count > 0;
 
     public bool CanSendEmail => IsEmailEnabled && LooksLikeEmail(ShareEmail) && _stateMachine.LastPhotoUrl is not null;
@@ -838,6 +949,9 @@ public class KioskViewModel : ObservableObject, IDisposable
     public AsyncRelayCommand SendEmailCommand { get; }
     public AsyncRelayCommand SendSmsCommand { get; }
     public RelayCommand DoneCommand { get; }
+    public RelayCommand CancelSessionCommand { get; }
+    public RelayCommand RetakeCommand { get; }
+    public RelayCommand ShareOnTwitterCommand { get; }
     public RelayCommand OpenAdminCommand { get; }
 
     private CaptureMode _selectedCaptureMode = CaptureMode.Photo;
@@ -868,6 +982,9 @@ public class KioskViewModel : ObservableObject, IDisposable
         }
     }
 
+    private CancellationTokenSource? _sessionCts;
+    private bool _retakeRequested;
+
     private void StartSession()
     {
         if (!CanStartSession)
@@ -875,6 +992,7 @@ public class KioskViewModel : ObservableObject, IDisposable
             return;
         }
 
+        _sessionCts = new CancellationTokenSource();
         _sessionRunning = true;
         RaisePropertyChanged(nameof(CanStartSession));
         StartSessionCommand.RaiseCanExecuteChanged();
@@ -883,19 +1001,82 @@ public class KioskViewModel : ObservableObject, IDisposable
         _ = RunSessionAsync();
     }
 
+    /// <summary>ScreenSettings.SessionTriggerF13/SessionTriggerKeys -- called
+    /// from KioskWindow.xaml.cs's PreviewKeyDown for F13, Space, S, PageUp and
+    /// PageDown. Each key trigger is gated by its own admin toggle, unlike
+    /// StartSessionCommand's touch-target Visibility (IsTouchStartEnabled)
+    /// which the Idle screen's tap target binds directly.</summary>
+    public void TryStartSessionFromKey(bool isF13)
+    {
+        bool allowed = isF13 ? _settings.Screen.SessionTriggerF13 : _settings.Screen.SessionTriggerKeys;
+        if (allowed)
+        {
+            StartSession();
+        }
+    }
+
+    /// <summary>Cancels the in-progress session (Countdown/Capture's Cancel
+    /// button, gated by ScreenSettings.ShowCancelButton) -- BoothStateMachine
+    /// treats the resulting OperationCanceledException as a deliberate stop,
+    /// not an Error, and its own finally already returns to Idle.</summary>
+    private void CancelSession() => _sessionCts?.Cancel();
+
+    /// <summary>Retake (Review's Retake button, gated by
+    /// ScreenSettings.ShowRetakeButton): cancels the current session same as
+    /// CancelSession, but RunSessionAsync's own finally below notices
+    /// _retakeRequested once the cancelled session has actually unwound and
+    /// immediately starts a fresh one, rather than leaving the guest back at
+    /// the Idle screen -- a "let's do this again" gesture, not a "stop".</summary>
+    private void RetakeSession()
+    {
+        _retakeRequested = true;
+        _sessionCts?.Cancel();
+    }
+
+    /// <summary>Twitter/X's web share intent needs no app registration or
+    /// OAuth (see SharingSettings.TwitterEnabled's own doc comment) -- opens
+    /// the guest's/attendant's default browser to a pre-filled compose window
+    /// pointed at the uploaded photo's public URL.</summary>
+    private void ShareOnTwitter()
+    {
+        if (_stateMachine.LastPhotoUrl is not Uri url)
+        {
+            return;
+        }
+
+        string tweetText = Uri.EscapeDataString($"Check out my photo from {EventName}!");
+        string tweetUrl = Uri.EscapeDataString(url.ToString());
+        try
+        {
+            Process.Start(new ProcessStartInfo($"https://twitter.com/intent/tweet?text={tweetText}&url={tweetUrl}") { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            ShareStatus = $"Couldn't open Twitter: {ex.Message}";
+        }
+    }
+
     private async Task RunSessionAsync()
     {
         try
         {
-            await _stateMachine.RunSessionAsync();
+            await _stateMachine.RunSessionAsync(_sessionCts?.Token ?? default);
         }
         finally
         {
             OnUi(() =>
             {
+                _sessionCts?.Dispose();
+                _sessionCts = null;
                 _sessionRunning = false;
                 RaisePropertyChanged(nameof(CanStartSession));
                 StartSessionCommand.RaiseCanExecuteChanged();
+
+                if (_retakeRequested)
+                {
+                    _retakeRequested = false;
+                    StartSession();
+                }
             });
         }
     }
@@ -1025,6 +1206,9 @@ public class KioskViewModel : ObservableObject, IDisposable
 
         UpdateLiveView(state);
         UpdateFlash(state);
+        IsCancelButtonVisible = _settings.Screen.ShowCancelButton
+            && (CurrentScreenState == KioskScreen.Countdown || CurrentScreenState == KioskScreen.Capture);
+        IsRetakeVisible = _settings.Screen.ShowRetakeButton && CurrentScreenState == KioskScreen.Review;
 
         if (state == BoothState.Idle)
         {
@@ -1199,8 +1383,17 @@ public class KioskViewModel : ObservableObject, IDisposable
             IsEmailEnabled = settings.Sharing.EmailEnabled;
             IsSmsEnabled = settings.Sharing.SmsEnabled;
             IsQrEnabled = settings.Sharing.QrEnabled;
+            IsTwitterEnabled = settings.Sharing.TwitterEnabled;
+            IsPrintButtonVisible = settings.PrintOptions.ShowPrintButton;
+            IsSharingTextLabelsEnabled = settings.Screen.SharingTextLabelsEnabled;
+            IsDoneButtonVisible = settings.Screen.ShowDoneButton;
             PrintsRemaining = settings.PrintOptions.PrintLimitPerSession;
             LiveViewTransform = BuildLiveViewTransform(settings.Screen);
+            LiveViewStretch = settings.Screen.CropLiveView ? Stretch.UniformToFill : Stretch.Uniform;
+            CountdownColorBrush = HexToBrush(settings.Screen.CountdownColorHex);
+            IsTouchStartEnabled = settings.Screen.SessionTriggerTouchScreen;
+            UnlockButtonOpacity = Math.Clamp(settings.Screen.UnlockButtonOpacityPercent, 0, 100) / 100.0;
+            ShareSecondsTotal = settings.Screen.FinalScreenTimeoutSeconds;
             IsAdminLocked = settings.IsLocked;
 
             if (overlayElements is not null)
@@ -1275,6 +1468,20 @@ public class KioskViewModel : ObservableObject, IDisposable
         return group;
     }
 
+    private static Brush HexToBrush(string hex)
+    {
+        try
+        {
+            var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
+            brush.Freeze();
+            return brush;
+        }
+        catch (Exception)
+        {
+            return Brushes.White;
+        }
+    }
+
     private void UpdateLiveView(BoothState state)
     {
         bool wantFeed = state == BoothState.Countdown && _settings.Screen.ShowLiveView;
@@ -1305,7 +1512,7 @@ public class KioskViewModel : ObservableObject, IDisposable
     /// camera-flash clicks.</summary>
     private void UpdateFlash(BoothState state)
     {
-        if (state != BoothState.Capturing || SelectedCaptureMode != CaptureMode.Photo)
+        if (state != BoothState.Capturing || SelectedCaptureMode != CaptureMode.Photo || !_settings.Screen.FlashScreenWhite)
         {
             return;
         }

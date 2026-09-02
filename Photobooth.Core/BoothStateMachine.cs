@@ -545,7 +545,20 @@ public class BoothStateMachine
 
             SetState(BoothState.Complete);
             await _services.Sessions.CompleteAsync(sessionId.Value, ct);
-            await Task.Delay(1500, ct); // "thank you" screen dwell time
+
+            // SkipSharingScreen shortens the "thank you"/sharing dwell to the
+            // same minimal beat every state already gets before its next
+            // transition (see the 1000ms dwells elsewhere in this method),
+            // rather than skipping the Complete state outright -- CompleteAsync
+            // above still needs to run, and KioskViewModel still needs one
+            // SetState(Complete) tick to reset its Review-screen bindings for
+            // the next guest. Otherwise FinalScreenTimeoutSeconds (default 30s,
+            // see ScreenSettings) IS the real dwell, not just KioskViewModel's
+            // own decorative countdown bar (ShareSecondsTotal) -- so a guest
+            // sharing via email/SMS actually gets that long before the booth
+            // moves on to Guestbook/Feedback/Survey.
+            int dwellSeconds = settings.Screen.SkipSharingScreen ? 1 : settings.Screen.FinalScreenTimeoutSeconds;
+            await Task.Delay(TimeSpan.FromSeconds(dwellSeconds), ct);
 
             // Best-effort, wrapped in its own try/catch, same reasoning as
             // the Feedback block right below: a guest who walks away without
@@ -623,6 +636,14 @@ public class BoothStateMachine
             catch (Exception)
             {
             }
+        }
+        catch (OperationCanceledException)
+        {
+            // A deliberate guest/admin action (Cancel during Countdown/Capture,
+            // Retake during Review -- see KioskViewModel's Cancel/RetakeCommand),
+            // not a real failure: no Error screen, no FailAsync. The session row
+            // is left as whatever RecordConsentAsync/etc. already wrote for it,
+            // same as a guest who simply walks away mid-session today.
         }
         catch (Exception ex)
         {

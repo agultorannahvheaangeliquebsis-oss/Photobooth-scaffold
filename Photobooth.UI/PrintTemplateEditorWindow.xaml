@@ -4,19 +4,28 @@
         Title="Edit Print Template"
         Background="{DynamicResource CanvasBrush}"
         WindowStartupLocation="CenterOwner"
-        Width="900"
-        Height="640">
+        Width="1160"
+        Height="720"
+        MinWidth="1000"
+        MinHeight="620">
     <Window.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="Themes/DarkPalette.xaml" />
             </ResourceDictionary.MergedDictionaries>
 
+            <!-- Same FieldBrush/OnAccentBrush/DangerBrush values ScreenTemplateEditorWindow
+                 establishes, duplicated here rather than shared so this window still opens
+                 standalone with only DarkPalette.xaml merged in. -->
+            <SolidColorBrush x:Key="FieldBrush" Color="#1F2023" />
+            <SolidColorBrush x:Key="OnAccentBrush" Color="#0B0C0D" />
+            <SolidColorBrush x:Key="DangerBrush" Color="#E5484D" />
+
             <Style x:Key="EditorSectionHeader" TargetType="TextBlock">
                 <Setter Property="FontFamily" Value="Segoe UI" />
-                <Setter Property="FontSize" Value="14" />
-                <Setter Property="FontWeight" Value="SemiBold" />
-                <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+                <Setter Property="FontSize" Value="12.5" />
+                <Setter Property="FontWeight" Value="Bold" />
+                <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
                 <Setter Property="Margin" Value="0,16,0,6" />
             </Style>
             <Style x:Key="EditorLabel" TargetType="TextBlock">
@@ -25,154 +34,670 @@
                 <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
                 <Setter Property="Margin" Value="0,4,0,2" />
             </Style>
+            <Style x:Key="BreadcrumbLink" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+                <Setter Property="Cursor" Value="Hand" />
+            </Style>
+
+            <!-- ===================== Icon geometries ===================== -->
+            <GeometryGroup x:Key="IconCamera">
+                <PathGeometry Figures="M4,8.5 L7,8.5 L8.3,6.5 L15.7,6.5 L17,8.5 L20,8.5 L20,19 L4,19 Z" />
+                <EllipseGeometry Center="12,13.5" RadiusX="3.4" RadiusY="3.4" />
+            </GeometryGroup>
+            <GeometryGroup x:Key="IconImage">
+                <RectangleGeometry Rect="3.5,4.5,17,15" />
+                <PathGeometry Figures="M4,17 L9.5,11.5 L14,16 L16.5,13.5 L20,17" />
+                <EllipseGeometry Center="9,10" RadiusX="1.6" RadiusY="1.6" />
+            </GeometryGroup>
+            <Geometry x:Key="IconText">M5,5 L19,5 M12,5 L12,19</Geometry>
+            <RectangleGeometry x:Key="IconRectangle" Rect="4,4,16,16" RadiusX="3" RadiusY="3" />
+            <EllipseGeometry x:Key="IconEllipse" Center="12,12" RadiusX="8" RadiusY="8" />
+            <GeometryGroup x:Key="IconBackgroundColor">
+                <PathGeometry Figures="M6,3 L15,12 L8.5,18.5 A3,3 0 0 1 4.3,18.3 L4,18 A3,3 0 0 1 4.2,14.2 Z" />
+                <PathGeometry Figures="M5,12 L16,12" />
+                <EllipseGeometry Center="18,17" RadiusX="2.4" RadiusY="2.4" />
+            </GeometryGroup>
+            <GeometryGroup x:Key="IconQrCode">
+                <RectangleGeometry Rect="4,4,6,6" />
+                <RectangleGeometry Rect="14,4,6,6" />
+                <RectangleGeometry Rect="4,14,6,6" />
+            </GeometryGroup>
+            <GeometryGroup x:Key="IconSessionData">
+                <EllipseGeometry Center="12,8" RadiusX="3.2" RadiusY="3.2" />
+                <PathGeometry Figures="M5,20 C5,16.4 8.1,14 12,14 C15.9,14 19,16.4 19,20" />
+            </GeometryGroup>
+            <Geometry x:Key="IconStar">M12,3 L14.6,8.9 L21,9.5 L16.1,13.8 L17.5,20.1 L12,16.9 L6.5,20.1 L7.9,13.8 L3,9.5 L9.4,8.9 Z</Geometry>
+            <Geometry x:Key="IconChevronDown">M6,9 L12,15 L18,9</Geometry>
+            <Geometry x:Key="IconChevronLeft">M15,18 L9,12 L15,6</Geometry>
+            <Geometry x:Key="IconChevronRight">M9,18 L15,12 L9,6</Geometry>
+            <GeometryGroup x:Key="IconTrash">
+                <PathGeometry Figures="M5,7 L19,7" />
+                <PathGeometry Figures="M9,7 L9,5.5 A1.5,1.5 0 0 1 10.5,4 L13.5,4 A1.5,1.5 0 0 1 15,5.5 L15,7" />
+                <PathGeometry Figures="M7,7 L8,19.2 A1.8,1.8 0 0 0 9.8,21 L14.2,21 A1.8,1.8 0 0 0 16,19.2 L17,7" />
+            </GeometryGroup>
+            <GeometryGroup x:Key="IconPlus">
+                <RectangleGeometry Rect="4,4,16,16" RadiusX="3" RadiusY="3" />
+                <PathGeometry Figures="M12,8 L12,16 M8,12 L16,12" />
+            </GeometryGroup>
+            <GeometryGroup x:Key="IconSaveAs">
+                <PathGeometry Figures="M5,4 L14,4 L19,9 L19,20 A1,1 0 0 1 18,21 L5,21 A1,1 0 0 1 4,20 L4,5 A1,1 0 0 1 5,4 Z" />
+                <PathGeometry Figures="M9,16 L9,12 L15,12 L15,16 M9,4 L9,8 L13,8" />
+            </GeometryGroup>
+
+            <Geometry x:Key="IconAlignLeft">M4,6 L20,6 M4,12 L14,12 M4,18 L17,18</Geometry>
+            <Geometry x:Key="IconAlignCenterH">M4,6 L20,6 M7,12 L17,12 M5.5,18 L18.5,18</Geometry>
+            <Geometry x:Key="IconAlignRight">M4,6 L20,6 M10,12 L20,12 M7,18 L20,18</Geometry>
+            <Geometry x:Key="IconAlignTop">M6,4 L18,4 M8,8 L16,8 M9,12 L15,12</Geometry>
+            <Geometry x:Key="IconAlignCenterV">M4,12 L20,12 M8,8 L16,8 M9,16 L15,16</Geometry>
+            <Geometry x:Key="IconAlignBottom">M6,20 L18,20 M8,16 L16,16 M9,12 L15,12</Geometry>
+
+            <!-- ===================== Buttons ===================== -->
+            <Style TargetType="Button">
+                <Setter Property="Background" Value="{StaticResource FieldBrush}" />
+                <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="FontSize" Value="12.5" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="17">
+                                <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="Bd" Property="Opacity" Value="0.45" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+            <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+                <Setter Property="Foreground" Value="{StaticResource OnAccentBrush}" />
+                <Setter Property="BorderThickness" Value="0" />
+            </Style>
+            <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+                <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+            </Style>
+
+            <!-- Icon+label toolbar button (New Template/Save as New/Delete Template). -->
+            <Style x:Key="ToolButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="8" Padding="10,7">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource FieldBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="Bd" Property="Opacity" Value="0.4" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Full-row "Add" list item: icon chip + label, transparent until hovered. -->
+            <Style x:Key="AddRowButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="Padding" Value="8,7" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource FieldBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="IconActionButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                <Setter Property="Height" Value="30" />
+                <Setter Property="Background" Value="{StaticResource FieldBrush}" />
+            </Style>
+
+            <!-- ===================== Inputs ===================== -->
+            <Style TargetType="TextBox">
+                <Setter Property="Background" Value="{StaticResource FieldBrush}" />
+                <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+                <Setter Property="CaretBrush" Value="{StaticResource InkBrush}" />
+                <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Padding" Value="8,6" />
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="TextBox">
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
+                                <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsFocused" Value="True">
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style TargetType="CheckBox">
+                <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="CheckBox">
+                            <Border x:Name="Bd" Width="30" Height="26" CornerRadius="6"
+                                    Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" TextElement.Foreground="{TemplateBinding Foreground}" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentBrush}" />
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                    <Setter Property="Foreground" Value="{StaticResource OnAccentBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style TargetType="ComboBoxItem">
+                <Setter Property="Padding" Value="8,6" />
+                <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ComboBoxItem">
+                            <Border x:Name="Bd" Background="Transparent" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsHighlighted" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style TargetType="Slider">
+                <Setter Property="Height" Value="24" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Slider">
+                            <Grid VerticalAlignment="Center">
+                                <Border Height="4" Background="{StaticResource LineBrush}" CornerRadius="2" VerticalAlignment="Center" />
+                                <Track x:Name="PART_Track">
+                                    <Track.DecreaseRepeatButton>
+                                        <RepeatButton Command="Slider.DecreaseLarge" Background="Transparent" BorderThickness="0">
+                                            <RepeatButton.Template>
+                                                <ControlTemplate TargetType="RepeatButton">
+                                                    <Border Height="4" Background="{StaticResource AccentBrush}" CornerRadius="2" VerticalAlignment="Center" />
+                                                </ControlTemplate>
+                                            </RepeatButton.Template>
+                                        </RepeatButton>
+                                    </Track.DecreaseRepeatButton>
+                                    <Track.IncreaseRepeatButton>
+                                        <RepeatButton Command="Slider.IncreaseLarge" Background="Transparent" BorderThickness="0" Opacity="0" />
+                                    </Track.IncreaseRepeatButton>
+                                    <Track.Thumb>
+                                        <Thumb Width="16" Height="16">
+                                            <Thumb.Template>
+                                                <ControlTemplate TargetType="Thumb">
+                                                    <Ellipse Fill="{StaticResource AccentBrush}" />
+                                                </ControlTemplate>
+                                            </Thumb.Template>
+                                        </Thumb>
+                                    </Track.Thumb>
+                                </Track>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- ===================== Layers list ===================== -->
+            <Style TargetType="ListBox">
+                <Setter Property="Background" Value="{StaticResource FieldBrush}" />
+                <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Padding" Value="4" />
+            </Style>
+            <Style TargetType="ListBoxItem">
+                <Setter Property="Padding" Value="8,7" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Foreground" Value="{StaticResource InkBrush}" />
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="FontSize" Value="12.5" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ListBoxItem">
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentBrush}" />
+                                    <Setter Property="Foreground" Value="{StaticResource OnAccentBrush}" />
+                                </Trigger>
+                                <MultiTrigger>
+                                    <MultiTrigger.Conditions>
+                                        <Condition Property="IsMouseOver" Value="True" />
+                                        <Condition Property="IsSelected" Value="False" />
+                                    </MultiTrigger.Conditions>
+                                    <Setter TargetName="Bd" Property="Background" Value="#282A2D" />
+                                </MultiTrigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
         </ResourceDictionary>
     </Window.Resources>
 
-    <Grid Margin="20">
+    <Grid Margin="18,16,18,18">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="260" />
-        </Grid.ColumnDefinitions>
 
-        <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Text="PRINT TEMPLATE EDITOR"
-                   FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,12" />
+        <!-- ================= Top bar: breadcrumbs + template switcher ================= -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
 
-        <!-- PreviewImage and ElementsCanvas share the same size/position, so
-             a click's Canvas coordinate maps 1:1 to a pixel in the rendered
-             preview: no extra scaling math needed to translate between them. -->
-        <Border Grid.Row="1" Grid.Column="0" Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
-                HorizontalAlignment="Center" VerticalAlignment="Center">
-            <Grid x:Name="PreviewHost">
-                <Image x:Name="PreviewImage" Stretch="Fill" />
-                <Canvas x:Name="ElementsCanvas" Background="Transparent" />
-            </Grid>
-        </Border>
+            <TextBlock Grid.Column="0" Style="{StaticResource BreadcrumbLink}" HorizontalAlignment="Left" VerticalAlignment="Center"
+                       MouseLeftButtonDown="ScreenEditorLink_MouseLeftButtonDown">
+                <Run Text="&lt; " /><Run Text="Screen Editor" />
+            </TextBlock>
 
-        <StackPanel Grid.Row="1" Grid.Column="1" Margin="16,0,0,0">
-            <TextBlock Text="Add element" Style="{StaticResource EditorSectionHeader}" Margin="0,0,0,6" />
-            <WrapPanel>
-                <Button x:Name="AddTextButton" Content="+ Text" Padding="10,6" Margin="0,0,8,6" Click="AddTextButton_Click" />
-                <Button x:Name="AddLogoButton" Content="+ Logo" Padding="10,6" Margin="0,0,8,6" Click="AddLogoButton_Click" />
-                <Button x:Name="AddImageButton" Content="+ Image" Padding="10,6" Margin="0,0,8,6" Click="AddImageButton_Click" />
-                <Button x:Name="AddRectangleButton" Content="+ Rectangle" Padding="10,6" Margin="0,0,8,6" Click="AddRectangleButton_Click" />
-                <Button x:Name="AddEllipseButton" Content="+ Ellipse" Padding="10,6" Margin="0,0,8,6" Click="AddEllipseButton_Click" />
-                <Button x:Name="AddQrCodeButton" Content="+ QR Code" Padding="10,6" Margin="0,0,8,6" Click="AddQrCodeButton_Click" />
-                <Button x:Name="AddSessionDataButton" Content="+ Session Data" Padding="10,6" Margin="0,0,8,6" Click="AddSessionDataButton_Click" />
-                <Button x:Name="AddPhotoSlotButton" Content="+ Photo Slot" Padding="10,6" Margin="0,0,8,6" Click="AddPhotoSlotButton_Click" />
-            </WrapPanel>
-
-            <TextBlock Text="Layers" Style="{StaticResource EditorSectionHeader}" />
-            <ListBox x:Name="LayerListBox" Height="90" SelectionChanged="LayerListBox_SelectionChanged" />
-            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                <Button x:Name="MoveLayerUpButton" Content="Move up" Padding="8,4" Margin="0,0,8,0" IsEnabled="False" Click="MoveLayerUpButton_Click" />
-                <Button x:Name="MoveLayerDownButton" Content="Move down" Padding="8,4" IsEnabled="False" Click="MoveLayerDownButton_Click" />
-            </StackPanel>
-            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                <Button x:Name="BringToFrontButton" Content="Bring to front" Padding="8,4" Margin="0,0,8,0" IsEnabled="False" Click="BringToFrontButton_Click" />
-                <Button x:Name="SendToBackButton" Content="Send to back" Padding="8,4" IsEnabled="False" Click="SendToBackButton_Click" />
-            </StackPanel>
-
-            <TextBlock Text="Align to canvas" Style="{StaticResource EditorSectionHeader}" />
-            <StackPanel Orientation="Horizontal">
-                <Button x:Name="AlignLeftButton" Content="Left" Padding="8,4" Margin="0,0,8,0" IsEnabled="False" Click="AlignLeftButton_Click" />
-                <Button x:Name="AlignCenterHButton" Content="Center" Padding="8,4" Margin="0,0,8,0" IsEnabled="False" Click="AlignCenterHButton_Click" />
-                <Button x:Name="AlignRightButton" Content="Right" Padding="8,4" IsEnabled="False" Click="AlignRightButton_Click" />
-            </StackPanel>
-            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                <Button x:Name="AlignTopButton" Content="Top" Padding="8,4" Margin="0,0,8,0" IsEnabled="False" Click="AlignTopButton_Click" />
-                <Button x:Name="AlignCenterVButton" Content="Middle" Padding="8,4" Margin="0,0,8,0" IsEnabled="False" Click="AlignCenterVButton_Click" />
-                <Button x:Name="AlignBottomButton" Content="Bottom" Padding="8,4" IsEnabled="False" Click="AlignBottomButton_Click" />
-            </StackPanel>
-
-            <TextBlock Text="Selected element" Style="{StaticResource EditorSectionHeader}" />
-            <TextBlock x:Name="NoSelectionText" Text="Tap an element on the preview to edit it." Style="{StaticResource EditorLabel}"
-                       Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
-
-            <StackPanel x:Name="PositionSizePanel" Visibility="Collapsed">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition />
-                        <RowDefinition />
-                    </Grid.RowDefinitions>
-                    <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,4,0">
-                        <TextBlock Text="X (px)" Style="{StaticResource EditorLabel}" />
-                        <TextBox x:Name="ElementXBox" TextChanged="ElementXBox_TextChanged" />
+            <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                <TextBlock Text="PRINT LAYOUT EDITOR" FontSize="12.5" FontWeight="SemiBold" FontFamily="Segoe UI"
+                           Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Center" />
+                <!-- Template is chrome only (a ContentPresenter); the actual
+                     Star/Name/Status/Chevron row lives in Content below, in the
+                     page's own namescope, so TemplateNameText/FavoriteStar/
+                     TemplateStatusText are reachable as code-behind fields.
+                     Elements named inside a ControlTemplate are not: they live in
+                     the template's own separate NameScope instead. -->
+                <ToggleButton x:Name="TemplateSwitcherToggle" Margin="0,6,0,0" Cursor="Hand" Checked="TemplateSwitcherToggle_Checked">
+                    <ToggleButton.Template>
+                        <ControlTemplate TargetType="ToggleButton">
+                            <Border Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="17" Padding="14,7">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                        </ControlTemplate>
+                    </ToggleButton.Template>
+                    <StackPanel Orientation="Horizontal">
+                        <Path x:Name="FavoriteStar" Data="{StaticResource IconStar}" Stretch="Uniform" Width="14" Height="14" Margin="0,0,8,0"
+                              Fill="Transparent" Stroke="{StaticResource AccentBrush}" StrokeThickness="1.3" StrokeLineJoin="Round" />
+                        <TextBlock x:Name="TemplateNameText" Text="Live Setup" FontFamily="Segoe UI" FontSize="13.5" FontWeight="SemiBold"
+                                   Foreground="{StaticResource InkBrush}" VerticalAlignment="Center" />
+                        <TextBlock x:Name="TemplateStatusText" Text=" &#183; Saved" FontFamily="Segoe UI" FontSize="12"
+                                   Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" Margin="6,0,0,0" />
+                        <Path Data="{StaticResource IconChevronDown}" Stretch="Uniform" Width="13" Height="13" Margin="8,0,0,0"
+                              Stroke="{StaticResource MutedBrush}" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" VerticalAlignment="Center" />
                     </StackPanel>
-                    <StackPanel Grid.Row="0" Grid.Column="1" Margin="4,0,0,0">
-                        <TextBlock Text="Y (px)" Style="{StaticResource EditorLabel}" />
-                        <TextBox x:Name="ElementYBox" TextChanged="ElementYBox_TextChanged" />
-                    </StackPanel>
-                    <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,4,0">
-                        <TextBlock Text="Width (px)" Style="{StaticResource EditorLabel}" />
-                        <TextBox x:Name="ElementWidthBox" TextChanged="ElementWidthBox_TextChanged" />
-                    </StackPanel>
-                    <StackPanel Grid.Row="1" Grid.Column="1" Margin="4,0,0,0">
-                        <TextBlock Text="Height (px)" Style="{StaticResource EditorLabel}" />
-                        <TextBox x:Name="ElementHeightBox" TextChanged="ElementHeightBox_TextChanged" />
-                    </StackPanel>
+                </ToggleButton>
+
+                <Popup x:Name="TemplateSwitcherPopup" PlacementTarget="{Binding ElementName=TemplateSwitcherToggle}"
+                       Placement="Bottom" StaysOpen="False" AllowsTransparency="True"
+                       IsOpen="{Binding IsChecked, ElementName=TemplateSwitcherToggle, Mode=TwoWay}">
+                    <Border Width="440" Background="#1B1C1F" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" CornerRadius="12"
+                            Margin="0,6,0,0">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="28" ShadowDepth="8" Opacity="0.5" Color="Black" />
+                        </Border.Effect>
+                        <StackPanel>
+                            <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="14,12">
+                                <TextBlock Text="Saved templates" FontFamily="Segoe UI" FontSize="12.5" FontWeight="Bold"
+                                           Foreground="{StaticResource MutedBrush}" />
+                            </Border>
+                            <ScrollViewer MaxHeight="340" VerticalScrollBarVisibility="Auto">
+                                <StackPanel x:Name="TemplateListPanel" Margin="6" />
+                            </ScrollViewer>
+                            <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="14,10">
+                                <TextBlock Text="Starred templates are what guests can pick when &quot;Choose Template&quot; is on."
+                                           FontFamily="Segoe UI" FontSize="11.5" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                </Popup>
+            </StackPanel>
+
+            <TextBlock Grid.Column="2" Style="{StaticResource BreadcrumbLink}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                       MouseLeftButtonDown="GeneralLink_MouseLeftButtonDown">
+                <Run Text="General" /><Run Text=" &gt;" />
+            </TextBlock>
+        </Grid>
+
+        <!-- ================= Toolbar ================= -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,14,0,0">
+            <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,1" Padding="0,6">
+                <StackPanel Orientation="Horizontal">
+                    <Button x:Name="NewTemplateButton" Style="{StaticResource ToolButton}" Click="NewTemplateButton_Click">
+                        <StackPanel>
+                            <Path Data="{StaticResource IconPlus}" Stretch="Uniform" Width="19" Height="19" HorizontalAlignment="Center"
+                                  Stroke="{StaticResource InkBrush}" StrokeThickness="1.6" StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            <TextBlock Text="New Template" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="SaveAsNewButton" Style="{StaticResource ToolButton}" Margin="4,0,0,0" Click="SaveAsNewButton_Click">
+                        <StackPanel>
+                            <Path Data="{StaticResource IconSaveAs}" Stretch="Uniform" Width="19" Height="19" HorizontalAlignment="Center"
+                                  Stroke="{StaticResource InkBrush}" StrokeThickness="1.5" StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            <TextBlock Text="Save as New" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="DeleteTemplateButton" Style="{StaticResource ToolButton}" Margin="4,0,0,0" IsEnabled="False" Click="DeleteTemplateButton_Click">
+                        <StackPanel>
+                            <Path Data="{StaticResource IconTrash}" Stretch="Uniform" Width="19" Height="19" HorizontalAlignment="Center"
+                                  Stroke="{StaticResource DangerBrush}" StrokeThickness="1.6" StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            <TextBlock Text="Delete Template" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource DangerBrush}" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+
+        <!-- ================= Main body ================= -->
+        <Grid Grid.Row="2" Margin="0,14,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="230" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="270" />
+            </Grid.ColumnDefinitions>
+
+            <!-- === Left: Add panel === -->
+            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" Margin="0,0,14,0">
+                <StackPanel>
+                    <TextBlock Text="Add" Style="{StaticResource EditorSectionHeader}" Margin="0,0,0,4" />
+
+                    <Button x:Name="AddPhotoSlotButton" Style="{StaticResource AddRowButton}" Click="AddPhotoSlotButton_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <Border Width="26" Height="26" CornerRadius="7" Background="{StaticResource FieldBrush}" Margin="0,0,10,0">
+                                <Path Data="{StaticResource IconCamera}" Stretch="Uniform" Width="14" Height="14"
+                                      Stroke="{StaticResource InkBrush}" StrokeThickness="1.6" StrokeLineJoin="Round" />
+                            </Border>
+                            <TextBlock Text="Photo From Booth" FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{StaticResource InkBrush}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button x:Name="AddImageButton" Style="{StaticResource AddRowButton}" Click="AddImageButton_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <Border Width="26" Height="26" CornerRadius="7" Background="{StaticResource FieldBrush}" Margin="0,0,10,0">
+                                <Path Data="{StaticResource IconImage}" Stretch="Uniform" Width="14" Height="14"
+                                      Stroke="{StaticResource InkBrush}" StrokeThickness="1.5" StrokeLineJoin="Round" />
+                            </Border>
+                            <TextBlock Text="Image" FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{StaticResource InkBrush}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button x:Name="AddLogoButton" Style="{StaticResource AddRowButton}" Click="AddLogoButton_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <Border Width="26" Height="26" CornerRadius="7" Background="{StaticResource FieldBrush}" Margin="0,0,10,0">
+                                <Path Data="{StaticResource IconImage}" Stretch="Uniform" Width="14" Height="14"
+                                      Stroke="{StaticResource InkBrush}" StrokeThickness="1.5" StrokeLineJoin="Round" />
+                            </Border>
+                            <TextBlock Text="Logo" FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{StaticResource InkBrush}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button x:Name="AddTextButton" Style="{StaticResource AddRowButton}" Click="AddTextButton_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <Border Width="26" Height="26" CornerRadius="7" Background="{StaticResource FieldBrush}" Margin="0,0,10,0">
+                                <Path Data="{StaticResource IconText}" Stretch="Uniform" Width="13" Height="13"
+                                      Stroke="{StaticResource InkBrush}" StrokeThickness="1.7" StrokeStartLineCap="Round" />
+                            </Border>
+                            <TextBlock Text="Text" FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{StaticResource InkBrush}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <TextBlock Text="SHAPE" FontFamily="Segoe UI" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource MutedBrush}" Margin="10,10,0,2" />
+                    <Button x:Name="AddRectangleButton" Style="{StaticResource AddRowButton}" Click="AddRectangleButton_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <Border Width="26" Height="26" CornerRadius="7" Background="{StaticResource FieldBrush}" Margin="0,0,10,0">
+                                <Path Data="{StaticResource IconRectangle}" Stretch="Uniform" Width="13" Height="13" Stroke="{StaticResource InkBrush}" StrokeThickness="1.6" />
+                            </Border>
+                            <TextBlock Text="Rectangle" FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{StaticResource InkBrush}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="AddEllipseButton" Style="{StaticResource AddRowButton}" Click="AddEllipseButton_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <Border Width="26" Height="26" CornerRadius="7" Background="{StaticResource FieldBrush}" Margin="0,0,10,0">
+                                <Path Data="{StaticResource IconEllipse}" Stretch="Uniform" Width="13" Height="13" Stroke="{StaticResource InkBrush}" StrokeThickness="1.6" />
+                            </Border>
+                            <TextBlock Text="Ellipse" FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{StaticResource InkBrush}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button x:Name="AddBackgroundColorButton" Style="{StaticResource AddRowButton}" Margin="0,6,0,0" Click="AddBackgroundColorButton_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <Border Width="26" Height="26" CornerRadius="7" Background="{StaticResource FieldBrush}" Margin="0,0,10,0">
+                                <Path Data="{StaticResource IconBackgroundColor}" Stretch="Uniform" Width="14" Height="14"
+                                      Stroke="{StaticResource InkBrush}" StrokeThickness="1.5" StrokeLineJoin="Round" />
+                            </Border>
+                            <TextBlock Text="Background Color" FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{StaticResource InkBrush}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button x:Name="AddQrCodeButton" Style="{StaticResource AddRowButton}" Click="AddQrCodeButton_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <Border Width="26" Height="26" CornerRadius="7" Background="{StaticResource FieldBrush}" Margin="0,0,10,0">
+                                <Path Data="{StaticResource IconQrCode}" Stretch="Uniform" Width="14" Height="14" Stroke="{StaticResource InkBrush}" StrokeThickness="1.5" />
+                            </Border>
+                            <TextBlock Text="QR Code" FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{StaticResource InkBrush}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button x:Name="AddSessionDataButton" Style="{StaticResource AddRowButton}" Click="AddSessionDataButton_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <Border Width="26" Height="26" CornerRadius="7" Background="{StaticResource FieldBrush}" Margin="0,0,10,0">
+                                <Path Data="{StaticResource IconSessionData}" Stretch="Uniform" Width="14" Height="14"
+                                      Stroke="{StaticResource InkBrush}" StrokeThickness="1.6" StrokeLineJoin="Round" StrokeStartLineCap="Round" />
+                            </Border>
+                            <TextBlock Text="Session Data" FontFamily="Segoe UI" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{StaticResource InkBrush}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <TextBlock Text="Canvas" Style="{StaticResource EditorSectionHeader}" />
+                    <TextBlock x:Name="CanvasInfoText" Style="{StaticResource EditorLabel}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- === Center: preview canvas === -->
+            <!-- PreviewImage and ElementsCanvas share the same size/position, so
+                 a click's Canvas coordinate maps 1:1 to a pixel in the rendered
+                 preview: no extra scaling math needed to translate between them. -->
+            <Border Grid.Column="1" Background="White" BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="24" ShadowDepth="6" Opacity="0.4" Color="Black" />
+                </Border.Effect>
+                <Grid x:Name="PreviewHost">
+                    <Image x:Name="PreviewImage" Stretch="Fill" />
+                    <Canvas x:Name="ElementsCanvas" Background="Transparent" />
                 </Grid>
-            </StackPanel>
+            </Border>
 
-            <StackPanel x:Name="TextPropertiesPanel" Visibility="Collapsed">
-                <TextBlock Text="Text" Style="{StaticResource EditorLabel}" />
-                <TextBox x:Name="ElementTextBox" TextChanged="ElementTextBox_TextChanged" />
+            <!-- === Right: Selected / Alignment / Layers === -->
+            <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" Margin="14,0,0,0">
+                <StackPanel>
+                    <TextBlock Text="Selected" Style="{StaticResource EditorSectionHeader}" Margin="0,0,0,6" />
+                    <TextBlock x:Name="NoSelectionText" Text="Tap an element on the preview or a layer to edit it." Style="{StaticResource EditorLabel}"
+                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
 
-                <TextBlock Text="Font size" Style="{StaticResource EditorLabel}" />
-                <Slider x:Name="FontSizeSlider" Minimum="0.02" Maximum="0.15" ValueChanged="FontSizeSlider_ValueChanged" />
+                    <StackPanel x:Name="PositionSizePanel" Visibility="Collapsed">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition />
+                                <RowDefinition />
+                            </Grid.RowDefinitions>
+                            <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,4,0">
+                                <TextBlock Text="X (px)" Style="{StaticResource EditorLabel}" Margin="0,0,0,2" />
+                                <TextBox x:Name="ElementXBox" TextChanged="ElementXBox_TextChanged" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="0" Grid.Column="1" Margin="4,0,0,0">
+                                <TextBlock Text="Y (px)" Style="{StaticResource EditorLabel}" Margin="0,0,0,2" />
+                                <TextBox x:Name="ElementYBox" TextChanged="ElementYBox_TextChanged" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,8,4,0">
+                                <TextBlock Text="Width (px)" Style="{StaticResource EditorLabel}" Margin="0,0,0,2" />
+                                <TextBox x:Name="ElementWidthBox" TextChanged="ElementWidthBox_TextChanged" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="1" Grid.Column="1" Margin="4,8,0,0">
+                                <TextBlock Text="Height (px)" Style="{StaticResource EditorLabel}" Margin="0,0,0,2" />
+                                <TextBox x:Name="ElementHeightBox" TextChanged="ElementHeightBox_TextChanged" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
 
-                <CheckBox x:Name="BoldCheckBox" Content="Bold" Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" Click="BoldCheckBox_Click" />
+                    <TextBlock Text="Alignment" Style="{StaticResource EditorSectionHeader}" />
+                    <UniformGrid Rows="2" Columns="3">
+                        <Button x:Name="AlignLeftButton" Style="{StaticResource IconActionButton}" Margin="0,0,4,4" IsEnabled="False" ToolTip="Align left" Click="AlignLeftButton_Click">
+                            <Path Data="{StaticResource IconAlignLeft}" Stretch="Uniform" Width="15" Height="15" Stroke="{StaticResource InkBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        </Button>
+                        <Button x:Name="AlignCenterHButton" Style="{StaticResource IconActionButton}" Margin="0,0,4,4" IsEnabled="False" ToolTip="Center horizontally" Click="AlignCenterHButton_Click">
+                            <Path Data="{StaticResource IconAlignCenterH}" Stretch="Uniform" Width="15" Height="15" Stroke="{StaticResource InkBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        </Button>
+                        <Button x:Name="AlignRightButton" Style="{StaticResource IconActionButton}" Margin="0,0,0,4" IsEnabled="False" ToolTip="Align right" Click="AlignRightButton_Click">
+                            <Path Data="{StaticResource IconAlignRight}" Stretch="Uniform" Width="15" Height="15" Stroke="{StaticResource InkBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        </Button>
+                        <Button x:Name="AlignTopButton" Style="{StaticResource IconActionButton}" Margin="0,0,4,0" IsEnabled="False" ToolTip="Align top" Click="AlignTopButton_Click">
+                            <Path Data="{StaticResource IconAlignTop}" Stretch="Uniform" Width="15" Height="15" Stroke="{StaticResource InkBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        </Button>
+                        <Button x:Name="AlignCenterVButton" Style="{StaticResource IconActionButton}" Margin="0,0,4,0" IsEnabled="False" ToolTip="Center vertically" Click="AlignCenterVButton_Click">
+                            <Path Data="{StaticResource IconAlignCenterV}" Stretch="Uniform" Width="15" Height="15" Stroke="{StaticResource InkBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        </Button>
+                        <Button x:Name="AlignBottomButton" Style="{StaticResource IconActionButton}" IsEnabled="False" ToolTip="Align bottom" Click="AlignBottomButton_Click">
+                            <Path Data="{StaticResource IconAlignBottom}" Stretch="Uniform" Width="15" Height="15" Stroke="{StaticResource InkBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                        </Button>
+                    </UniformGrid>
 
-                <TextBlock Text="Color (hex)" Style="{StaticResource EditorLabel}" />
-                <TextBox x:Name="ElementColorBox" TextChanged="ElementColorBox_TextChanged" />
-            </StackPanel>
+                    <StackPanel x:Name="TextPropertiesPanel" Visibility="Collapsed">
+                        <TextBlock Text="Text" Style="{StaticResource EditorSectionHeader}" />
+                        <TextBox x:Name="ElementTextBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="52" TextChanged="ElementTextBox_TextChanged" />
+                        <TextBlock Text="Font size" Style="{StaticResource EditorLabel}" />
+                        <Slider x:Name="FontSizeSlider" Minimum="0.02" Maximum="0.15" ValueChanged="FontSizeSlider_ValueChanged" />
+                        <CheckBox x:Name="BoldCheckBox" Content="B" FontWeight="Bold" HorizontalAlignment="Left" Margin="0,8,0,0" ToolTip="Bold" Click="BoldCheckBox_Click" />
+                        <TextBlock Text="Color (hex)" Style="{StaticResource EditorLabel}" />
+                        <TextBox x:Name="ElementColorBox" TextChanged="ElementColorBox_TextChanged" />
+                    </StackPanel>
 
-            <StackPanel x:Name="LogoPropertiesPanel" Visibility="Collapsed">
-                <TextBlock x:Name="ImageKindLabel" Text="Logo image" Style="{StaticResource EditorLabel}" />
-                <Button x:Name="ChangeLogoImageButton" Content="Browse..." Padding="8,4" HorizontalAlignment="Left" Click="ChangeLogoImageButton_Click" />
-            </StackPanel>
+                    <StackPanel x:Name="LogoPropertiesPanel" Visibility="Collapsed">
+                        <TextBlock x:Name="ImageKindLabel" Text="Logo image" Style="{StaticResource EditorSectionHeader}" />
+                        <Button x:Name="ChangeLogoImageButton" Content="Browse..." Padding="14,7" HorizontalAlignment="Left" Click="ChangeLogoImageButton_Click" />
+                    </StackPanel>
 
-            <StackPanel x:Name="ShapePropertiesPanel" Visibility="Collapsed">
-                <TextBlock Text="Fill color (hex)" Style="{StaticResource EditorLabel}" />
-                <TextBox x:Name="ShapeColorBox" TextChanged="ShapeColorBox_TextChanged" />
-            </StackPanel>
+                    <StackPanel x:Name="ShapePropertiesPanel" Visibility="Collapsed">
+                        <TextBlock Text="Fill color (hex)" Style="{StaticResource EditorSectionHeader}" />
+                        <TextBox x:Name="ShapeColorBox" TextChanged="ShapeColorBox_TextChanged" />
+                    </StackPanel>
 
-            <StackPanel x:Name="QrCodePropertiesPanel" Visibility="Collapsed">
-                <TextBlock Text="Renders the guest's own photo download link once their photo has uploaded. Blank if printing happens before the upload finishes."
-                           Style="{StaticResource EditorLabel}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
-            </StackPanel>
+                    <StackPanel x:Name="QrCodePropertiesPanel" Visibility="Collapsed">
+                        <TextBlock Text="QR Code" Style="{StaticResource EditorSectionHeader}" />
+                        <TextBlock Text="Renders the guest's own photo download link once their photo has uploaded. Blank if printing happens before the upload finishes."
+                                   Style="{StaticResource EditorLabel}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                    </StackPanel>
 
-            <StackPanel x:Name="SessionDataPropertiesPanel" Visibility="Collapsed">
-                <TextBlock Text="Field" Style="{StaticResource EditorLabel}" />
-                <ComboBox x:Name="SessionDataFieldCombo" SelectionChanged="SessionDataFieldCombo_SelectionChanged">
-                    <ComboBoxItem Content="Event Name" Tag="EventName" />
-                    <ComboBoxItem Content="Date" Tag="Date" />
-                    <ComboBoxItem Content="Time" Tag="Time" />
-                </ComboBox>
-            </StackPanel>
+                    <StackPanel x:Name="SessionDataPropertiesPanel" Visibility="Collapsed">
+                        <TextBlock Text="Field" Style="{StaticResource EditorSectionHeader}" />
+                        <ComboBox x:Name="SessionDataFieldCombo" SelectionChanged="SessionDataFieldCombo_SelectionChanged">
+                            <ComboBoxItem Content="Event Name" Tag="EventName" />
+                            <ComboBoxItem Content="Date" Tag="Date" />
+                            <ComboBoxItem Content="Time" Tag="Time" />
+                        </ComboBox>
+                    </StackPanel>
 
-            <StackPanel x:Name="PhotoSlotPropertiesPanel" Visibility="Collapsed">
-                <TextBlock x:Name="PhotoSlotIndexText" Style="{StaticResource EditorLabel}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
-            </StackPanel>
+                    <StackPanel x:Name="PhotoSlotPropertiesPanel" Visibility="Collapsed">
+                        <TextBlock Text="Photo From Booth" Style="{StaticResource EditorSectionHeader}" />
+                        <TextBlock x:Name="PhotoSlotIndexText" Style="{StaticResource EditorLabel}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                    </StackPanel>
 
-            <Button x:Name="DeleteSelectedButton" Content="Delete selected" Padding="10,6" Margin="0,16,0,0"
-                    HorizontalAlignment="Left" IsEnabled="False" Click="DeleteSelectedButton_Click" />
+                    <TextBlock Text="Layers" Style="{StaticResource EditorSectionHeader}" />
+                    <ListBox x:Name="LayerListBox" Height="150" SelectionChanged="LayerListBox_SelectionChanged" />
+                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                        <Button x:Name="MoveLayerUpButton" Content="Move up" Padding="10,6" Margin="0,0,6,0" IsEnabled="False" Click="MoveLayerUpButton_Click" />
+                        <Button x:Name="MoveLayerDownButton" Content="Move down" Padding="10,6" IsEnabled="False" Click="MoveLayerDownButton_Click" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                        <Button x:Name="BringToFrontButton" Content="Bring to front" Padding="10,6" Margin="0,0,6,0" IsEnabled="False" Click="BringToFrontButton_Click" />
+                        <Button x:Name="SendToBackButton" Content="Send to back" Padding="10,6" IsEnabled="False" Click="SendToBackButton_Click" />
+                    </StackPanel>
 
+                    <Button x:Name="DeleteSelectedButton" Style="{StaticResource DangerButton}" Padding="10,7" Margin="0,16,0,0"
+                            HorizontalAlignment="Left" IsEnabled="False" Click="DeleteSelectedButton_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="{StaticResource IconTrash}" Stretch="Uniform" Width="13" Height="13" Margin="0,0,7,0"
+                                  Stroke="{StaticResource DangerBrush}" StrokeThickness="1.6" StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round" />
+                            <TextBlock Text="Delete selected" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <!-- ================= Bottom bar ================= -->
+        <Grid Grid.Row="3" Margin="0,14,0,0">
             <TextBlock x:Name="EditorStatusText" Style="{StaticResource EditorLabel}" Foreground="{StaticResource MutedBrush}"
-                       TextWrapping="Wrap" Margin="0,16,0,0" />
-        </StackPanel>
-
-        <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
-            <Button x:Name="CancelButton" Content="Cancel" Padding="16,8" Margin="0,0,8,0" Click="CancelButton_Click" />
-            <Button x:Name="SaveButton" Content="Save" Padding="16,8" Click="SaveButton_Click" />
-        </StackPanel>
+                       TextWrapping="Wrap" VerticalAlignment="Center" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="CancelButton" Content="Cancel" Padding="18,9" Margin="0,0,8,0" Click="CancelButton_Click" />
+                <Button x:Name="SaveButton" Content="Save" Style="{StaticResource PrimaryButton}" Padding="22,9" Click="SaveButton_Click" />
+            </StackPanel>
+        </Grid>
     </Grid>
 </Window>

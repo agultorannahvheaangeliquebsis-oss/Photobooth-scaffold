@@ -42,7 +42,25 @@ public partial class ScreenTemplateEditorWindow : Window
     /// PoseStripRadio_Click) -- booth-wide, not per-tab, same as the underlying
     /// Location columns (see LocationRepository.UpdateScreenSettingsAsync).</summary>
     private ScreenSettings _screenSettings;
-    private bool _suppressScreenSettingsEvents;
+
+    /// <summary>Starts true, not false: a Slider with Minimum/Maximum set in
+    /// XAML (UnlockButtonOpacitySlider, FinalScreenTimeoutSlider) coerces and
+    /// raises ValueChanged during InitializeComponent itself -- before this
+    /// constructor's own body (and LoadScreenSettingsControls) ever runs --
+    /// which previously called into e.g. FinalScreenTimeoutSlider_ValueChanged
+    /// while sibling controls like FinalScreenTimeoutBox were still null,
+    /// crashing the window on every open. Defaulting true suppresses that
+    /// premature firing the same way LoadScreenSettingsControls's own
+    /// true/finally-false bracket suppresses its later, intentional one.</summary>
+    private bool _suppressScreenSettingsEvents = true;
+
+    /// <summary>Set when a breadcrumb link (Print Layout / Virtual Attendant /
+    /// Countdown settings / Sharing Settings) is clicked -- AdminWindow checks
+    /// this after ShowDialog() returns and either opens the separate
+    /// PrintTemplateEditorWindow ("PrintLayout") or flips to the named
+    /// AdminWindow section (any other value, passed straight to ShowSection),
+    /// since none of these live inside this editor window itself.</summary>
+    public string? RequestedNavigation { get; private set; }
 
     /// <summary>Working element lists, one per screen -- populated from the
     /// existing rows at load, mutated in place as the admin edits, and flattened
@@ -111,9 +129,42 @@ public partial class ScreenTemplateEditorWindow : Window
         _suppressScreenSettingsEvents = true;
         try
         {
+            // Welcome
             BoothIconsEnabledCheckBox.IsChecked = _screenSettings.BoothIconsEnabled;
+            BoothIconLabelsEnabledCheckBox.IsChecked = _screenSettings.BoothIconLabelsEnabled;
+            WelcomeShowLiveViewCheckBox.IsChecked = _screenSettings.WelcomeShowLiveView;
+            LiveTemplatePreviewCheckBox.IsChecked = _screenSettings.LiveTemplatePreview;
+            StretchLiveViewCombo.SelectedIndex = _screenSettings.StretchLiveView switch
+            {
+                "Fit Screen" => 1,
+                "Stretch To Fill" => 2,
+                _ => 0,
+            };
+            BrowseButtonEnabledCheckBox.IsChecked = _screenSettings.BrowseButtonEnabled;
+            ChooseTemplateEnabledCheckBox.IsChecked = _screenSettings.ChooseTemplateEnabled;
+            StartScreenVideoNameText.Text = _screenSettings.StartScreenVideoPath is string videoPath
+                ? IoPath.GetFileName(videoPath)
+                : "No video selected.";
+            UnlockButtonOpacitySlider.Value = _screenSettings.UnlockButtonOpacityPercent;
+            UnlockButtonOpacityBox.Text = _screenSettings.UnlockButtonOpacityPercent.ToString();
+            SessionTriggerTouchScreenCheckBox.IsChecked = _screenSettings.SessionTriggerTouchScreen;
+            SessionTriggerF13CheckBox.IsChecked = _screenSettings.SessionTriggerF13;
+            SessionTriggerKeysCheckBox.IsChecked = _screenSettings.SessionTriggerKeys;
+            GuestQrCodeEnabledCheckBox.IsChecked = _screenSettings.GuestQrCodeEnabled;
+
+            // Capture
             ShowLiveViewCheckBox.IsChecked = _screenSettings.ShowLiveView;
+            CropLiveViewCheckBox.IsChecked = _screenSettings.CropLiveView;
             MirrorLiveViewCheckBox.IsChecked = _screenSettings.MirrorLiveView;
+            AutoTriggerCameraCheckBox.IsChecked = _screenSettings.AutoTriggerCamera;
+            FlashScreenWhiteCheckBox.IsChecked = _screenSettings.FlashScreenWhite;
+            ShowCancelButtonCheckBox.IsChecked = _screenSettings.ShowCancelButton;
+            CountdownColorBox.Text = _screenSettings.CountdownColorHex;
+            CountdownColorSwatch.Background = HexToBrush(_screenSettings.CountdownColorHex);
+            PhotoThumbnailsEnabledCheckBox.IsChecked = _screenSettings.PhotoThumbnailsEnabled;
+            SayCheeseImageNameText.Text = _screenSettings.SayCheeseImagePath is string sayCheesePath
+                ? IoPath.GetFileName(sayCheesePath)
+                : "No image selected.";
 
             RadioButton rotationRadio = _screenSettings.LiveViewRotation switch
             {
@@ -132,6 +183,21 @@ public partial class ScreenTemplateEditorWindow : Window
                 _ => PoseBottomRadio,
             };
             poseStripRadio.IsChecked = true;
+
+            // Sharing
+            SkipSharingScreenCheckBox.IsChecked = _screenSettings.SkipSharingScreen;
+            ShowDoneButtonCheckBox.IsChecked = _screenSettings.ShowDoneButton;
+            SharingIconsLocationCombo.SelectedIndex = _screenSettings.SharingIconsLocation switch
+            {
+                "Bottom Row" => 1,
+                "Grid" => 2,
+                _ => 0,
+            };
+            SharingTextLabelsEnabledCheckBox.IsChecked = _screenSettings.SharingTextLabelsEnabled;
+            FinalScreenTimeoutSlider.Value = _screenSettings.FinalScreenTimeoutSeconds;
+            FinalScreenTimeoutBox.Text = _screenSettings.FinalScreenTimeoutSeconds.ToString();
+            ShowOriginalPhotosCheckBox.IsChecked = _screenSettings.ShowOriginalPhotos;
+            ShowRetakeButtonCheckBox.IsChecked = _screenSettings.ShowRetakeButton;
         }
         finally
         {
@@ -149,9 +215,177 @@ public partial class ScreenTemplateEditorWindow : Window
         _screenSettings = _screenSettings with
         {
             BoothIconsEnabled = BoothIconsEnabledCheckBox.IsChecked == true,
+            BoothIconLabelsEnabled = BoothIconLabelsEnabledCheckBox.IsChecked == true,
+            WelcomeShowLiveView = WelcomeShowLiveViewCheckBox.IsChecked == true,
+            LiveTemplatePreview = LiveTemplatePreviewCheckBox.IsChecked == true,
+            BrowseButtonEnabled = BrowseButtonEnabledCheckBox.IsChecked == true,
+            ChooseTemplateEnabled = ChooseTemplateEnabledCheckBox.IsChecked == true,
+            SessionTriggerTouchScreen = SessionTriggerTouchScreenCheckBox.IsChecked == true,
+            SessionTriggerF13 = SessionTriggerF13CheckBox.IsChecked == true,
+            SessionTriggerKeys = SessionTriggerKeysCheckBox.IsChecked == true,
+            GuestQrCodeEnabled = GuestQrCodeEnabledCheckBox.IsChecked == true,
+
             ShowLiveView = ShowLiveViewCheckBox.IsChecked == true,
+            CropLiveView = CropLiveViewCheckBox.IsChecked == true,
             MirrorLiveView = MirrorLiveViewCheckBox.IsChecked == true,
+            AutoTriggerCamera = AutoTriggerCameraCheckBox.IsChecked == true,
+            FlashScreenWhite = FlashScreenWhiteCheckBox.IsChecked == true,
+            ShowCancelButton = ShowCancelButtonCheckBox.IsChecked == true,
+            PhotoThumbnailsEnabled = PhotoThumbnailsEnabledCheckBox.IsChecked == true,
+
+            SkipSharingScreen = SkipSharingScreenCheckBox.IsChecked == true,
+            ShowDoneButton = ShowDoneButtonCheckBox.IsChecked == true,
+            SharingTextLabelsEnabled = SharingTextLabelsEnabledCheckBox.IsChecked == true,
+            ShowOriginalPhotos = ShowOriginalPhotosCheckBox.IsChecked == true,
+            ShowRetakeButton = ShowRetakeButtonCheckBox.IsChecked == true,
         };
+    }
+
+    private void StretchLiveViewCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressScreenSettingsEvents || StretchLiveViewCombo.SelectedItem is not ComboBoxItem { Content: string text })
+        {
+            return;
+        }
+
+        _screenSettings = _screenSettings with { StretchLiveView = text };
+    }
+
+    private void SharingIconsLocationCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressScreenSettingsEvents || SharingIconsLocationCombo.SelectedItem is not ComboBoxItem { Content: string text })
+        {
+            return;
+        }
+
+        _screenSettings = _screenSettings with { SharingIconsLocation = text };
+    }
+
+    private void UnlockButtonOpacitySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressScreenSettingsEvents)
+        {
+            return;
+        }
+
+        int percent = (int)Math.Round(UnlockButtonOpacitySlider.Value);
+        _screenSettings = _screenSettings with { UnlockButtonOpacityPercent = percent };
+
+        _suppressScreenSettingsEvents = true;
+        UnlockButtonOpacityBox.Text = percent.ToString();
+        _suppressScreenSettingsEvents = false;
+    }
+
+    private void UnlockButtonOpacityBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressScreenSettingsEvents || !int.TryParse(UnlockButtonOpacityBox.Text, out int percent))
+        {
+            return;
+        }
+
+        percent = Math.Clamp(percent, 0, 100);
+        _screenSettings = _screenSettings with { UnlockButtonOpacityPercent = percent };
+
+        _suppressScreenSettingsEvents = true;
+        UnlockButtonOpacitySlider.Value = percent;
+        _suppressScreenSettingsEvents = false;
+    }
+
+    private void FinalScreenTimeoutSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_suppressScreenSettingsEvents)
+        {
+            return;
+        }
+
+        int seconds = (int)Math.Round(FinalScreenTimeoutSlider.Value);
+        _screenSettings = _screenSettings with { FinalScreenTimeoutSeconds = seconds };
+
+        _suppressScreenSettingsEvents = true;
+        FinalScreenTimeoutBox.Text = seconds.ToString();
+        _suppressScreenSettingsEvents = false;
+    }
+
+    private void FinalScreenTimeoutBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressScreenSettingsEvents || !int.TryParse(FinalScreenTimeoutBox.Text, out int seconds))
+        {
+            return;
+        }
+
+        seconds = Math.Clamp(seconds, 5, 120);
+        _screenSettings = _screenSettings with { FinalScreenTimeoutSeconds = seconds };
+
+        _suppressScreenSettingsEvents = true;
+        FinalScreenTimeoutSlider.Value = seconds;
+        _suppressScreenSettingsEvents = false;
+    }
+
+    private void CountdownColorBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressScreenSettingsEvents)
+        {
+            return;
+        }
+
+        _screenSettings = _screenSettings with { CountdownColorHex = CountdownColorBox.Text };
+        CountdownColorSwatch.Background = HexToBrush(CountdownColorBox.Text);
+    }
+
+    private void ChooseStartScreenVideoButton_Click(object sender, RoutedEventArgs e)
+    {
+        string? storedPath = PickAndStoreFile("Video files (*.mp4;*.wmv;*.avi)|*.mp4;*.wmv;*.avi", "Choose a start screen video", "ScreenVideos");
+        if (storedPath is null)
+        {
+            return;
+        }
+
+        _screenSettings = _screenSettings with { StartScreenVideoPath = storedPath };
+        StartScreenVideoNameText.Text = IoPath.GetFileName(storedPath);
+    }
+
+    private void ChooseSayCheeseImageButton_Click(object sender, RoutedEventArgs e)
+    {
+        string? storedPath = PickAndStoreImage();
+        if (storedPath is null)
+        {
+            return;
+        }
+
+        _screenSettings = _screenSettings with { SayCheeseImagePath = storedPath };
+        SayCheeseImageNameText.Text = IoPath.GetFileName(storedPath);
+    }
+
+    /// <summary>Closes this editor and tells AdminWindow to open the separate
+    /// Print Layout editor (PrintTemplateEditorWindow) right after -- the two
+    /// stay distinct windows/pages, this just chains them the way dslrBooth's
+    /// own breadcrumb does. In-progress design/settings edits are discarded,
+    /// same as clicking Cancel, since there's no way to save mid-navigation
+    /// without also changing the Save button's own meaning.</summary>
+    private void PrintLayoutLink_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => CloseAndNavigate("PrintLayout");
+
+    /// <summary>Chains to AdminWindow's own Virtual Attendant section, same
+    /// pattern as PrintLayoutLink above -- that section already has the real
+    /// Enabled/Style/Randomize-by-stage controls, this editor doesn't
+    /// duplicate them.</summary>
+    private void VirtualAttendantLink_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => CloseAndNavigate("VirtualAttendant");
+
+    /// <summary>Chains to AdminWindow's Capture Settings section, which owns
+    /// the countdown duration (CountdownSecondsBox) -- this editor's own
+    /// Countdown color field is the only countdown-related setting that
+    /// belongs to screen chrome rather than capture behavior.</summary>
+    private void CountdownSettingsLink_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => CloseAndNavigate("CaptureSettings");
+
+    /// <summary>Chains to AdminWindow's Sharing Settings section, which owns
+    /// the actual Email/SMS/Twitter/QR/Print channel toggles and delivery
+    /// config -- this editor's own Sharing tab only has screen-chrome
+    /// settings (Skip/Done/labels/timeout/etc).</summary>
+    private void SharingSettingsLink_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => CloseAndNavigate("SharingSettings");
+
+    private void CloseAndNavigate(string target)
+    {
+        RequestedNavigation = target;
+        DialogResult = false;
     }
 
     private void RotationRadio_Click(object sender, RoutedEventArgs e)
@@ -635,19 +869,25 @@ public partial class ScreenTemplateEditorWindow : Window
     /// <summary>Copies the chosen image into a local Assets/ScreenElements folder,
     /// same "own local copy, not a reference to wherever the admin picked it from"
     /// pattern PrintTemplateEditorWindow.PickAndStoreLogoImage already established.</summary>
-    private static string? PickAndStoreImage()
+    private static string? PickAndStoreImage() => PickAndStoreFile("Image files (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg", "Choose an image", "ScreenElements");
+
+    /// <summary>Shared by PickAndStoreImage above and the Welcome/Capture
+    /// settings' own Start screen video / Say Cheese image pickers -- same
+    /// "copy into a local Assets subfolder, don't just reference wherever the
+    /// admin picked it from" pattern, generalized past images-only.</summary>
+    private static string? PickAndStoreFile(string filter, string title, string subfolder)
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
-            Filter = "Image files (*.png;*.jpg;*.jpeg)|*.png;*.jpg;*.jpeg",
-            Title = "Choose an image",
+            Filter = filter,
+            Title = title,
         };
         if (dialog.ShowDialog() != true)
         {
             return null;
         }
 
-        string directory = IoPath.Combine(AppContext.BaseDirectory, "Assets", "ScreenElements");
+        string directory = IoPath.Combine(AppContext.BaseDirectory, "Assets", subfolder);
         Directory.CreateDirectory(directory);
         string storedFileName = $"{Guid.NewGuid():N}{IoPath.GetExtension(dialog.FileName)}";
         string storedPath = IoPath.Combine(directory, storedFileName);

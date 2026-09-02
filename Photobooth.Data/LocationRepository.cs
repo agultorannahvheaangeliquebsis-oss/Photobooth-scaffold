@@ -54,7 +54,15 @@ public class LocationRepository
                    EmailSmtpPasswordProtected, TwilioAccountSid, TwilioFromNumber, TwilioAuthTokenProtected,
                    CreatedAt,
                    IsLocked, RemoteControlEnabled,
-                   SlideshowEnabled, SlideshowIntervalSeconds, SlideshowTransition, SlideshowShowLogoOverlay, SlideshowShowQrOverlay
+                   SlideshowEnabled, SlideshowIntervalSeconds, SlideshowTransition, SlideshowShowLogoOverlay, SlideshowShowQrOverlay,
+                   BoothIconLabelsEnabled, WelcomeShowLiveView, LiveTemplatePreview, StretchLiveView,
+                   BrowseButtonEnabled, ChooseTemplateEnabled, StartScreenVideoPath, UnlockButtonOpacityPercent,
+                   SessionTriggerTouchScreen, SessionTriggerF13, SessionTriggerKeys, GuestQrCodeEnabled,
+                   CropLiveView, AutoTriggerCamera, FlashScreenWhite, ShowCancelButton,
+                   CountdownColorHex, PhotoThumbnailsEnabled, SayCheeseImagePath,
+                   SkipSharingScreen, ShowDoneButton, SharingIconsLocation, SharingTextLabelsEnabled,
+                   FinalScreenTimeoutSeconds, ShowOriginalPhotos, ShowRetakeButton,
+                   TwitterEnabled, PrintEnabled
             FROM Location ORDER BY LocationId;
             """,
             connection);
@@ -86,7 +94,35 @@ public class LocationRepository
                 new ScreenSettings(
                     reader.GetBoolean(21), reader.GetBoolean(22), reader.GetBoolean(23), reader.GetInt32(24),
                     reader.GetBoolean(25), reader.GetInt32(26), reader.IsDBNull(27) ? null : reader.GetString(27),
-                    reader.GetString(59)),
+                    reader.GetString(59))
+                {
+                    BoothIconLabelsEnabled = reader.GetBoolean(78),
+                    WelcomeShowLiveView = reader.GetBoolean(79),
+                    LiveTemplatePreview = reader.GetBoolean(80),
+                    StretchLiveView = reader.GetString(81),
+                    BrowseButtonEnabled = reader.GetBoolean(82),
+                    ChooseTemplateEnabled = reader.GetBoolean(83),
+                    StartScreenVideoPath = reader.IsDBNull(84) ? null : reader.GetString(84),
+                    UnlockButtonOpacityPercent = reader.GetInt32(85),
+                    SessionTriggerTouchScreen = reader.GetBoolean(86),
+                    SessionTriggerF13 = reader.GetBoolean(87),
+                    SessionTriggerKeys = reader.GetBoolean(88),
+                    GuestQrCodeEnabled = reader.GetBoolean(89),
+                    CropLiveView = reader.GetBoolean(90),
+                    AutoTriggerCamera = reader.GetBoolean(91),
+                    FlashScreenWhite = reader.GetBoolean(92),
+                    ShowCancelButton = reader.GetBoolean(93),
+                    CountdownColorHex = reader.GetString(94),
+                    PhotoThumbnailsEnabled = reader.GetBoolean(95),
+                    SayCheeseImagePath = reader.IsDBNull(96) ? null : reader.GetString(96),
+                    SkipSharingScreen = reader.GetBoolean(97),
+                    ShowDoneButton = reader.GetBoolean(98),
+                    SharingIconsLocation = reader.GetString(99),
+                    SharingTextLabelsEnabled = reader.GetBoolean(100),
+                    FinalScreenTimeoutSeconds = reader.GetInt32(101),
+                    ShowOriginalPhotos = reader.GetBoolean(102),
+                    ShowRetakeButton = reader.GetBoolean(103),
+                },
                 new EffectsSettings(
                     reader.GetBoolean(28), reader.GetString(29), reader.IsDBNull(30) ? null : reader.GetString(30),
                     reader.GetBoolean(31), reader.GetBoolean(32), reader.GetBoolean(34),
@@ -110,6 +146,8 @@ public class LocationRepository
                     TwilioAccountSid = reader.GetString(67),
                     TwilioFromNumber = reader.GetString(68),
                     TwilioAuthTokenProtected = reader.GetString(69),
+                    TwitterEnabled = reader.GetBoolean(104),
+                    PrintEnabled = reader.GetBoolean(105),
                 },
                 new VirtualAttendantSettings(
                     reader.GetBoolean(51), reader.GetString(52), reader.GetBoolean(53), reader.GetBoolean(54),
@@ -196,7 +234,21 @@ public class LocationRepository
                 BoothIconsEnabled = @BoothIconsEnabled, ShowLiveView = @ShowLiveView,
                 MirrorLiveView = @MirrorLiveView, LiveViewRotation = @LiveViewRotation,
                 EnableWebcams = @EnableWebcams, WebcamResolutionQuality = @WebcamResolutionQuality,
-                AudioInputDeviceName = @AudioInputDeviceName, PoseStripPosition = @PoseStripPosition
+                AudioInputDeviceName = @AudioInputDeviceName, PoseStripPosition = @PoseStripPosition,
+                BoothIconLabelsEnabled = @BoothIconLabelsEnabled, WelcomeShowLiveView = @WelcomeShowLiveView,
+                LiveTemplatePreview = @LiveTemplatePreview, StretchLiveView = @StretchLiveView,
+                BrowseButtonEnabled = @BrowseButtonEnabled, ChooseTemplateEnabled = @ChooseTemplateEnabled,
+                StartScreenVideoPath = @StartScreenVideoPath, UnlockButtonOpacityPercent = @UnlockButtonOpacityPercent,
+                SessionTriggerTouchScreen = @SessionTriggerTouchScreen, SessionTriggerF13 = @SessionTriggerF13,
+                SessionTriggerKeys = @SessionTriggerKeys, GuestQrCodeEnabled = @GuestQrCodeEnabled,
+                CropLiveView = @CropLiveView, AutoTriggerCamera = @AutoTriggerCamera,
+                FlashScreenWhite = @FlashScreenWhite, ShowCancelButton = @ShowCancelButton,
+                CountdownColorHex = @CountdownColorHex, PhotoThumbnailsEnabled = @PhotoThumbnailsEnabled,
+                SayCheeseImagePath = @SayCheeseImagePath,
+                SkipSharingScreen = @SkipSharingScreen, ShowDoneButton = @ShowDoneButton,
+                SharingIconsLocation = @SharingIconsLocation, SharingTextLabelsEnabled = @SharingTextLabelsEnabled,
+                FinalScreenTimeoutSeconds = @FinalScreenTimeoutSeconds, ShowOriginalPhotos = @ShowOriginalPhotos,
+                ShowRetakeButton = @ShowRetakeButton
             WHERE LocationId = @LocationId;
             """,
             connection);
@@ -208,8 +260,43 @@ public class LocationRepository
         command.Parameters.AddWithValue("@WebcamResolutionQuality", screen.WebcamResolutionQuality);
         command.Parameters.AddWithValue("@AudioInputDeviceName", (object?)screen.AudioInputDeviceName ?? DBNull.Value);
         command.Parameters.AddWithValue("@PoseStripPosition", screen.PoseStripPosition);
+        AddScreenEditorSettingsParameters(command, screen);
         command.Parameters.AddWithValue("@LocationId", locationId);
         await command.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>Shared by UpdateScreenSettingsAsync and
+    /// UpdateDslrBoothParitySettingsAsync (via DuplicateAsync) so the full
+    /// Welcome/Capture/Sharing screen-chrome column set can't drift between
+    /// the two write paths.</summary>
+    private static void AddScreenEditorSettingsParameters(SqlCommand command, ScreenSettings screen)
+    {
+        command.Parameters.AddWithValue("@BoothIconLabelsEnabled", screen.BoothIconLabelsEnabled);
+        command.Parameters.AddWithValue("@WelcomeShowLiveView", screen.WelcomeShowLiveView);
+        command.Parameters.AddWithValue("@LiveTemplatePreview", screen.LiveTemplatePreview);
+        command.Parameters.AddWithValue("@StretchLiveView", screen.StretchLiveView);
+        command.Parameters.AddWithValue("@BrowseButtonEnabled", screen.BrowseButtonEnabled);
+        command.Parameters.AddWithValue("@ChooseTemplateEnabled", screen.ChooseTemplateEnabled);
+        command.Parameters.AddWithValue("@StartScreenVideoPath", (object?)screen.StartScreenVideoPath ?? DBNull.Value);
+        command.Parameters.AddWithValue("@UnlockButtonOpacityPercent", screen.UnlockButtonOpacityPercent);
+        command.Parameters.AddWithValue("@SessionTriggerTouchScreen", screen.SessionTriggerTouchScreen);
+        command.Parameters.AddWithValue("@SessionTriggerF13", screen.SessionTriggerF13);
+        command.Parameters.AddWithValue("@SessionTriggerKeys", screen.SessionTriggerKeys);
+        command.Parameters.AddWithValue("@GuestQrCodeEnabled", screen.GuestQrCodeEnabled);
+        command.Parameters.AddWithValue("@CropLiveView", screen.CropLiveView);
+        command.Parameters.AddWithValue("@AutoTriggerCamera", screen.AutoTriggerCamera);
+        command.Parameters.AddWithValue("@FlashScreenWhite", screen.FlashScreenWhite);
+        command.Parameters.AddWithValue("@ShowCancelButton", screen.ShowCancelButton);
+        command.Parameters.AddWithValue("@CountdownColorHex", screen.CountdownColorHex);
+        command.Parameters.AddWithValue("@PhotoThumbnailsEnabled", screen.PhotoThumbnailsEnabled);
+        command.Parameters.AddWithValue("@SayCheeseImagePath", (object?)screen.SayCheeseImagePath ?? DBNull.Value);
+        command.Parameters.AddWithValue("@SkipSharingScreen", screen.SkipSharingScreen);
+        command.Parameters.AddWithValue("@ShowDoneButton", screen.ShowDoneButton);
+        command.Parameters.AddWithValue("@SharingIconsLocation", screen.SharingIconsLocation);
+        command.Parameters.AddWithValue("@SharingTextLabelsEnabled", screen.SharingTextLabelsEnabled);
+        command.Parameters.AddWithValue("@FinalScreenTimeoutSeconds", screen.FinalScreenTimeoutSeconds);
+        command.Parameters.AddWithValue("@ShowOriginalPhotos", screen.ShowOriginalPhotos);
+        command.Parameters.AddWithValue("@ShowRetakeButton", screen.ShowRetakeButton);
     }
 
     /// <summary>Updates the admin-editable brand identity for a location -- colors,
@@ -231,6 +318,29 @@ public class LocationRepository
         command.Parameters.AddWithValue("@InkColorHex", theme.InkColorHex);
         command.Parameters.AddWithValue("@LogoImagePath", (object?)theme.LogoImagePath ?? DBNull.Value);
         command.Parameters.AddWithValue("@EventName", theme.EventName);
+        command.Parameters.AddWithValue("@LocationId", locationId);
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>Updates just the location's live print geometry (paper size, layout,
+    /// strip copies) -- what PrintTemplateEditorWindow's Save writes when the working
+    /// copy being edited was activated from (or newly created into) the PrintTemplate
+    /// library, instead of the broader UpdateSettingsAsync, so this can't accidentally
+    /// clobber countdown/Glam/PIN with stale values the print editor never loaded.</summary>
+    public async Task UpdatePrintGeometryAsync(int locationId, string layout, double widthInches, double heightInches, int stripCopies, CancellationToken ct = default)
+    {
+        using var connection = await SqlConnectionFactory.OpenAsync(ct);
+        using var command = new SqlCommand(
+            """
+            UPDATE Location SET PrintLayout = @PrintLayout, PrintWidthInches = @PrintWidthInches,
+                                 PrintHeightInches = @PrintHeightInches, PrintStripCopies = @PrintStripCopies
+            WHERE LocationId = @LocationId;
+            """,
+            connection);
+        command.Parameters.AddWithValue("@PrintLayout", layout);
+        command.Parameters.AddWithValue("@PrintWidthInches", widthInches);
+        command.Parameters.AddWithValue("@PrintHeightInches", heightInches);
+        command.Parameters.AddWithValue("@PrintStripCopies", stripCopies);
         command.Parameters.AddWithValue("@LocationId", locationId);
         await command.ExecuteNonQueryAsync(ct);
     }
@@ -305,7 +415,22 @@ public class LocationRepository
                 EmailSmtpPort = @EmailSmtpPort, EmailSmtpUsername = @EmailSmtpUsername, EmailUseSsl = @EmailUseSsl,
                 EmailSmtpPasswordProtected = @EmailSmtpPasswordProtected,
                 TwilioAccountSid = @TwilioAccountSid, TwilioFromNumber = @TwilioFromNumber,
-                TwilioAuthTokenProtected = @TwilioAuthTokenProtected
+                TwilioAuthTokenProtected = @TwilioAuthTokenProtected,
+                TwitterEnabled = @TwitterEnabled, PrintEnabled = @PrintEnabled,
+                BoothIconLabelsEnabled = @BoothIconLabelsEnabled, WelcomeShowLiveView = @WelcomeShowLiveView,
+                LiveTemplatePreview = @LiveTemplatePreview, StretchLiveView = @StretchLiveView,
+                BrowseButtonEnabled = @BrowseButtonEnabled, ChooseTemplateEnabled = @ChooseTemplateEnabled,
+                StartScreenVideoPath = @StartScreenVideoPath, UnlockButtonOpacityPercent = @UnlockButtonOpacityPercent,
+                SessionTriggerTouchScreen = @SessionTriggerTouchScreen, SessionTriggerF13 = @SessionTriggerF13,
+                SessionTriggerKeys = @SessionTriggerKeys, GuestQrCodeEnabled = @GuestQrCodeEnabled,
+                CropLiveView = @CropLiveView, AutoTriggerCamera = @AutoTriggerCamera,
+                FlashScreenWhite = @FlashScreenWhite, ShowCancelButton = @ShowCancelButton,
+                CountdownColorHex = @CountdownColorHex, PhotoThumbnailsEnabled = @PhotoThumbnailsEnabled,
+                SayCheeseImagePath = @SayCheeseImagePath,
+                SkipSharingScreen = @SkipSharingScreen, ShowDoneButton = @ShowDoneButton,
+                SharingIconsLocation = @SharingIconsLocation, SharingTextLabelsEnabled = @SharingTextLabelsEnabled,
+                FinalScreenTimeoutSeconds = @FinalScreenTimeoutSeconds, ShowOriginalPhotos = @ShowOriginalPhotos,
+                ShowRetakeButton = @ShowRetakeButton
             WHERE LocationId = @LocationId;
             """,
             connection);
@@ -359,6 +484,9 @@ public class LocationRepository
         command.Parameters.AddWithValue("@TwilioAccountSid", sharing.TwilioAccountSid);
         command.Parameters.AddWithValue("@TwilioFromNumber", sharing.TwilioFromNumber);
         command.Parameters.AddWithValue("@TwilioAuthTokenProtected", sharing.TwilioAuthTokenProtected);
+        command.Parameters.AddWithValue("@TwitterEnabled", sharing.TwitterEnabled);
+        command.Parameters.AddWithValue("@PrintEnabled", sharing.PrintEnabled);
+        AddScreenEditorSettingsParameters(command, screen);
         command.Parameters.AddWithValue("@LocationId", locationId);
         await command.ExecuteNonQueryAsync(ct);
     }

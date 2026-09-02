@@ -64,6 +64,8 @@
                  a tap anywhere on empty canvas starts a session while the mode
                  tiles above it still get their own taps. -->
             <Button Command="{Binding StartSessionCommand}"
+                    IsEnabled="{Binding IsTouchStartEnabled}"
+                    IsHitTestVisible="{Binding IsTouchStartEnabled}"
                     Background="Transparent"
                     BorderThickness="0"
                     Focusable="False">
@@ -193,7 +195,7 @@
                  kiosk the way the guest expects a mirror to; the saved capture
                  is unaffected by this or by LiveViewTransform. -->
             <Image Source="{Binding LiveViewStream}"
-                   Stretch="UniformToFill"
+                   Stretch="{Binding LiveViewStretch}"
                    LayoutTransform="{Binding LiveViewTransform}" />
 
             <!-- Semi-transparent dark overlay so the countdown stays legible
@@ -228,7 +230,7 @@
                      value repeats. -->
                 <TextBlock Text="{Binding CountdownValue, NotifyOnTargetUpdated=True}"
                            Style="{StaticResource KioskDisplayText}"
-                           Foreground="{StaticResource KioskAccentBrush}"
+                           Foreground="{Binding CountdownColorBrush}"
                            RenderTransformOrigin="0.5,0.5"
                            Margin="0,-12,0,0">
                     <TextBlock.RenderTransform>
@@ -260,6 +262,14 @@
                     </TextBlock.Triggers>
                 </TextBlock>
             </StackPanel>
+
+            <!-- ScreenSettings.ShowCancelButton: lets a guest back out of a
+                 countdown they didn't mean to start, same cancel path Capture's
+                 own Cancel button below uses (see CancelSessionCommand). -->
+            <Button Style="{StaticResource KioskGhostButton}" Content="CANCEL"
+                    Visibility="{Binding IsCancelButtonVisible, Converter={StaticResource BoolToVisibility}}"
+                    Command="{Binding CancelSessionCommand}"
+                    VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,64" Padding="28,14" />
         </Grid>
 
         <!-- ======================= [3] CAPTURE / SMILE ======================= -->
@@ -267,17 +277,22 @@
               Style="{StaticResource KioskScreenRoot}"
               Visibility="{Binding CurrentScreenState, Converter={StaticResource ScreenVisibility}, ConverterParameter=Capture}">
 
-            <Image Source="{Binding LiveViewStream}" Stretch="UniformToFill"
+            <Image Source="{Binding LiveViewStream}" Stretch="{Binding LiveViewStretch}"
                    LayoutTransform="{Binding LiveViewTransform}" Opacity="0.35" />
             <Rectangle Fill="{StaticResource KioskScrimBrush}" />
 
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                 <Ellipse Width="120" Height="120"
-                         Stroke="{StaticResource KioskAccentBrush}" StrokeThickness="8"
+                         Stroke="{Binding CountdownColorBrush}" StrokeThickness="8"
                          HorizontalAlignment="Center" Margin="0,0,0,32" />
                 <TextBlock Text="Say Cheese!" Style="{StaticResource KioskH1}" FontSize="80" />
                 <TextBlock Text="Hold that smile" Style="{StaticResource KioskPrompt}" Margin="0,16,0,0" />
             </StackPanel>
+
+            <Button Style="{StaticResource KioskGhostButton}" Content="CANCEL"
+                    Visibility="{Binding IsCancelButtonVisible, Converter={StaticResource BoolToVisibility}}"
+                    Command="{Binding CancelSessionCommand}"
+                    VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,64" Padding="28,14" />
         </Grid>
 
         <!-- ===================== [4] PROCESSING / STITCHER ===================== -->
@@ -533,14 +548,16 @@
                                            VerticalAlignment="Center" />
                             </Grid>
                             <TextBlock Text="Scan to download" FontFamily="{StaticResource KioskFont}"
-                                       FontSize="15" Foreground="#202124" HorizontalAlignment="Center" Margin="0,12,0,0" />
+                                       FontSize="15" Foreground="#202124" HorizontalAlignment="Center" Margin="0,12,0,0"
+                                       Visibility="{Binding IsSharingTextLabelsEnabled, Converter={StaticResource BoolToVisibility}}" />
                         </StackPanel>
                     </Border>
 
                     <!-- Email -->
                     <StackPanel Margin="0,26,0,0"
                                 Visibility="{Binding IsEmailEnabled, Converter={StaticResource BoolToVisibility}}">
-                        <TextBlock Text="EMAIL IT TO ME" Style="{StaticResource KioskFieldLabel}" />
+                        <TextBlock Text="EMAIL IT TO ME" Style="{StaticResource KioskFieldLabel}"
+                                   Visibility="{Binding IsSharingTextLabelsEnabled, Converter={StaticResource BoolToVisibility}}" />
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
@@ -559,7 +576,8 @@
                     <!-- SMS: hidden unless SharingSettings.SmsEnabled is on. -->
                     <StackPanel Margin="0,20,0,0"
                                 Visibility="{Binding IsSmsEnabled, Converter={StaticResource BoolToVisibility}}">
-                        <TextBlock Text="TEXT IT TO ME" Style="{StaticResource KioskFieldLabel}" />
+                        <TextBlock Text="TEXT IT TO ME" Style="{StaticResource KioskFieldLabel}"
+                                   Visibility="{Binding IsSharingTextLabelsEnabled, Converter={StaticResource BoolToVisibility}}" />
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
@@ -575,9 +593,22 @@
                         </Grid>
                     </StackPanel>
 
-                    <!-- Print, with the remaining-prints badge. -->
+                    <!-- Twitter/X: SharingSettings.TwitterEnabled, opens the
+                         guest's default browser to a pre-filled web share
+                         intent (no OAuth/app registration needed). -->
+                    <Button Style="{StaticResource KioskCompactButton}" Content="SHARE ON TWITTER"
+                            Margin="0,20,0,0" HorizontalAlignment="Stretch"
+                            Visibility="{Binding IsTwitterEnabled, Converter={StaticResource BoolToVisibility}}"
+                            Command="{Binding ShareOnTwitterCommand}" />
+
+                    <!-- Print, with the remaining-prints badge. Hidden unless
+                         PrintOptions.ShowPrintButton is on: the automatic
+                         print (PrintOptions.PrintAutomatically) already ran
+                         before this screen is reachable, so this is a guest's
+                         own opt-in reprint, not the only way to get a print. -->
                     <Button Style="{StaticResource KioskPrimaryButton}" Margin="0,26,0,0"
                             HorizontalAlignment="Stretch"
+                            Visibility="{Binding IsPrintButtonVisible, Converter={StaticResource BoolToVisibility}}"
                             Command="{Binding PrintCommand}">
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                             <TextBlock Text="PRINT" VerticalAlignment="Center" />
@@ -596,13 +627,20 @@
                                Visibility="{Binding ShareStatus, Converter={StaticResource NullToVisibility}}" />
 
                     <!-- Done timer bar. Purely an affordance: the state machine
-                         owns the real return to Idle (see KioskViewModel). -->
+                         owns the real return to Idle (see KioskViewModel), now
+                         driven by ScreenSettings.FinalScreenTimeoutSeconds
+                         instead of a hardcoded 30s (see ShareSecondsTotal). -->
                     <StackPanel Margin="0,28,0,0">
                         <ProgressBar Style="{StaticResource KioskTimerBar}"
                                      Maximum="{Binding ShareSecondsTotal}"
                                      Value="{Binding ShareSecondsRemaining, Mode=OneWay}" />
+                        <Button Style="{StaticResource KioskGhostButton}" Content="RETAKE"
+                                Margin="0,18,0,0" HorizontalAlignment="Stretch"
+                                Visibility="{Binding IsRetakeVisible, Converter={StaticResource BoolToVisibility}}"
+                                Command="{Binding RetakeCommand}" />
                         <Button Style="{StaticResource KioskGhostButton}" Content="I'M DONE"
                                 Margin="0,18,0,0" HorizontalAlignment="Stretch"
+                                Visibility="{Binding IsDoneButtonVisible, Converter={StaticResource BoolToVisibility}}"
                                 Command="{Binding DoneCommand}" />
                     </StackPanel>
                 </StackPanel>
@@ -670,7 +708,15 @@
                 ToolTip="Admin">
             <Button.Template>
                 <ControlTemplate TargetType="Button">
-                    <Border Background="Transparent" />
+                    <Grid Background="Transparent">
+                        <!-- ScreenSettings.UnlockButtonOpacityPercent: a faint
+                             discoverability hint rather than fully invisible;
+                             at 0% this renders fully transparent, same as
+                             before this setting existed. -->
+                        <Ellipse Width="36" Height="36" Fill="White" Margin="0,14,14,0"
+                                 HorizontalAlignment="Right" VerticalAlignment="Top"
+                                 Opacity="{Binding UnlockButtonOpacity}" />
+                    </Grid>
                 </ControlTemplate>
             </Button.Template>
         </Button>

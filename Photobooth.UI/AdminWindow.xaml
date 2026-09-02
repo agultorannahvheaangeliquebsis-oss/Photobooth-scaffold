@@ -1129,6 +1129,10 @@
                               Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
                     <CheckBox x:Name="QrEnabledCheckBox" Content="QR sharing enabled"
                               Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
+                    <CheckBox x:Name="TwitterEnabledCheckBox" Content="Twitter sharing enabled"
+                              Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
+                    <CheckBox x:Name="PrintEnabledCheckBox" Content="Print icon on Sharing screen"
+                              Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
 
                     <!-- Real SMTP delivery, see SmtpEmailDeliveryService.
                          The password field is left blank on load and only

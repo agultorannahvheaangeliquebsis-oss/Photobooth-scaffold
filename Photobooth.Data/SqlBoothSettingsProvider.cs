@@ -43,7 +43,15 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
                    EmailFromAddress, EmailSubject, EmailSmtpHost, EmailSmtpPort, EmailSmtpUsername, EmailUseSsl,
                    EmailSmtpPasswordProtected, TwilioAccountSid, TwilioFromNumber, TwilioAuthTokenProtected,
                    IsLocked, RemoteControlEnabled,
-                   SlideshowEnabled, SlideshowIntervalSeconds, SlideshowTransition, SlideshowShowLogoOverlay, SlideshowShowQrOverlay
+                   SlideshowEnabled, SlideshowIntervalSeconds, SlideshowTransition, SlideshowShowLogoOverlay, SlideshowShowQrOverlay,
+                   BoothIconLabelsEnabled, WelcomeShowLiveView, LiveTemplatePreview, StretchLiveView,
+                   BrowseButtonEnabled, ChooseTemplateEnabled, StartScreenVideoPath, UnlockButtonOpacityPercent,
+                   SessionTriggerTouchScreen, SessionTriggerF13, SessionTriggerKeys, GuestQrCodeEnabled,
+                   CropLiveView, AutoTriggerCamera, FlashScreenWhite, ShowCancelButton,
+                   CountdownColorHex, PhotoThumbnailsEnabled, SayCheeseImagePath,
+                   SkipSharingScreen, ShowDoneButton, SharingIconsLocation, SharingTextLabelsEnabled,
+                   FinalScreenTimeoutSeconds, ShowOriginalPhotos, ShowRetakeButton,
+                   TwitterEnabled, PrintEnabled
             FROM Location WHERE LocationId = @LocationId;
             """,
             connection);
@@ -91,7 +99,35 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
             screen = new ScreenSettings(
                 reader.GetBoolean(17), reader.GetBoolean(18), reader.GetBoolean(19), reader.GetInt32(20),
                 reader.GetBoolean(21), reader.GetInt32(22), reader.IsDBNull(23) ? null : reader.GetString(23),
-                reader.GetString(55));
+                reader.GetString(55))
+            {
+                BoothIconLabelsEnabled = reader.GetBoolean(73),
+                WelcomeShowLiveView = reader.GetBoolean(74),
+                LiveTemplatePreview = reader.GetBoolean(75),
+                StretchLiveView = reader.GetString(76),
+                BrowseButtonEnabled = reader.GetBoolean(77),
+                ChooseTemplateEnabled = reader.GetBoolean(78),
+                StartScreenVideoPath = reader.IsDBNull(79) ? null : reader.GetString(79),
+                UnlockButtonOpacityPercent = reader.GetInt32(80),
+                SessionTriggerTouchScreen = reader.GetBoolean(81),
+                SessionTriggerF13 = reader.GetBoolean(82),
+                SessionTriggerKeys = reader.GetBoolean(83),
+                GuestQrCodeEnabled = reader.GetBoolean(84),
+                CropLiveView = reader.GetBoolean(85),
+                AutoTriggerCamera = reader.GetBoolean(86),
+                FlashScreenWhite = reader.GetBoolean(87),
+                ShowCancelButton = reader.GetBoolean(88),
+                CountdownColorHex = reader.GetString(89),
+                PhotoThumbnailsEnabled = reader.GetBoolean(90),
+                SayCheeseImagePath = reader.IsDBNull(91) ? null : reader.GetString(91),
+                SkipSharingScreen = reader.GetBoolean(92),
+                ShowDoneButton = reader.GetBoolean(93),
+                SharingIconsLocation = reader.GetString(94),
+                SharingTextLabelsEnabled = reader.GetBoolean(95),
+                FinalScreenTimeoutSeconds = reader.GetInt32(96),
+                ShowOriginalPhotos = reader.GetBoolean(97),
+                ShowRetakeButton = reader.GetBoolean(98),
+            };
             effects = new EffectsSettings(
                 reader.GetBoolean(24), reader.GetString(25), reader.IsDBNull(26) ? null : reader.GetString(26),
                 reader.GetBoolean(27), reader.GetBoolean(28), reader.GetBoolean(30),
@@ -115,6 +151,8 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
                 TwilioAccountSid = reader.GetString(63),
                 TwilioFromNumber = reader.GetString(64),
                 TwilioAuthTokenProtected = reader.GetString(65),
+                TwitterEnabled = reader.GetBoolean(99),
+                PrintEnabled = reader.GetBoolean(100),
             };
             virtualAttendant = new VirtualAttendantSettings(
                 reader.GetBoolean(47), reader.GetString(48), reader.GetBoolean(49), reader.GetBoolean(50),

@@ -418,23 +418,50 @@ public partial class AdminWindow : Window
         }
     }
 
-    private async void EditPrintTemplateButton_Click(object sender, RoutedEventArgs e)
+    private async void EditPrintTemplateButton_Click(object sender, RoutedEventArgs e) => await OpenPrintTemplateEditorAsync();
+
+    private async Task OpenPrintTemplateEditorAsync()
     {
-        var editor = new PrintTemplateEditorWindow(_currentPrintTemplate, _locationId) { Owner = this };
-        if (editor.ShowDialog() == true)
+        // _currentPrintTemplate.Elements is always empty here -- LocationRepository.
+        // GetAllAsync never queries PrintTemplateElement, only SqlBoothSettingsProvider
+        // does that for the live BoothStateMachine path -- so the editor needs its own
+        // fetch here or it would always open showing a blank canvas regardless of what
+        // was last saved.
+        List<PrintTemplateElement> liveElements = await new PrintTemplateElementRepository().GetAllByLocationAsync(_locationId);
+        var editor = new PrintTemplateEditorWindow(_currentPrintTemplate with { Elements = liveElements }, _locationId) { Owner = this };
+        bool saved = editor.ShowDialog() == true;
+        string? requestedNavigation = editor.RequestedNavigation;
+        if (saved)
         {
             // The editor already persisted the elements itself on Save --
             // reload from source of truth same as the Frame section already
             // does after add/delete, rather than trust the in-memory copy.
             await LoadAsync();
         }
+
+        if (requestedNavigation == "ScreenEditor")
+        {
+            await EditScreenLayoutButtonAsync();
+        }
+        else if (requestedNavigation is not null)
+        {
+            ShowSection(requestedNavigation);
+        }
     }
 
-    private async void EditScreenLayoutButton_Click(object sender, RoutedEventArgs e)
+    private async void EditScreenLayoutButton_Click(object sender, RoutedEventArgs e) => await EditScreenLayoutButtonAsync();
+
+    /// <summary>Callable form of EditScreenLayoutButton_Click -- also chained into
+    /// from OpenPrintTemplateEditorAsync when the print editor's own "&lt; Screen
+    /// Editor" breadcrumb is clicked, same chaining EditScreenLayoutButton_Click
+    /// already does the other direction via requestedNavigation == "PrintLayout".</summary>
+    private async Task EditScreenLayoutButtonAsync()
     {
         var existing = await new ScreenTemplateElementRepository().GetAllByLocationAsync(_locationId);
         var editor = new ScreenTemplateEditorWindow(existing, _locationId, _currentScreenSettings) { Owner = this };
-        if (editor.ShowDialog() == true)
+        bool saved = editor.ShowDialog() == true;
+        string? requestedNavigation = editor.RequestedNavigation;
+        if (saved)
         {
             // The editor's Settings tab can change ScreenSettings (Booth
             // Icons/live view show-mirror-rotate), which LoadAsync populates
@@ -443,6 +470,24 @@ public partial class AdminWindow : Window
             // ScreenTemplateElement itself still needs no reload here (not
             // read into any LoadAsync field, read fresh by KioskWindow).
             await LoadAsync();
+        }
+
+        if (requestedNavigation == "PrintLayout")
+        {
+            // Chains straight into the separate Print Layout editor, same
+            // "Print Layout >" breadcrumb dslrBooth's own Screen Editor
+            // carries -- the two remain distinct windows/pages, this just
+            // avoids making the admin close this one and hunt for the menu
+            // link themselves.
+            await OpenPrintTemplateEditorAsync();
+        }
+        else if (requestedNavigation is not null)
+        {
+            // Virtual Attendant / Countdown settings (-> CaptureSettings) /
+            // Sharing Settings breadcrumbs -- these sections already live in
+            // this same AdminWindow, so no new window is needed, just a
+            // section switch (see ShowSection).
+            ShowSection(requestedNavigation);
         }
     }
 
@@ -562,6 +607,8 @@ public partial class AdminWindow : Window
                 EmailEnabledCheckBox.IsChecked = sharing.EmailEnabled;
                 SmsEnabledCheckBox.IsChecked = sharing.SmsEnabled;
                 QrEnabledCheckBox.IsChecked = sharing.QrEnabled;
+                TwitterEnabledCheckBox.IsChecked = sharing.TwitterEnabled;
+                PrintEnabledCheckBox.IsChecked = sharing.PrintEnabled;
                 EmailFromAddressBox.Text = sharing.EmailFromAddress;
                 EmailSubjectBox.Text = sharing.EmailSubject;
                 EmailSmtpHostBox.Text = sharing.EmailSmtpHost;
@@ -1024,6 +1071,8 @@ public partial class AdminWindow : Window
 
         return new SharingSettings(EmailEnabledCheckBox.IsChecked == true, SmsEnabledCheckBox.IsChecked == true, QrEnabledCheckBox.IsChecked == true)
         {
+            TwitterEnabled = TwitterEnabledCheckBox.IsChecked == true,
+            PrintEnabled = PrintEnabledCheckBox.IsChecked == true,
             EmailFromAddress = EmailFromAddressBox.Text.Trim(),
             EmailSubject = EmailSubjectBox.Text.Trim(),
             EmailSmtpHost = EmailSmtpHostBox.Text.Trim(),

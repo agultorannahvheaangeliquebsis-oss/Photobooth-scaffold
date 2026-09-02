@@ -108,6 +108,97 @@ public record ScreenSettings(
     string PoseStripPosition = "Bottom")
 {
     public static ScreenSettings Default { get; } = new();
+
+    // ===================== Welcome screen =====================
+    // See ScreenTemplateEditorWindow's Welcome settings panel / dslrBooth's
+    // own Welcome Screen Settings panel.
+    public bool BoothIconLabelsEnabled { get; init; } = true;
+
+    /// <summary>Camera preview behind the Welcome screen's own elements --
+    /// distinct from Capture's ShowLiveView (a different screen), off by
+    /// default same as dslrBooth's own Welcome panel.</summary>
+    public bool WelcomeShowLiveView { get; init; }
+
+    /// <summary>Renders the live camera feed inside whichever photo
+    /// placeholder(s) the active print template defines, instead of a plain
+    /// background feed. Stored and round-tripped like BeautyFilterEnabled/
+    /// PostProcessingEnabled elsewhere in this file -- actually compositing
+    /// the feed into a template placeholder is unbuilt rendering work, not a
+    /// settings-plumbing problem, so this just lets the admin's choice
+    /// persist rather than being silently dropped.</summary>
+    public bool LiveTemplatePreview { get; init; }
+
+    /// <summary>One of "Fill Screen With Cropping" / "Fit Screen" / "Stretch
+    /// To Fill" -- how WelcomeShowLiveView's feed is scaled to the screen.
+    /// Interpretation is left to whichever view renders it, same "store the
+    /// admin's choice, let the consuming service decide" pattern
+    /// WebcamResolutionQuality above already uses.</summary>
+    public string StretchLiveView { get; init; } = "Fill Screen With Cropping";
+
+    public bool BrowseButtonEnabled { get; init; } = true;
+    public bool ChooseTemplateEnabled { get; init; }
+
+    /// <summary>Looping video played before the Welcome screen appears (see
+    /// ScreenTemplateEditorWindow's file picker). Null means no video.</summary>
+    public string? StartScreenVideoPath { get; init; }
+
+    /// <summary>0-100. How visible the always-present admin-unlock tap
+    /// target is over the Welcome screen -- see KioskWindow's own unlock
+    /// gesture.</summary>
+    public int UnlockButtonOpacityPercent { get; init; } = 10;
+
+    // Session trigger -- which guest inputs start a new session from the
+    // Welcome screen (see KioskViewModel.CanStartSession's input handling).
+    public bool SessionTriggerTouchScreen { get; init; } = true;
+    public bool SessionTriggerF13 { get; init; }
+    public bool SessionTriggerKeys { get; init; } = true;
+
+    /// <summary>Lets a guest scan a QR code to drive the session from their
+    /// own phone camera app -- a separate, not-yet-built control channel
+    /// from RemoteControlEnabled's own loopback HTTP listener (see
+    /// BoothSettings.RemoteControlEnabled), so this stores the admin's
+    /// choice without yet wiring a phone-facing endpoint.</summary>
+    public bool GuestQrCodeEnabled { get; init; }
+
+    // ===================== Capture screen =====================
+    // Beyond ShowLiveView/MirrorLiveView/LiveViewRotation/PoseStripPosition
+    // above -- see ScreenTemplateEditorWindow's Capture settings panel.
+    public bool CropLiveView { get; init; } = true;
+    public bool AutoTriggerCamera { get; init; } = true;
+    public bool FlashScreenWhite { get; init; } = true;
+    public bool ShowCancelButton { get; init; } = true;
+
+    /// <summary>#RRGGBB. Purely cosmetic -- the countdown overlay's own ring/
+    /// number color (see KioskWindow's countdown rendering).</summary>
+    public string CountdownColorHex { get; init; } = "#2ED9A0";
+
+    /// <summary>Whether the strip of already-taken photos (positioned by
+    /// PoseStripPosition) is shown at all.</summary>
+    public bool PhotoThumbnailsEnabled { get; init; } = true;
+
+    /// <summary>Shown while the camera auto-focuses right after the
+    /// countdown ends, before FlashScreenWhite/capture. Null means no
+    /// image (blank/last-frame passthrough).</summary>
+    public string? SayCheeseImagePath { get; init; }
+
+    // ===================== Sharing screen =====================
+    // See ScreenTemplateEditorWindow's Sharing settings panel, which
+    // previously had no settings at all.
+    public bool SkipSharingScreen { get; init; }
+    public bool ShowDoneButton { get; init; } = true;
+
+    /// <summary>One of "Custom" (icons placed via the Design tab's canvas,
+    /// the only layout this build's canvas-based Sharing screen actually
+    /// supports) or a named preset layout dslrBooth also offers (e.g.
+    /// "Bottom Row", "Grid") that this build doesn't render differently yet
+    /// -- stored so the choice round-trips, same "not yet consumed"
+    /// reasoning as BeautyFilterEnabled elsewhere in this file.</summary>
+    public string SharingIconsLocation { get; init; } = "Custom";
+
+    public bool SharingTextLabelsEnabled { get; init; } = true;
+    public int FinalScreenTimeoutSeconds { get; init; } = 30;
+    public bool ShowOriginalPhotos { get; init; } = true;
+    public bool ShowRetakeButton { get; init; }
 }
 
 /// <summary>Beauty filter / filters / post-processing / stickers / watermark,
@@ -194,6 +285,18 @@ public record PrintOptions(
 public record SharingSettings(bool EmailEnabled = true, bool SmsEnabled = false, bool QrEnabled = true)
 {
     public static SharingSettings Default { get; } = new();
+
+    /// <summary>Posting straight to Twitter/X needs an app registration and
+    /// OAuth flow this build doesn't implement -- stored so the admin's
+    /// channel choice round-trips (see the Sharing Settings section's own
+    /// Email/SMS/QR toggles above), same "not yet consumed" reasoning
+    /// EffectsSettings.BeautyFilterEnabled already documents.</summary>
+    public bool TwitterEnabled { get; init; }
+
+    /// <summary>Lets a guest trigger a print straight from the Sharing
+    /// screen icon row -- distinct from PrintOptions.ShowPrintButton, which
+    /// is the always-on-screen print button during the review step.</summary>
+    public bool PrintEnabled { get; init; }
 
     // Real SMTP delivery config -- see SmtpEmailDeliveryService, which reads
     // these fresh on every send (via IBoothSettingsProvider), same "admin's

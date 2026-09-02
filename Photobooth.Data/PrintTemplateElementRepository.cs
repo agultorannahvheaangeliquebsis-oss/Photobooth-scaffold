@@ -5,22 +5,35 @@ namespace Photobooth.Data;
 
 /// <summary>Admin-facing CRUD over the PrintTemplateElement table -- same plain-repository
 /// shape as FrameRepository (no interface/mock, since only SqlBoothSettingsProvider and
-/// PrintTemplateEditorWindow ever talk to this directly, not BoothStateMachine).</summary>
+/// PrintTemplateEditorWindow ever talk to this directly, not BoothStateMachine).
+///
+/// Every row belongs to either a location's one "live" print setup (PrintTemplateId IS
+/// NULL, keyed by LocationId alone -- everything this type did before the PrintTemplate
+/// library table existed) or one saved PrintTemplate library entry (PrintTemplateId set --
+/// see PrintTemplateRepository). GetAllByLocationAsync/ReplaceAllAsync only ever touch the
+/// live rows, so SqlBoothSettingsProvider's read path is untouched by the library feature;
+/// GetAllByTemplateAsync/ReplaceAllForTemplateAsync are the library-side equivalents.</summary>
 public class PrintTemplateElementRepository
 {
-    public async Task<List<PrintTemplateElement>> GetAllByLocationAsync(int locationId, CancellationToken ct = default)
+    public Task<List<PrintTemplateElement>> GetAllByLocationAsync(int locationId, CancellationToken ct = default) =>
+        GetAllAsync("LocationId = @LocationId AND PrintTemplateId IS NULL", ("@LocationId", locationId), ct);
+
+    public Task<List<PrintTemplateElement>> GetAllByTemplateAsync(int printTemplateId, CancellationToken ct = default) =>
+        GetAllAsync("PrintTemplateId = @PrintTemplateId", ("@PrintTemplateId", printTemplateId), ct);
+
+    private async Task<List<PrintTemplateElement>> GetAllAsync(string whereClause, (string Name, object Value) parameter, CancellationToken ct)
     {
         using var connection = await SqlConnectionFactory.OpenAsync(ct);
         using var command = new SqlCommand(
-            """
+            $"""
             SELECT Kind, XPercent, YPercent, WidthPercent, HeightPercent, Text, ImagePath,
                    FontFamily, FontSizePercent, Bold, ColorHex, ShapeType, PhotoIndex
             FROM PrintTemplateElement
-            WHERE LocationId = @LocationId
+            WHERE {whereClause}
             ORDER BY SortOrder, ElementId;
             """,
             connection);
-        command.Parameters.AddWithValue("@LocationId", locationId);
+        command.Parameters.AddWithValue(parameter.Name, parameter.Value);
 
         using var reader = await command.ExecuteReaderAsync(ct);
         var results = new List<PrintTemplateElement>();
@@ -44,17 +57,30 @@ public class PrintTemplateElementRepository
         return results;
     }
 
-    /// <summary>Replaces every element for this location in one delete-then-reinsert --
-    /// PrintTemplateEditorWindow always saves its whole working list at once, so there's
-    /// no need for per-row update/delete tracking.</summary>
-    public async Task ReplaceAllAsync(int locationId, IReadOnlyList<PrintTemplateElement> elements, CancellationToken ct = default)
+    /// <summary>Replaces every live element for this location (PrintTemplateId IS NULL)
+    /// in one delete-then-reinsert -- PrintTemplateEditorWindow always saves its whole
+    /// working list at once, so there's no need for per-row update/delete tracking. Never
+    /// touches this location's saved library-template rows (PrintTemplateId IS NOT NULL).</summary>
+    public Task ReplaceAllAsync(int locationId, IReadOnlyList<PrintTemplateElement> elements, CancellationToken ct = default) =>
+        ReplaceAllAsync("LocationId = @LocationId AND PrintTemplateId IS NULL", locationId, printTemplateId: null, elements, ct);
+
+    /// <summary>Same replace-in-place shape as ReplaceAllAsync, for one saved library
+    /// entry's own elements instead of a location's live ones.</summary>
+    public Task ReplaceAllForTemplateAsync(int printTemplateId, int locationId, IReadOnlyList<PrintTemplateElement> elements, CancellationToken ct = default) =>
+        ReplaceAllAsync("PrintTemplateId = @PrintTemplateId", locationId, printTemplateId, elements, ct);
+
+    private async Task ReplaceAllAsync(string deleteWhereClause, int locationId, int? printTemplateId, IReadOnlyList<PrintTemplateElement> elements, CancellationToken ct)
     {
         using var connection = await SqlConnectionFactory.OpenAsync(ct);
         using var transaction = connection.BeginTransaction();
 
-        using (var deleteCommand = new SqlCommand("DELETE FROM PrintTemplateElement WHERE LocationId = @LocationId;", connection, transaction))
+        using (var deleteCommand = new SqlCommand($"DELETE FROM PrintTemplateElement WHERE {deleteWhereClause};", connection, transaction))
         {
             deleteCommand.Parameters.AddWithValue("@LocationId", locationId);
+            if (printTemplateId is int templateId)
+            {
+                deleteCommand.Parameters.AddWithValue("@PrintTemplateId", templateId);
+            }
             await deleteCommand.ExecuteNonQueryAsync(ct);
         }
 
@@ -64,12 +90,13 @@ public class PrintTemplateElementRepository
             using var insertCommand = new SqlCommand(
                 """
                 INSERT INTO PrintTemplateElement
-                    (LocationId, Kind, XPercent, YPercent, WidthPercent, HeightPercent, Text, ImagePath, FontFamily, FontSizePercent, Bold, ColorHex, ShapeType, PhotoIndex, SortOrder)
+                    (LocationId, PrintTemplateId, Kind, XPercent, YPercent, WidthPercent, HeightPercent, Text, ImagePath, FontFamily, FontSizePercent, Bold, ColorHex, ShapeType, PhotoIndex, SortOrder)
                 VALUES
-                    (@LocationId, @Kind, @XPercent, @YPercent, @WidthPercent, @HeightPercent, @Text, @ImagePath, @FontFamily, @FontSizePercent, @Bold, @ColorHex, @ShapeType, @PhotoIndex, @SortOrder);
+                    (@LocationId, @PrintTemplateId, @Kind, @XPercent, @YPercent, @WidthPercent, @HeightPercent, @Text, @ImagePath, @FontFamily, @FontSizePercent, @Bold, @ColorHex, @ShapeType, @PhotoIndex, @SortOrder);
                 """,
                 connection, transaction);
             insertCommand.Parameters.AddWithValue("@LocationId", locationId);
+            insertCommand.Parameters.AddWithValue("@PrintTemplateId", (object?)printTemplateId ?? DBNull.Value);
             insertCommand.Parameters.AddWithValue("@Kind", element.Kind.ToString());
             insertCommand.Parameters.AddWithValue("@XPercent", element.XPercent);
             insertCommand.Parameters.AddWithValue("@YPercent", element.YPercent);
