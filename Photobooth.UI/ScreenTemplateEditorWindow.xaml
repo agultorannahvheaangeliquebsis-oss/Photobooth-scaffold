@@ -49,8 +49,9 @@
                 <Setter Property="FontFamily" Value="Segoe UI" />
                 <Setter Property="FontSize" Value="13" />
                 <Setter Property="FontWeight" Value="SemiBold" />
-                <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+                <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
                 <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="VerticalAlignment" Value="Center" />
             </Style>
 
             <!-- ===================== Icon geometries ===================== -->
