@@ -71,7 +71,8 @@ public class LocationRepository
                    CaptureCancelButtonPositionXPercent, CaptureCancelButtonPositionYPercent,
                    SharingIconsGroupEnabled, SharingIconsPositionXPercent, SharingIconsPositionYPercent,
                    SharingIconsLayout, SharingIconsAlignment,
-                   PoseStripBackgroundOpacityPercent, PoseStripActiveBorderColorHex, PoseStripShowPlaceholderNumbers
+                   PoseStripBackgroundOpacityPercent, PoseStripActiveBorderColorHex, PoseStripShowPlaceholderNumbers,
+                   PaymentTiming, CameraDeviceName
             FROM Location ORDER BY LocationId;
             """,
             connection);
@@ -155,6 +156,7 @@ public class LocationRepository
                     PoseStripBackgroundOpacityPercent = reader.GetInt32(127),
                     PoseStripActiveBorderColorHex = reader.GetString(128),
                     PoseStripShowPlaceholderNumbers = reader.GetBoolean(129),
+                    CameraDeviceName = reader.IsDBNull(131) ? null : reader.GetString(131),
                 },
                 new EffectsSettings(
                     reader.GetBoolean(28), reader.GetString(29), reader.IsDBNull(30) ? null : reader.GetString(30),
@@ -181,6 +183,7 @@ public class LocationRepository
                     TwilioAuthTokenProtected = reader.GetString(69),
                     TwitterEnabled = reader.GetBoolean(104),
                     PrintEnabled = reader.GetBoolean(105),
+                    PaymentTiming = reader.GetString(130),
                 },
                 new VirtualAttendantSettings(
                     reader.GetBoolean(51), reader.GetString(52), reader.GetBoolean(53), reader.GetBoolean(54),
@@ -267,7 +270,8 @@ public class LocationRepository
                 BoothIconsEnabled = @BoothIconsEnabled, ShowLiveView = @ShowLiveView,
                 MirrorLiveView = @MirrorLiveView, LiveViewRotation = @LiveViewRotation,
                 EnableWebcams = @EnableWebcams, WebcamResolutionQuality = @WebcamResolutionQuality,
-                AudioInputDeviceName = @AudioInputDeviceName, PoseStripPosition = @PoseStripPosition,
+                AudioInputDeviceName = @AudioInputDeviceName, CameraDeviceName = @CameraDeviceName,
+                PoseStripPosition = @PoseStripPosition,
                 BoothIconLabelsEnabled = @BoothIconLabelsEnabled, WelcomeShowLiveView = @WelcomeShowLiveView,
                 LiveTemplatePreview = @LiveTemplatePreview, StretchLiveView = @StretchLiveView,
                 BrowseButtonEnabled = @BrowseButtonEnabled, ChooseTemplateEnabled = @ChooseTemplateEnabled,
@@ -307,6 +311,7 @@ public class LocationRepository
         command.Parameters.AddWithValue("@EnableWebcams", screen.EnableWebcams);
         command.Parameters.AddWithValue("@WebcamResolutionQuality", screen.WebcamResolutionQuality);
         command.Parameters.AddWithValue("@AudioInputDeviceName", (object?)screen.AudioInputDeviceName ?? DBNull.Value);
+        command.Parameters.AddWithValue("@CameraDeviceName", (object?)screen.CameraDeviceName ?? DBNull.Value);
         command.Parameters.AddWithValue("@PoseStripPosition", screen.PoseStripPosition);
         AddScreenEditorSettingsParameters(command, screen);
         command.Parameters.AddWithValue("@LocationId", locationId);
@@ -471,7 +476,8 @@ public class LocationRepository
                 BoothIconsEnabled = @BoothIconsEnabled, ShowLiveView = @ShowLiveView,
                 MirrorLiveView = @MirrorLiveView, LiveViewRotation = @LiveViewRotation,
                 EnableWebcams = @EnableWebcams, WebcamResolutionQuality = @WebcamResolutionQuality,
-                AudioInputDeviceName = @AudioInputDeviceName, PoseStripPosition = @PoseStripPosition,
+                AudioInputDeviceName = @AudioInputDeviceName, CameraDeviceName = @CameraDeviceName,
+                PoseStripPosition = @PoseStripPosition,
                 BeautyFilterEnabled = @BeautyFilterEnabled, BeautyFilterAlsoDuringCountdown = @BeautyFilterAlsoDuringCountdown,
                 FiltersMode = @FiltersMode, FiltersEnabled = @FiltersEnabled, EnabledFilterPresetIds = @EnabledFilterPresetIds,
                 PostProcessingEnabled = @PostProcessingEnabled, PostProcessingApplicationPath = @PostProcessingApplicationPath,
@@ -483,6 +489,7 @@ public class LocationRepository
                 PrintAutomatically = @PrintAutomatically, ShowPrintButton = @ShowPrintButton,
                 PrintLimitPerEvent = @PrintLimitPerEvent, PrintLimitPerSession = @PrintLimitPerSession, PrintSharpening = @PrintSharpening,
                 EmailEnabled = @EmailEnabled, SmsEnabled = @SmsEnabled, QrEnabled = @QrEnabled,
+                PaymentTiming = @PaymentTiming,
                 EmailFromAddress = @EmailFromAddress, EmailSubject = @EmailSubject, EmailSmtpHost = @EmailSmtpHost,
                 EmailSmtpPort = @EmailSmtpPort, EmailSmtpUsername = @EmailSmtpUsername, EmailUseSsl = @EmailUseSsl,
                 EmailSmtpPasswordProtected = @EmailSmtpPasswordProtected,
@@ -533,6 +540,7 @@ public class LocationRepository
         command.Parameters.AddWithValue("@EnableWebcams", screen.EnableWebcams);
         command.Parameters.AddWithValue("@WebcamResolutionQuality", screen.WebcamResolutionQuality);
         command.Parameters.AddWithValue("@AudioInputDeviceName", (object?)screen.AudioInputDeviceName ?? DBNull.Value);
+        command.Parameters.AddWithValue("@CameraDeviceName", (object?)screen.CameraDeviceName ?? DBNull.Value);
         command.Parameters.AddWithValue("@PoseStripPosition", screen.PoseStripPosition);
         command.Parameters.AddWithValue("@BeautyFilterEnabled", effects.BeautyFilterEnabled);
         command.Parameters.AddWithValue("@BeautyFilterAlsoDuringCountdown", effects.BeautyFilterAlsoDuringCountdown);
@@ -557,6 +565,7 @@ public class LocationRepository
         command.Parameters.AddWithValue("@EmailEnabled", sharing.EmailEnabled);
         command.Parameters.AddWithValue("@SmsEnabled", sharing.SmsEnabled);
         command.Parameters.AddWithValue("@QrEnabled", sharing.QrEnabled);
+        command.Parameters.AddWithValue("@PaymentTiming", sharing.PaymentTiming);
         command.Parameters.AddWithValue("@EmailFromAddress", sharing.EmailFromAddress);
         command.Parameters.AddWithValue("@EmailSubject", sharing.EmailSubject);
         command.Parameters.AddWithValue("@EmailSmtpHost", sharing.EmailSmtpHost);

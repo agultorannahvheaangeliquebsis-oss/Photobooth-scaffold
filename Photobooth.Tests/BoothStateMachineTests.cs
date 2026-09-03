@@ -241,6 +241,90 @@ public class BoothStateMachineTests
     }
 
     [Fact]
+    public async Task RunSessionAsync_PrintLimitPerEventReached_SkipsPrintingForLaterSessionsButStillCompletes()
+    {
+        var camera = new MockCameraService();
+        var printer = new MockPrinterService();
+        var cloudUpload = new MockCloudUploadService();
+        var paymentService = new MockQrPaymentService();
+        var sessions = new MockSessionRepository();
+        var uploadQueue = new MockPendingUploadQueue();
+        var consent = new MockConsentService();
+        var email = new MockEmailDeliveryService();
+        var branding = new MockPhotoBrandingService();
+        var filter = new MockPhotoFilterService();
+        var settings = new MockBoothSettingsProvider
+        {
+            Settings = new BoothSettings(CountdownSeconds: 0, GlamFilterEnabled: false, PrintTemplate: PrintTemplate.Default)
+            {
+                PrintOptions = PrintOptions.Default with { PrintLimitPerEvent = 1 },
+                Screen = ScreenSettings.Default with { FinalScreenTimeoutSeconds = 1 },
+            },
+        };
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
+        // One instance runs both sessions -- the per-event print count is
+        // tracked on the instance, matching KioskAdminViewModel's own
+        // PrintsThisEvent counter's same "one app run = one event" lifetime.
+        var machine = new BoothStateMachine(services, mode: "event");
+
+        var allStates = new List<BoothState>();
+        machine.StateChanged += state => allStates.Add(state);
+
+        await machine.RunSessionAsync();
+        int statesAfterFirstSession = allStates.Count;
+
+        // First session: nothing printed yet, limit is 1 -- prints normally.
+        Assert.Contains(BoothState.Printing, allStates);
+        Assert.Single(sessions.RecordedPrints);
+
+        await machine.RunSessionAsync();
+        List<BoothState> secondSessionStates = allStates.Skip(statesAfterFirstSession).ToList();
+
+        // Second session: the event's already used its one print -- Printing
+        // is skipped entirely, same "no Printing state, no Print row" shape
+        // GIF/Boomerang/Video already established, but the session still
+        // completes normally (the guest still gets their digital copy).
+        Assert.DoesNotContain(BoothState.Printing, secondSessionStates);
+        Assert.Contains(BoothState.Complete, secondSessionStates);
+        Assert.Single(sessions.RecordedPrints); // still just the one from session 1
+        Assert.Equal(2, sessions.CompletedSessionIds.Count);
+    }
+
+    [Fact]
+    public async Task RunSessionAsync_CustomReviewSecondsInSettings_UsesThatDelayInsteadOfTheHardcodedTwoSeconds()
+    {
+        var camera = new MockCameraService();
+        var printer = new MockPrinterService();
+        var cloudUpload = new MockCloudUploadService();
+        var paymentService = new MockQrPaymentService();
+        var sessions = new MockSessionRepository();
+        var uploadQueue = new MockPendingUploadQueue();
+        var consent = new MockConsentService();
+        var email = new MockEmailDeliveryService();
+        var branding = new MockPhotoBrandingService();
+        var filter = new MockPhotoFilterService();
+        var settings = new MockBoothSettingsProvider { Settings = new BoothSettings(CountdownSeconds: 0, GlamFilterEnabled: false, PrintTemplate: PrintTemplate.Default) { Screen = ScreenSettings.Default with { ReviewSeconds = 0, FinalScreenTimeoutSeconds = 1 } } };
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
+        var machine = new BoothStateMachine(services, mode: "event");
+
+        var stateTimestamps = new List<(BoothState State, DateTime At)>();
+        machine.StateChanged += state => stateTimestamps.Add((state, DateTime.UtcNow));
+
+        await machine.RunSessionAsync();
+
+        // An admin set ReviewSeconds to 0 instead of the schema default of
+        // 2 -- confirms BoothStateMachine actually reads that value rather
+        // than the old hardcoded 2000ms delay. A 1s bound (same generous
+        // margin the upload-completes-in-time tests elsewhere in this file
+        // already use) comfortably distinguishes "read as 0" from "still
+        // hardcoded to 2".
+        int reviewingIndex = stateTimestamps.FindIndex(s => s.State == BoothState.Reviewing);
+        Assert.True(reviewingIndex >= 0 && reviewingIndex + 1 < stateTimestamps.Count);
+        TimeSpan reviewingDwell = stateTimestamps[reviewingIndex + 1].At - stateTimestamps[reviewingIndex].At;
+        Assert.True(reviewingDwell < TimeSpan.FromSeconds(1), $"Expected the Reviewing dwell to honor ReviewSeconds=0, but it took {reviewingDwell}.");
+    }
+
+    [Fact]
     public async Task RunSessionAsync_CustomPrintTemplateInSettings_PassesItToThePrinter()
     {
         var camera = new MockCameraService();
@@ -521,6 +605,89 @@ public class BoothStateMachineTests
         // The guest didn't pay, so they shouldn't get a free digital copy
         // by email either -- even though the photo was already captured
         // and uploaded before the decline happened.
+        Assert.Empty(email.SentEmails);
+    }
+
+    [Fact]
+    public async Task RunSessionAsync_VendoModeWithStartScreenPaymentTiming_RunsPaymentBeforeFramePickerAndConsent()
+    {
+        var camera = new MockCameraService();
+        var printer = new MockPrinterService();
+        var cloudUpload = new MockCloudUploadService();
+        var paymentService = new MockQrPaymentService();
+        var sessions = new MockSessionRepository();
+        var uploadQueue = new MockPendingUploadQueue();
+        var consent = new MockConsentService();
+        var email = new MockEmailDeliveryService();
+        var branding = new MockPhotoBrandingService();
+        var filter = new MockPhotoFilterService();
+        var settings = new MockBoothSettingsProvider();
+        settings.Settings = settings.Settings with { Sharing = settings.Settings.Sharing with { PaymentTiming = "StartScreen" } };
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
+        var machine = new BoothStateMachine(services, mode: "vendo");
+
+        var states = new List<BoothState>();
+        machine.StateChanged += state => states.Add(state);
+
+        await machine.RunSessionAsync();
+
+        // Paid upfront -- PrePayment runs before Consent/Countdown, and
+        // there's no separate Payment state later since the guest already
+        // paid before FramePicker/Consent ever ran.
+        Assert.Equal(
+            new[]
+            {
+                BoothState.PrePayment, BoothState.Consent, BoothState.Countdown, BoothState.Capturing, BoothState.Reviewing,
+                BoothState.Printing, BoothState.Complete, BoothState.Guestbook, BoothState.Feedback, BoothState.Idle,
+            },
+            states);
+        Assert.DoesNotContain(BoothState.Payment, states);
+        Assert.NotNull(machine.PaymentQrPng);
+
+        var recordedPayment = Assert.Single(sessions.RecordedPayments);
+        Assert.Equal(150m, recordedPayment.Amount);
+        Assert.Equal("qr_gcash", recordedPayment.Method);
+    }
+
+    [Fact]
+    public async Task RunSessionAsync_VendoModeWithStartScreenPaymentTimingDeclined_FailsBeforeAnyCameraCycle()
+    {
+        var camera = new MockCameraService();
+        var printer = new MockPrinterService();
+        var cloudUpload = new MockCloudUploadService();
+        var paymentService = new MockCardReaderPaymentService { DeclineNext = true };
+        var sessions = new MockSessionRepository();
+        var uploadQueue = new MockPendingUploadQueue();
+        var consent = new MockConsentService();
+        var email = new MockEmailDeliveryService();
+        var branding = new MockPhotoBrandingService();
+        var filter = new MockPhotoFilterService();
+        var settings = new MockBoothSettingsProvider();
+        settings.Settings = settings.Settings with { Sharing = settings.Settings.Sharing with { PaymentTiming = "StartScreen" } };
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
+        var machine = new BoothStateMachine(services, mode: "vendo");
+
+        var states = new List<BoothState>();
+        machine.StateChanged += state => states.Add(state);
+        string? error = null;
+        machine.ErrorOccurred += message => error = message;
+
+        await machine.RunSessionAsync();
+
+        // A decline at PrePayment fails before the guest ever sees Consent,
+        // Countdown, or Capturing -- the opposite of the existing
+        // SharingScreen-timing decline above, which happens only after a
+        // full camera cycle already ran.
+        Assert.Equal(new[] { BoothState.PrePayment, BoothState.Error, BoothState.Idle }, states);
+        Assert.NotNull(error);
+        Assert.Null(machine.LastCapturedImagePath);
+        Assert.Empty(sessions.RecordedConsents);
+
+        var createdSession = Assert.Single(sessions.CreatedSessions);
+        Assert.Equal(createdSession.SessionId, Assert.Single(sessions.FailedSessionIds));
+        Assert.Empty(sessions.CompletedSessionIds);
+        Assert.Empty(sessions.RecordedPrints);
+        Assert.Empty(sessions.RecordedPayments);
         Assert.Empty(email.SentEmails);
     }
 

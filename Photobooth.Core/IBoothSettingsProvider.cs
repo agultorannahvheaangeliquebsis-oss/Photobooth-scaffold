@@ -121,6 +121,16 @@ public record ScreenSettings(
     // ===================== Welcome screen =====================
     // See ScreenTemplateEditorWindow's Welcome settings panel / dslrBooth's
     // own Welcome Screen Settings panel.
+    /// <summary>Exact DeviceName (see PtpCameraDevices.ListAsync/the camera
+    /// bridge's LIST_CAMERAS command) of the camera AdminWindow's Camera
+    /// Settings picker last had selected -- null means "auto-detect" (the
+    /// bridge's original DSLR-then-webcam fallback, see
+    /// BoothCompositionRoot.EnsureCameraBridgeRunning). Only takes effect the
+    /// next time the bridge process starts fresh or the picker issues a live
+    /// SELECT_CAMERA, same "next fresh launch" caveat EnableWebcams' own doc
+    /// comment already covers for that same external process.</summary>
+    public string? CameraDeviceName { get; init; }
+
     public bool BoothIconLabelsEnabled { get; init; } = true;
 
     // Booth Icons group -- the Photo/GIF/Boomerang/Video mode tiles. Each
@@ -255,6 +265,12 @@ public record ScreenSettings(
     /// when ShowLiveView is off), same layering as the existing scrim.</summary>
     public string CaptureBackgroundColorHex { get; init; } = "#17181A";
     public string? CaptureBackgroundImagePath { get; init; }
+
+    /// <summary>Seconds BoothStateMachine's Reviewing state dwells before
+    /// moving on to Payment/Printing -- "guest sees the shot before it
+    /// prints." Was a hardcoded 2 until this setting existed; the default
+    /// keeps that exact behavior.</summary>
+    public int ReviewSeconds { get; init; } = 2;
 
     // ===================== Sharing screen =====================
     // See ScreenTemplateEditorWindow's Sharing settings panel, which
@@ -394,6 +410,15 @@ public record SharingSettings(bool EmailEnabled = true, bool SmsEnabled = false,
     /// screen icon row -- distinct from PrintOptions.ShowPrintButton, which
     /// is the always-on-screen print button during the review step.</summary>
     public bool PrintEnabled { get; init; }
+
+    /// <summary>When to run vendo-mode payment -- "SharingScreen" (default,
+    /// after the guest sees their photo; BoothState.Payment runs between
+    /// Reviewing and Printing, same as before this setting existed) or
+    /// "StartScreen" (before the guest can begin a session at all;
+    /// BoothState.PrePayment runs before FramePicker/Consent instead). Same
+    /// two options dslrBooth's own "Request payment" dropdown offers. Moot
+    /// in event mode, which never charges regardless of this setting.</summary>
+    public string PaymentTiming { get; init; } = "SharingScreen";
 
     // Real SMTP delivery config -- see SmtpEmailDeliveryService, which reads
     // these fresh on every send (via IBoothSettingsProvider), same "admin's

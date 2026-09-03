@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -130,11 +131,36 @@ public partial class AdminWindow : Window
     // WebcamResolutionQuality/AudioInputDeviceName) get saved.
     private ScreenSettings _currentScreenSettings = ScreenSettings.Default;
 
+    // ---- Camera Settings live preview/device picker (see RefreshCameraDevicesAsync,
+    // PollCameraPreviewFrameAsync, and the Camera Settings XAML comment on why
+    // this is safe to run even if this window is opened mid-guest-session). ----
+    private readonly PtpCameraDevices _cameraDevices = new();
+    private PtpLiveViewService? _cameraPreviewLiveView;
+    private System.Windows.Threading.DispatcherTimer? _cameraPreviewTimer;
+    private string? _savedCameraDeviceName;
+
+    /// <summary>Set only if THIS window started the bridge (see
+    /// RefreshCameraDevicesAsync) -- killed on Close so a standalone "test my
+    /// camera settings" open (e.g. from EventLauncherWindow, before any event
+    /// is launched) doesn't leave an orphaned bridge process running. Left
+    /// null (and never killed) when the bridge was already running -- most
+    /// commonly because a live kiosk session behind this admin overlay
+    /// started it and still needs it after this window closes.</summary>
+    private Process? _ownedCameraBridgeProcess;
+
     public AdminWindow(int? locationId = null, string initialSection = "General", Action<bool>? onLockChanged = null)
     {
         InitializeComponent();
         _requestedLocationId = locationId;
         _onLockChanged = onLockChanged;
+        Closed += (_, _) =>
+        {
+            StopCameraPreview();
+            if (_ownedCameraBridgeProcess is { HasExited: false } process)
+            {
+                try { process.Kill(); } catch { /* already gone */ }
+            }
+        };
         Loaded += async (_, _) =>
         {
             await LoadAsync();
@@ -256,6 +282,11 @@ public partial class AdminWindow : Window
     /// section without taking up space while closed.</summary>
     private void ShowSection(string key)
     {
+        if (_currentSectionKey == "CameraSettings" && key != "CameraSettings")
+        {
+            StopCameraPreview();
+        }
+
         foreach (FrameworkElement panel in SectionPanels.Values)
         {
             panel.Visibility = Visibility.Collapsed;
@@ -277,6 +308,11 @@ public partial class AdminWindow : Window
         {
             GeneralSectionPanel.Visibility = Visibility.Visible;
             _currentSectionKey = "General";
+        }
+
+        if (_currentSectionKey == "CameraSettings")
+        {
+            _ = RefreshCameraDevicesAsync();
         }
     }
 
@@ -681,6 +717,8 @@ public partial class AdminWindow : Window
                 QrEnabledCheckBox.IsChecked = sharing.QrEnabled;
                 TwitterEnabledCheckBox.IsChecked = sharing.TwitterEnabled;
                 PrintEnabledCheckBox.IsChecked = sharing.PrintEnabled;
+                PaymentTimingStartScreenRadio.IsChecked = sharing.PaymentTiming == "StartScreen";
+                PaymentTimingSharingScreenRadio.IsChecked = sharing.PaymentTiming != "StartScreen";
                 EmailFromAddressBox.Text = sharing.EmailFromAddress;
                 EmailSubjectBox.Text = sharing.EmailSubject;
                 EmailSmtpHostBox.Text = sharing.EmailSmtpHost;
@@ -780,6 +818,20 @@ public partial class AdminWindow : Window
             _ => 0,
         };
 
+        // Seeded from the saved value only -- a real device list needs the
+        // bridge reachable, which only happens once Camera Settings is
+        // actually opened (see RefreshCameraDevicesAsync), not on every
+        // LoadAsync/dashboard load.
+        _savedCameraDeviceName = screen.CameraDeviceName;
+        CameraDeviceCombo.Items.Clear();
+        CameraDeviceCombo.Items.Add(new ComboBoxItem { Content = "Auto-detect", Tag = null });
+        if (_savedCameraDeviceName is string savedCameraDeviceName)
+        {
+            CameraDeviceCombo.Items.Add(new ComboBoxItem { Content = savedCameraDeviceName, Tag = savedCameraDeviceName });
+        }
+        CameraDeviceCombo.SelectedIndex = CameraDeviceCombo.Items.Count - 1;
+        CameraDeviceStatusText.Text = " ";
+
         AudioInputCombo.Items.Clear();
         AudioInputCombo.Items.Add(new ComboBoxItem { Content = "System Default", Tag = null });
         foreach (string deviceName in AudioInputDevices.EnumerateNames())
@@ -797,6 +849,197 @@ public partial class AdminWindow : Window
                     break;
                 }
             }
+        }
+    }
+
+    /// <summary>Connects to (starting it if needed) the camera bridge, lists
+    /// its currently visible cameras into CameraDeviceCombo, and starts the
+    /// live preview timer -- run once whenever ShowSection switches into
+    /// CameraSettings, not on every dashboard load (see LoadCameraSettings).
+    /// Best-effort throughout: a bridge that can't be reached just leaves the
+    /// combo showing "Auto-detect" and the preview showing an explanatory
+    /// status message, same as any other "hardware might not be here yet"
+    /// state this admin screen already tolerates.</summary>
+    private async Task RefreshCameraDevicesAsync()
+    {
+        RefreshCameraDevicesButton.IsEnabled = false;
+        CameraDeviceStatusText.Text = "Connecting to camera bridge...";
+        CameraPreviewStatusText.Text = "Connecting to camera bridge...";
+        CameraPreviewStatusText.Visibility = Visibility.Visible;
+
+        try
+        {
+            if (!BoothCompositionRoot.IsCameraBridgeRunning())
+            {
+                _ownedCameraBridgeProcess = BoothCompositionRoot.EnsureCameraBridgeRunningForPreview(
+                    EnableWebcamsCheckBox.IsChecked == true, _savedCameraDeviceName);
+            }
+
+            List<string> deviceNames = await _cameraDevices.ListAsync();
+
+            string? selectedName = CameraDeviceCombo.SelectedItem is ComboBoxItem { Tag: string tag } ? tag : null;
+            CameraDeviceCombo.Items.Clear();
+            CameraDeviceCombo.Items.Add(new ComboBoxItem { Content = "Auto-detect", Tag = null });
+            foreach (string name in deviceNames)
+            {
+                CameraDeviceCombo.Items.Add(new ComboBoxItem { Content = name, Tag = name });
+            }
+
+            string? nameToSelect = selectedName ?? _savedCameraDeviceName;
+            int indexToSelect = 0;
+            if (nameToSelect is not null)
+            {
+                for (int i = 0; i < CameraDeviceCombo.Items.Count; i++)
+                {
+                    if (((ComboBoxItem)CameraDeviceCombo.Items[i]).Tag as string == nameToSelect)
+                    {
+                        indexToSelect = i;
+                        break;
+                    }
+                }
+            }
+            CameraDeviceCombo.SelectedIndex = indexToSelect;
+
+            CameraDeviceStatusText.Text = deviceNames.Count == 0
+                ? "No cameras found yet -- check the connection and press Refresh."
+                : $"{deviceNames.Count} camera(s) found.";
+
+            StartCameraPreview();
+        }
+        catch (Exception ex)
+        {
+            CameraDeviceStatusText.Text = $"Couldn't reach the camera bridge: {ex.Message}";
+            CameraPreviewStatusText.Text = "Couldn't reach the camera bridge.";
+        }
+        finally
+        {
+            RefreshCameraDevicesButton.IsEnabled = true;
+        }
+    }
+
+    private async void RefreshCameraDevicesButton_Click(object sender, RoutedEventArgs e) => await RefreshCameraDevicesAsync();
+
+    /// <summary>Switches the bridge's active camera immediately (not just on
+    /// Save) so an admin comparing two attached cameras sees the preview
+    /// update right away -- SaveParitySettingsButton_Click still persists
+    /// whatever's selected here into ScreenSettings.CameraDeviceName for the
+    /// next fresh bridge launch. Ignores the initial SelectionChanged that
+    /// fires while RefreshCameraDevicesAsync is still repopulating the combo
+    /// (IsEnabled is false for RefreshCameraDevicesButton during that window,
+    /// reused here as the "don't act on this yet" guard).</summary>
+    private async void CameraDeviceCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_currentSectionKey != "CameraSettings" || !RefreshCameraDevicesButton.IsEnabled)
+        {
+            return;
+        }
+
+        if (CameraDeviceCombo.SelectedItem is not ComboBoxItem { Tag: string deviceName })
+        {
+            return;
+        }
+
+        bool selected = await _cameraDevices.SelectAsync(deviceName);
+        CameraDeviceStatusText.Text = selected
+            ? $"Switched to {deviceName}."
+            : $"Couldn't switch to {deviceName} -- it may have been disconnected.";
+    }
+
+    /// <summary>Starts (or restarts) the ~4fps live-preview poll against
+    /// whichever camera the bridge currently has selected. A slower interval
+    /// than KioskViewModel's own 150ms Countdown-screen poll (see
+    /// LiveViewInterval there) -- this is a settings-check preview, not a
+    /// guest-facing countdown, so a smoother feed isn't worth the extra pipe
+    /// traffic sharing the bridge with any live guest session.</summary>
+    private void StartCameraPreview()
+    {
+        StopCameraPreview();
+
+        _cameraPreviewLiveView = new PtpLiveViewService();
+        _cameraPreviewTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(250),
+        };
+        _cameraPreviewTimer.Tick += async (_, _) => await PollCameraPreviewFrameAsync();
+        _cameraPreviewTimer.Start();
+    }
+
+    /// <summary>Stops the preview timer/live-view session -- called when
+    /// navigating away from Camera Settings and when this window closes, so
+    /// a left-open Admin dashboard doesn't keep polling the bridge forever.</summary>
+    private void StopCameraPreview()
+    {
+        _cameraPreviewTimer?.Stop();
+        _cameraPreviewTimer = null;
+
+        PtpLiveViewService? liveView = _cameraPreviewLiveView;
+        _cameraPreviewLiveView = null;
+        if (liveView is not null)
+        {
+            _ = liveView.StopAsync();
+        }
+    }
+
+    private bool _cameraPreviewFetchInProgress;
+
+    private async Task PollCameraPreviewFrameAsync()
+    {
+        if (_cameraPreviewFetchInProgress || _cameraPreviewLiveView is not PtpLiveViewService liveView)
+        {
+            return;
+        }
+
+        _cameraPreviewFetchInProgress = true;
+        try
+        {
+            byte[]? frame = await liveView.GetFrameAsync();
+            if (frame is not null)
+            {
+                ImageSource? image = LoadImageFromBytes(frame);
+                if (image is not null)
+                {
+                    CameraPreviewImage.Source = image;
+                    CameraPreviewStatusText.Visibility = Visibility.Collapsed;
+                }
+            }
+            else if (CameraPreviewImage.Source is null)
+            {
+                CameraPreviewStatusText.Text = "No camera connected.";
+                CameraPreviewStatusText.Visibility = Visibility.Visible;
+            }
+            // A dropped frame with something already on screen is normal
+            // (camera warming up, bridge momentarily busy with a guest
+            // capture) -- keep showing the last frame rather than blanking it.
+        }
+        catch (Exception)
+        {
+            // Best-effort preview, same as KioskViewModel's own poller.
+        }
+        finally
+        {
+            _cameraPreviewFetchInProgress = false;
+        }
+    }
+
+    /// <summary>Decodes fully on load and freezes, same as KioskViewModel's
+    /// own LoadImageFromBytes -- the bitmap holds no handle on the source byte
+    /// array once decoded, and can be handed to the UI thread safely.</summary>
+    private static ImageSource? LoadImageFromBytes(byte[] bytes)
+    {
+        try
+        {
+            using var stream = new System.IO.MemoryStream(bytes);
+            var image = new System.Windows.Media.Imaging.BitmapImage();
+            image.BeginInit();
+            image.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+            image.StreamSource = stream;
+            image.EndInit();
+            image.Freeze();
+            return image;
+        }
+        catch (Exception)
+        {
+            return null;
         }
     }
 
@@ -987,6 +1230,7 @@ public partial class AdminWindow : Window
         {
             TwitterEnabled = TwitterEnabledCheckBox.IsChecked == true,
             PrintEnabled = PrintEnabledCheckBox.IsChecked == true,
+            PaymentTiming = PaymentTimingStartScreenRadio.IsChecked == true ? "StartScreen" : "SharingScreen",
             EmailFromAddress = EmailFromAddressBox.Text.Trim(),
             EmailSubject = EmailSubjectBox.Text.Trim(),
             EmailSmtpHost = EmailSmtpHostBox.Text.Trim(),
@@ -1127,6 +1371,7 @@ public partial class AdminWindow : Window
         var capture = new CaptureSettings(captureMode, AlsoCreateGifCheckBox.IsChecked == true, frameCount, frameDelayMs, videoDurationSeconds);
         int liveViewRotation = CameraRotationCombo.SelectedItem is ComboBoxItem { Tag: string rotationTag } ? int.Parse(rotationTag) : 0;
         string? audioInputDeviceName = AudioInputCombo.SelectedItem is ComboBoxItem { Tag: string deviceName } ? deviceName : null;
+        string? cameraDeviceName = CameraDeviceCombo.SelectedItem is ComboBoxItem { Tag: string selectedCameraName } ? selectedCameraName : null;
         var screen = _currentScreenSettings with
         {
             MirrorLiveView = CameraMirrorLiveViewCheckBox.IsChecked == true,
@@ -1134,6 +1379,7 @@ public partial class AdminWindow : Window
             EnableWebcams = EnableWebcamsCheckBox.IsChecked == true,
             WebcamResolutionQuality = (int)WebcamResolutionSlider.Value,
             AudioInputDeviceName = audioInputDeviceName,
+            CameraDeviceName = cameraDeviceName,
         };
         string? postProcessingApplicationPath = PostProcessingApplicationPathBox.Text.Trim() is { Length: > 0 } postProcessingPath ? postProcessingPath : null;
         var effects = new EffectsSettings(
@@ -1161,6 +1407,7 @@ public partial class AdminWindow : Window
             await _locations.UpdateDslrBoothParitySettingsAsync(_locationId, capture, screen, effects, greenScreen, survey, disclaimer, printOptions, sharing);
             BoothSettingsChanged.Publish(_locationId);
             _currentScreenSettings = screen;
+            _savedCameraDeviceName = screen.CameraDeviceName;
             _existingWatermarkPath = watermarkPath;
             _pendingWatermarkPath = null;
             _existingGreenScreenBackgroundPath = greenScreenBackgroundPath;

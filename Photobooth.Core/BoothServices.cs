@@ -78,10 +78,13 @@ public record BoothServices(
     /// <summary>Reads the booth's favorited saved print-layout templates (see
     /// BoothStateMachine's now-first FramePicker step) -- an init property here
     /// for the same reason Sms/GreenScreen/PostProcessing are. Replaces
-    /// FrameLibrary as the source of the guest-facing "frame/layout" picker;
-    /// FrameLibrary/FrameSelection stay above (still required, and still used
-    /// by FrameOverlay's watermark compositing path) so every existing
-    /// `new BoothServices(...)` call site keeps compiling unchanged.</summary>
+    /// FrameLibrary as the source of the guest-facing "frame/layout" picker.
+    /// FrameLibrary/FrameSelection (above, positional) are no longer called
+    /// from BoothStateMachine's guest flow at all -- kept only so every
+    /// existing `new BoothServices(...)` call site keeps compiling unchanged.
+    /// FrameOverlay (also above) is the one piece of that old seam still
+    /// exercised by a running session, repurposed for the Effects watermark
+    /// pass -- see BoothStateMachine's post-capture compositing step.</summary>
     public IPrintTemplateLibraryService TemplateLibrary { get; init; } = new MockPrintTemplateLibraryService();
 
     /// <summary>Collects the guest's layout pick during FramePicker -- an init

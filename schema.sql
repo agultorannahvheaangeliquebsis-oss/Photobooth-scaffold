@@ -37,6 +37,7 @@ CREATE TABLE Location (
     EnableWebcams       BIT          NOT NULL DEFAULT 1,   -- if 0, only Canon/Nikon are used -- see AdminWindow's Camera Settings section
     WebcamResolutionQuality INT      NOT NULL DEFAULT 70,  -- 0 (fastest framerate) - 100 (highest quality)
     AudioInputDeviceName NVARCHAR(200) NULL,                -- NULL = system default device
+    CameraDeviceName    NVARCHAR(200) NULL,                -- NULL = auto-detect (DSLR, then webcam fallback) -- see AdminWindow's Camera Settings device picker
     BeautyFilterEnabled BIT          NOT NULL DEFAULT 0,
     BeautyFilterAlsoDuringCountdown BIT NOT NULL DEFAULT 0,
     FiltersMode         NVARCHAR(20) NOT NULL DEFAULT 'Ask' CHECK (FiltersMode IN ('Ask', 'Auto')),
@@ -61,6 +62,7 @@ CREATE TABLE Location (
     EmailEnabled        BIT          NOT NULL DEFAULT 1,
     SmsEnabled          BIT          NOT NULL DEFAULT 0,
     QrEnabled           BIT          NOT NULL DEFAULT 1,
+    PaymentTiming       NVARCHAR(20) NOT NULL DEFAULT 'SharingScreen' CHECK (PaymentTiming IN ('SharingScreen', 'StartScreen')),
 
     -- Real SMTP/Twilio delivery config (see Photobooth.Core's
     -- SmtpEmailDeliveryService/TwilioSmsDeliveryService). The two

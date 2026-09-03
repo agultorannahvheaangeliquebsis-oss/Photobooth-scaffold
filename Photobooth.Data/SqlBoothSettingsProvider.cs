@@ -60,7 +60,8 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
                    CaptureCancelButtonPositionXPercent, CaptureCancelButtonPositionYPercent,
                    SharingIconsGroupEnabled, SharingIconsPositionXPercent, SharingIconsPositionYPercent,
                    SharingIconsLayout, SharingIconsAlignment,
-                   PoseStripBackgroundOpacityPercent, PoseStripActiveBorderColorHex, PoseStripShowPlaceholderNumbers
+                   PoseStripBackgroundOpacityPercent, PoseStripActiveBorderColorHex, PoseStripShowPlaceholderNumbers,
+                   PaymentTiming, CameraDeviceName
             FROM Location WHERE LocationId = @LocationId;
             """,
             connection);
@@ -160,6 +161,7 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
                 PoseStripBackgroundOpacityPercent = reader.GetInt32(122),
                 PoseStripActiveBorderColorHex = reader.GetString(123),
                 PoseStripShowPlaceholderNumbers = reader.GetBoolean(124),
+                CameraDeviceName = reader.IsDBNull(126) ? null : reader.GetString(126),
             };
             effects = new EffectsSettings(
                 reader.GetBoolean(24), reader.GetString(25), reader.IsDBNull(26) ? null : reader.GetString(26),
@@ -186,6 +188,7 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
                 TwilioAuthTokenProtected = reader.GetString(65),
                 TwitterEnabled = reader.GetBoolean(99),
                 PrintEnabled = reader.GetBoolean(100),
+                PaymentTiming = reader.GetString(125),
             };
             virtualAttendant = new VirtualAttendantSettings(
                 reader.GetBoolean(47), reader.GetString(48), reader.GetBoolean(49), reader.GetBoolean(50),

@@ -754,7 +754,7 @@ public class KioskViewModel : ObservableObject, IDisposable
     /// PoseStripPosition automatically, no separate admin control.</summary>
     public Orientation PoseStripOrientation { get => _poseStripOrientation; private set => SetProperty(ref _poseStripOrientation, value); }
 
-    private Brush _poseStripBackgroundBrush = new SolidColorBrush(Color.FromArgb(115, 0, 0, 0));
+    private Brush _poseStripBackgroundBrush = CreateFrozenPoseStripDefaultBrush();
 
     /// <summary>ScreenSettings.PoseStripBackgroundOpacityPercent, converted to
     /// a black brush with that alpha -- the strip's own backing panel.</summary>
@@ -1658,7 +1658,7 @@ public class KioskViewModel : ObservableObject, IDisposable
         BoothState.Consent or BoothState.Reviewing or BoothState.Printing => KioskScreen.Processing,
         BoothState.FilterPicker => KioskScreen.FilterPicker,
         BoothState.FramePicker => KioskScreen.FramePicker,
-        BoothState.Payment => KioskScreen.Payment,
+        BoothState.PrePayment or BoothState.Payment => KioskScreen.Payment,
         BoothState.Guestbook => KioskScreen.Guestbook,
         BoothState.Feedback => KioskScreen.Feedback,
         BoothState.Survey => KioskScreen.Survey,
@@ -1917,6 +1917,20 @@ public class KioskViewModel : ObservableObject, IDisposable
         {
             return Brushes.White;
         }
+    }
+
+    /// <summary>Field-initializer default for PoseStripBackgroundBrush, run
+    /// during construction -- which BuildKioskViewModel does via Task.Run off
+    /// the UI thread (see the _dispatcher comment in the constructor). Must be
+    /// frozen like every other default Brush/ImageSource in this file (see
+    /// HexToBrush/DecodeFrozen), or KioskWindow's binding to it throws "Must
+    /// create DependencySource on same Thread as the DependencyObject" the
+    /// moment the window shows, before ReloadSettingsAsync replaces it.</summary>
+    private static Brush CreateFrozenPoseStripDefaultBrush()
+    {
+        var brush = new SolidColorBrush(Color.FromArgb(115, 0, 0, 0));
+        brush.Freeze();
+        return brush;
     }
 
     private void UpdateLiveView(BoothState state)

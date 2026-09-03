@@ -99,7 +99,7 @@ public static class BoothCompositionRoot
         var filterSelection = new UiFilterSelectionService();
         var templateSelection = new UiTemplateSelectionService();
 
-        Process? cameraBridgeProcess = EnsureCameraBridgeRunning(target.Screen.EnableWebcams);
+        Process? cameraBridgeProcess = EnsureCameraBridgeRunning(target.Screen.EnableWebcams, target.Screen.CameraDeviceName);
 
         var sessionRepository = new SqlSessionRepository(seedIds.LocationId, seedIds.PrinterId);
         // Shared by Settings below and the two real delivery services --
@@ -198,7 +198,13 @@ public static class BoothCompositionRoot
     /// other admin-editable setting in this codebase avoids by being read fresh
     /// per session, which isn't possible here since the bridge is an
     /// already-running external process, not something re-read per call.</param>
-    private static Process? EnsureCameraBridgeRunning(bool enableWebcams)
+    /// <param name="cameraDeviceName">ScreenSettings.CameraDeviceName -- the
+    /// admin's last explicit pick from the Camera Settings device picker, or
+    /// null for auto-detect. Passed as the bridge's --camera argument; same
+    /// "next fresh launch" caveat as enableWebcams above (a picker open against
+    /// an already-running bridge instead sends a live SELECT_CAMERA, see
+    /// AdminWindow.RefreshCameraDevicesAsync).</param>
+    private static Process? EnsureCameraBridgeRunning(bool enableWebcams, string? cameraDeviceName = null)
     {
         if (PtpCameraService.IsBridgeHostRunning())
         {
@@ -224,6 +230,11 @@ public static class BoothCompositionRoot
         if (requireDslr)
         {
             startInfo.ArgumentList.Add("--require-dslr");
+        }
+        if (!string.IsNullOrWhiteSpace(cameraDeviceName))
+        {
+            startInfo.ArgumentList.Add("--camera");
+            startInfo.ArgumentList.Add(cameraDeviceName);
         }
 
         Process? process;
@@ -256,6 +267,19 @@ public static class BoothCompositionRoot
 
         return process;
     }
+
+    /// <summary>Starts the camera bridge host if it isn't already running, so
+    /// AdminWindow's Camera Settings screen can show a live preview and device
+    /// list before an event is actually launched (BuildRealBooth's own call
+    /// above covers the guest-facing path once one is). Returns the started
+    /// process so the caller can decide whether it owns tearing it down on
+    /// close -- same "only the launch that started it should kill it" contract
+    /// EnsureCameraBridgeRunning's own doc comment establishes, just reachable
+    /// without building the rest of a RealBooth's DB/printer/services.</summary>
+    public static Process? EnsureCameraBridgeRunningForPreview(bool enableWebcams, string? cameraDeviceName)
+        => EnsureCameraBridgeRunning(enableWebcams, cameraDeviceName);
+
+    public static bool IsCameraBridgeRunning() => PtpCameraService.IsBridgeHostRunning();
 
     /// <summary>Where this event's captured photos/GIFs/videos actually live
     /// on disk (see AdminWindow's Event folder/Export Event/Slideshow

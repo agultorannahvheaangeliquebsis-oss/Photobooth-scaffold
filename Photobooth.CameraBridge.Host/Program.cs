@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.IO.Pipes;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -23,6 +24,8 @@ namespace Photobooth.CameraBridge.Host
     //   CAPTURE         -> OK <absolute file path>  |  ERR <message>
     //   LIVEVIEW        -> OK <base64 jpeg frame>    |  ERR <message>
     //   LIVEVIEW_STOP   -> OK
+    //   LIST_CAMERAS    -> OK <name1>|<name2>|...    (empty payload if none)
+    //   SELECT_CAMERA <name> -> OK  |  ERR <message>
     internal class Program
     {
         private const string PipeName = "PhotoboothCameraBridge";
@@ -40,6 +43,12 @@ namespace Photobooth.CameraBridge.Host
             // bridge picks up whatever camera the device actually has.
             bool requireDslr = Array.Exists(args, a => a.Equals("--require-dslr", StringComparison.OrdinalIgnoreCase));
             _requireDslr = requireDslr;
+
+            // Set by BoothCompositionRoot from ScreenSettings.CameraDeviceName
+            // (AdminWindow's Camera Settings device picker) -- the admin's last
+            // explicit choice, applied once below after the normal DSLR/webcam
+            // scan finds *something* to select by default.
+            string? preferredCameraName = GetArgValue(args, "--camera");
 
             Manager.CameraConnected += device =>
                 Console.WriteLine($"[camera] connected: {device.DeviceName}");
@@ -74,6 +83,11 @@ namespace Photobooth.CameraBridge.Host
                 : requireDslr
                     ? "[bridge] no DSLR detected and --require-dslr was set -- pipe server will report ERR on CAPTURE until one connects"
                     : "[bridge] no camera detected at all (checked DSLR and webcam) -- pipe server will report ERR on CAPTURE until one connects");
+
+            if (preferredCameraName is not null)
+            {
+                ApplyPreferredCamera(preferredCameraName);
+            }
 
             // The two-pass scan above only runs once, at startup. If the
             // camera was in use by another app (e.g. its manufacturer
@@ -214,10 +228,129 @@ namespace Photobooth.CameraBridge.Host
                     writer.WriteLine(HandleLiveViewStop());
                     break;
 
+                case "LIST_CAMERAS":
+                    writer.WriteLine(HandleListCameras());
+                    break;
+
                 default:
-                    writer.WriteLine($"ERR unknown command '{command}'");
+                    if (command != null && command.StartsWith("SELECT_CAMERA ", StringComparison.Ordinal))
+                    {
+                        writer.WriteLine(HandleSelectCamera(command.Substring("SELECT_CAMERA ".Length)));
+                    }
+                    else
+                    {
+                        writer.WriteLine($"ERR unknown command '{command}'");
+                    }
                     break;
             }
+        }
+
+        /// <summary>Reports every camera the manager currently knows about, by
+        /// DeviceName, for AdminWindow's Camera Settings picker (see
+        /// PtpCameraDevices.ListAsync). Only triggers a fresh (webcam-widened)
+        /// scan when nothing is currently selected -- ConnectToCamera() can
+        /// reselect a different device, which would be exactly the
+        /// "race BoothStateMachine's own camera use during an active
+        /// Countdown/Capturing step" risk AdminWindow's live-preview code
+        /// already has to avoid, if it ran while a guest session's camera is
+        /// already selected and working. With a camera already selected, this
+        /// just reports whatever CameraConnected events have already added to
+        /// ConnectedDevices, so opening the picker mid-session can't bump the
+        /// guest's camera off mid-shot.</summary>
+        private static string HandleListCameras()
+        {
+            lock (RescanLock)
+            {
+                if (Manager.SelectedCameraDevice is not { IsConnected: true })
+                {
+                    bool previousDetectWebcams = Manager.DetectWebcams;
+                    Manager.DetectWebcams = true;
+                    try
+                    {
+                        Manager.ConnectToCamera();
+                        WaitForSelectedCamera(TimeSpan.FromSeconds(2));
+                    }
+                    finally
+                    {
+                        Manager.DetectWebcams = previousDetectWebcams;
+                    }
+                }
+
+                var names = Manager.ConnectedDevices
+                    .Where(d => d.IsConnected && !string.IsNullOrWhiteSpace(d.DeviceName))
+                    .Select(d => d.DeviceName)
+                    .Distinct()
+                    .ToList();
+
+                return "OK " + string.Join("|", names);
+            }
+        }
+
+        /// <summary>Switches the active camera to the one whose DeviceName
+        /// matches exactly -- an explicit admin action from the picker, so
+        /// (unlike the automatic startup/rescan fallback) this deliberately
+        /// ignores --require-dslr: an admin who explicitly names a webcam gets
+        /// that webcam.</summary>
+        private static string HandleSelectCamera(string name)
+        {
+            lock (RescanLock)
+            {
+                var device = Manager.ConnectedDevices.FirstOrDefault(d => d.IsConnected && d.DeviceName == name);
+                if (device == null)
+                {
+                    return $"ERR camera not found: {name}";
+                }
+
+                if (!ReferenceEquals(Manager.SelectedCameraDevice, device))
+                {
+                    if (_liveViewStarted)
+                    {
+                        try { Manager.SelectedCameraDevice?.StopLiveView(); } catch (Exception) { /* best-effort */ }
+                        _liveViewStarted = false;
+                    }
+                    Manager.SelectedCameraDevice = device;
+                }
+
+                return "OK";
+            }
+        }
+
+        /// <summary>Runs once at startup (see Main) to apply a saved
+        /// ScreenSettings.CameraDeviceName ahead of the very first guest
+        /// session, the same way HandleSelectCamera applies a live picker
+        /// choice -- widens the scan so a preferred webcam can be found too,
+        /// then only switches if that exact device actually turned up; leaves
+        /// whatever the normal DSLR/webcam fallback already selected
+        /// otherwise.</summary>
+        private static void ApplyPreferredCamera(string preferredCameraName)
+        {
+            lock (RescanLock)
+            {
+                bool previousDetectWebcams = Manager.DetectWebcams;
+                Manager.DetectWebcams = true;
+                try
+                {
+                    Manager.ConnectToCamera();
+                    WaitForSelectedCamera(TimeSpan.FromSeconds(2));
+                }
+                finally
+                {
+                    Manager.DetectWebcams = previousDetectWebcams;
+                }
+
+                var preferred = Manager.ConnectedDevices.FirstOrDefault(d => d.IsConnected && d.DeviceName == preferredCameraName);
+                if (preferred != null && !ReferenceEquals(Manager.SelectedCameraDevice, preferred))
+                {
+                    Manager.SelectedCameraDevice = preferred;
+                    Console.WriteLine($"[bridge] switched to preferred camera: {preferred.DeviceName}");
+                }
+            }
+        }
+
+        private static string? GetArgValue(string[] args, string flag)
+        {
+            int index = Array.IndexOf(args, flag);
+            return index >= 0 && index + 1 < args.Length ? args[index + 1] : null;
         }
 
         private static string HandleCapture()

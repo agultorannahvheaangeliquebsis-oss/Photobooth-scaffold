@@ -2650,6 +2650,53 @@ and `MainWindow`'s screen-specific rendering) -- those remain open gaps
 for whoever next runs this app on a real touchscreen, not a re-opened
 part of this build plan's own checklist.
 
+**Phase 7 — Print-layout template library replaces the sticker frame picker, guest-facing settings wired (undated addendum)**
+
+Not part of the original 6-phase plan above (all six were already complete
+2026-08-31) -- picked up afterward once the Print Template Designer
+(Phase 4) and the guest-facing `FramePicker`/frame-overlay feature (see
+`README.md`'s "Frame library & guest frame picker") were both in place and
+the natural next step became replacing the latter with the former, not
+keeping both. Logged here because the reorder itself -- moving `FramePicker`
+from after `Reviewing` to before `Consent` -- was never written down
+anywhere at the time it shipped; a doc-drift pass over `BoothStateMachine.cs`
+against this file caught the gap.
+
+- [x] `BoothStateMachine`'s `FramePicker` step moved from between
+      `Reviewing` and `Printing` to the very first guest-interactive step,
+      before `Consent` -- see the state list and the "at the time" framing
+      in `README.md`'s "Frame library & guest frame picker" section.
+- [x] Source changed from `IFrameLibraryService`/`IFrameSelectionService`
+      picking a `FrameOption` overlay to `IPrintTemplateLibraryService`/
+      `ITemplateSelectionService` picking a `PrintTemplate` -- the guest now
+      chooses a saved print layout (paper size + photo slots + any
+      logo/text/QR the admin placed on it), not a sticker overlay. The old
+      seam (`Frame` table, `IFrameLibraryService`, `IFrameSelectionService`)
+      stays wired into `BoothServices`/`BoothCompositionRoot` for
+      constructor compatibility but is no longer called from
+      `BoothStateMachine`'s guest flow; `IFrameOverlayService` is the one
+      piece of the old seam still exercised, repurposed for the Effects
+      watermark pass. `KioskWindow.xaml`'s `FramePickerScreen` was
+      repurposed for the template picker (its own inline comment: "not a
+      post-capture sticker overlay pick").
+- [x] `ScreenSettings.ChooseTemplateEnabled` gates the step; skipped
+      entirely with no state shown at all if off, or if nothing's
+      favorited yet -- same "empty pool = feature invisible" reasoning the
+      original frame picker already established.
+- Verified via `Photobooth.Tests`:
+      `RunSessionAsync_FavoritedTemplatesConfigured_ShowsFramePickerBeforeConsentAndPrintsChosenTemplate`,
+      `RunSessionAsync_GuestSkipsTheLayoutChoice_DefaultTemplatePrinted`, and
+      `RunSessionAsync_NoFavoritedTemplates_SkipsFramePickerEntirely` in
+      `BoothStateMachineTests.cs` cover chosen/skipped/no-favorites the same
+      way the retired frame picker's own three cases used to.
+- **Not yet done as part of this addendum:** a matching prose rewrite of
+      this file's own build-log history for the retired feature, and
+      confirming whether `AdminWindow`'s admin-side frame library
+      management (the pre-this-phase "Frame library" section) was
+      deliberately removed or just not yet ported -- `AddFrameButton_Click`
+      no longer exists in `AdminWindow.xaml.cs`, but three of that file's
+      other comments still cite it by name as precedent.
+
 ## dslrBooth-style visual restyle -- AdminWindow (2026-08-31)
 
 You asked whether the UI could "copy dslrBooth or LumaBooth" -- clarified

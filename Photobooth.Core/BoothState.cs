@@ -13,6 +13,16 @@ public enum BoothState
     /// until that happens, so nothing here can take a picture beforehand.</summary>
     Setup,
     Idle,
+
+    /// <summary>Vendo-mode-only, and only when SharingSettings.PaymentTiming
+    /// is "StartScreen" -- blocks the guest from starting a session at all
+    /// until they pay, same as dslrBooth's "Request payment: On Start
+    /// Screen" option. Skipped entirely (falls straight through to
+    /// FramePicker/Consent as normal) for event mode, or for vendo with the
+    /// default "SharingScreen" timing, which still runs Payment later,
+    /// between Reviewing and Printing, same as before this state existed.</summary>
+    PrePayment,
+
     Consent,
     Countdown,
     Capturing,

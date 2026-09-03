@@ -31,6 +31,14 @@ public class BoothStateMachine
     /// forever, since none of those states had any timeout at all before this.</summary>
     private readonly TimeSpan _guestIdleTimeout;
 
+    /// <summary>Running count of successful prints for the life of this
+    /// instance -- gates PrintOptions.PrintLimitPerEvent (see the Printing
+    /// block in RunSessionAsync). In-memory only, same "one app run = one
+    /// event" lifetime and the same restart-resets-it limitation
+    /// KioskAdminViewModel.PrintsThisEvent already accepts for its own,
+    /// separate display-only counter.</summary>
+    private int _printsThisEvent;
+
     public BoothState CurrentState { get; private set; } = BoothState.Setup;
     public string? LastCapturedImagePath { get; private set; }
 
@@ -189,6 +197,14 @@ public class BoothStateMachine
     /// resets to Idle. Any failure at any step is caught, reported via
     /// ErrorOccurred, and the machine still returns to Idle -- a session
     /// should never leave the booth stuck on a dead screen.
+    ///
+    /// The phases below (FramePicker, Consent, the capture branch, the vendo
+    /// payment gate, and the three post-Complete prompts) are each their own
+    /// private method -- see each one's own doc comment for what it does and
+    /// why. What stays inline here is the glue between them: session
+    /// bookkeeping, the per-pose effects' final watermark/post-processing
+    /// pass, upload kickoff, and the Printing/Complete sequencing that reads
+    /// state produced by more than one phase at once.
     /// </summary>
     public async Task RunSessionAsync(CancellationToken ct = default)
     {
@@ -235,254 +251,41 @@ public class BoothStateMachine
             // mode has a notion of multiple print poses either -- PhotoSlot
             // templates only apply to Photo mode below. A saved print-layout
             // template means nothing to any of the three either, for the
-            // same reason -- see the FramePicker step immediately below.
+            // same reason -- see RunFramePickerAsync, called next.
             bool isNonPrintableCapture = settings.Capture.Mode is "GIF" or "Boomerang" or "Video";
 
-            // Frame/Layout picker is now the guest's very first interactive
-            // step, before Consent -- guests pick which saved, favorited
-            // print-layout template they want for this session (paper size +
-            // photo slots + any logo/text/QR the admin placed on it), rather
-            // than a separate sticker-overlay "frame" -- the Print Layout
-            // library is the only source of "frame" choices now. Skipped
-            // entirely (no state shown at all) when the admin has "Choose
-            // Template" off, or nothing is favorited yet, same "empty pool =
-            // feature invisible" reasoning the old frame/sticker picker (and
-            // FilterPicker/Survey) already established. A guest who skips or
-            // times out gets effectiveTemplate == settings.PrintTemplate,
-            // i.e. exactly today's fixed-template behavior.
-            PrintTemplate effectiveTemplate = settings.PrintTemplate;
-            if (!isNonPrintableCapture && settings.Screen.ChooseTemplateEnabled)
+            // "StartScreen" timing (see SharingSettings.PaymentTiming) blocks
+            // the guest from starting a session at all until they pay -- the
+            // opposite of the default "SharingScreen" timing below, which
+            // still lets them see their photo first. Vendo-only; event mode
+            // never charges regardless of this setting.
+            bool payUpfront = _mode == "vendo" && settings.Sharing.PaymentTiming == "StartScreen";
+            if (payUpfront)
             {
-                IReadOnlyList<PrintTemplate> favoriteTemplates = await _services.TemplateLibrary.GetFavoriteTemplatesAsync(ct);
-                if (favoriteTemplates.Count > 0)
-                {
-                    SetState(BoothState.FramePicker);
-                    PrintTemplate? chosenTemplate = await WithGuestIdleTimeoutAsync(
-                        _services.TemplateSelection.SelectTemplateAsync(favoriteTemplates, ct), (PrintTemplate?)null, ct,
-                        () => (_services.TemplateSelection as UiTemplateSelectionService)?.CancelPending());
-                    LastSelectedTemplate = chosenTemplate;
-                    if (chosenTemplate is not null)
-                    {
-                        effectiveTemplate = chosenTemplate;
-                    }
-                }
+                await RunPaymentGateAsync(sessionId.Value, BoothState.PrePayment, ct);
             }
 
-            SetState(BoothState.Consent);
-            ConsentResult consent = await WithGuestIdleTimeoutAsync(
-                _services.Consent.CollectAsync(ct), new ConsentResult(false, false, null), ct);
-            LastConsent = consent;
-            await _services.Sessions.RecordConsentAsync(
-                sessionId.Value, consent.DisclaimerAccepted, consent.EmailOptIn, consent.Email, ct);
+            PrintTemplate effectiveTemplate = await RunFramePickerAsync(settings, isNonPrintableCapture, ct);
 
+            ConsentResult consent = await RunConsentGateAsync(sessionId.Value, ct);
             if (!consent.DisclaimerAccepted)
             {
-                // Declining is a legitimate guest choice, not a failure -- no
-                // countdown, no capture, and recorded as Abandoned rather
-                // than Error so the admin dashboard can tell the two apart.
-                await _services.Sessions.AbandonAsync(sessionId.Value, ct);
                 return;
             }
 
-            if (settings.Capture.Mode is "GIF" or "Boomerang")
-            {
-                SetState(BoothState.Countdown);
-                for (int i = settings.CountdownSeconds; i > 0; i--)
-                {
-                    CountdownTick?.Invoke(i);
-                    await Task.Delay(1000, ct);
-                }
-
-                SetState(BoothState.Capturing);
-                var framePaths = new List<string>();
-                for (int i = 0; i < settings.Capture.FrameCount; i++)
-                {
-                    framePaths.Add(await _services.Camera.CaptureAsync(ct));
-                    FrameCaptured?.Invoke(i + 1, settings.Capture.FrameCount, framePaths[^1]);
-                    if (i < settings.Capture.FrameCount - 1)
-                    {
-                        await Task.Delay(settings.Capture.FrameDelayMs, ct);
-                    }
-                }
-
-                // Playback speed is deliberately independent of FrameDelayMs (which only
-                // paces the capture burst above): a real Boomerang/GIF booth shoots a fast
-                // burst and loops it back at a fixed, comfortable length regardless of how
-                // fast the shots were taken, rather than a loop that plays slower the slower
-                // the burst ran. Sequence length matches GdiGifComposerService's own splice
-                // math (forward + reversed-minus-both-ends for Boomerang, forward-only for
-                // GIF); Math.Max guards a 1-frame capture, where reversing has nothing to add.
-                int sequenceLength = settings.Capture.Mode == "Boomerang"
-                    ? Math.Max(2 * settings.Capture.FrameCount - 2, 1)
-                    : settings.Capture.FrameCount;
-                int playbackFrameDelayMs = Math.Max(TargetLoopDurationMs / sequenceLength, 1);
-
-                LastCapturedImagePath = await _services.GifComposer.ComposeAsync(
-                    framePaths, reversed: settings.Capture.Mode == "Boomerang", playbackFrameDelayMs, ct);
-                LastCapturedImagePaths = new[] { LastCapturedImagePath };
-            }
-            else if (settings.Capture.Mode == "Video")
-            {
-                SetState(BoothState.Countdown);
-                for (int i = settings.CountdownSeconds; i > 0; i--)
-                {
-                    CountdownTick?.Invoke(i);
-                    await Task.Delay(1000, ct);
-                }
-
-                SetState(BoothState.Capturing);
-                // A fixed-duration recording (no "guest taps stop" UI yet,
-                // same simplification the guestbook recording's 60s safety
-                // net accepts for a different reason) -- starts, waits out
-                // VideoDurationSeconds, then stops. Independent of
-                // ICameraService entirely, same as IVideoGuestbookService.
-                await _services.BoothVideo.StartRecordingAsync(ct);
-                await Task.Delay(TimeSpan.FromSeconds(settings.Capture.VideoDurationSeconds), ct);
-                BoothVideoRecording recording = await _services.BoothVideo.StopRecordingAsync(ct);
-                LastCapturedImagePath = recording.FilePath;
-                LastCapturedImagePaths = new[] { LastCapturedImagePath };
-            }
-            else
-            {
-                // One Countdown/Capturing/effects cycle per required pose.
-                // RequiredPhotoCount is 1 for every template that predates
-                // PhotoSlot elements, so this loop runs exactly once --
-                // identical to the single-capture behavior that existed
-                // before true multi-pose templates -- for every template in
-                // use before this feature. Reads effectiveTemplate (the
-                // guest's own FramePicker pick, if any -- see above), not
-                // settings.PrintTemplate directly, so a guest who picked a
-                // different saved layout gets that layout's own pose count.
-                int requiredPhotoCount = effectiveTemplate.RequiredPhotoCount;
-                var poses = new List<string>();
-                for (int poseIndex = 0; poseIndex < requiredPhotoCount; poseIndex++)
-                {
-                    if (requiredPhotoCount > 1)
-                    {
-                        PoseChanged?.Invoke(poseIndex + 1, requiredPhotoCount);
-                    }
-
-                    SetState(BoothState.Countdown);
-                    for (int i = settings.CountdownSeconds; i > 0; i--)
-                    {
-                        CountdownTick?.Invoke(i);
-                        await Task.Delay(1000, ct);
-                    }
-
-                    SetState(BoothState.Capturing);
-                    LastCapturedImagePath = await _services.Camera.CaptureAsync(ct);
-
-                    // Filters (see PhotoFilterPreset/GdiFilterPresetService,
-                    // BoothState.FilterPicker) run first in the effects chain -- a
-                    // foundational photographic treatment the rest (green screen
-                    // background swap, branding caption, frame/sticker overlay,
-                    // watermark) layer on top of. Skipped entirely when the
-                    // Filters toggle is off or no preset is enabled, same
-                    // "disabled/empty pool = feature invisible" reasoning
-                    // FramePicker/Stickers already established.
-                    if (settings.Effects.FiltersEnabled)
-                    {
-                        List<PhotoFilterPreset> enabledPresets = PhotoFilterPresets.Parse(settings.Effects.EnabledFilterPresetIds);
-                        IReadOnlyList<CustomFilterOption> customFilters = await _services.CustomFilterLibrary.GetActiveCustomFiltersAsync(ct);
-                        if (enabledPresets.Count > 0 || customFilters.Count > 0)
-                        {
-                            if (settings.Effects.FiltersMode == "Auto")
-                            {
-                                // Silent -- no guest interaction, no FilterPicker state.
-                                // Built-in presets take priority over custom LUTs when
-                                // both exist -- there's no single ordering that spans a
-                                // fixed enum and an admin-orderable custom list, so this
-                                // is just the simplest deterministic choice.
-                                if (enabledPresets.Count > 0)
-                                {
-                                    LastCapturedImagePath = await _services.FilterPreset.ApplyPresetAsync(LastCapturedImagePath, enabledPresets[0], ct);
-                                }
-                                else
-                                {
-                                    LastCapturedImagePath = await _services.CustomFilter.ApplyCustomFilterAsync(LastCapturedImagePath, customFilters[0].CubeFilePath, ct);
-                                }
-                            }
-                            else
-                            {
-                                // Ask: render every enabled preset and every active
-                                // custom LUT against the actual capture up front --
-                                // each candidate is a real, fully-rendered result (not
-                                // a generic stock thumbnail), so whichever one the
-                                // guest taps is already the final file, no second
-                                // apply pass needed.
-                                var filterOptions = new List<FilterOption>();
-                                foreach (PhotoFilterPreset preset in enabledPresets)
-                                {
-                                    string previewPath = await _services.FilterPreset.ApplyPresetAsync(LastCapturedImagePath, preset, ct);
-                                    filterOptions.Add(new FilterOption(preset, PhotoFilterPresets.DisplayName(preset), previewPath));
-                                }
-                                foreach (CustomFilterOption customFilter in customFilters)
-                                {
-                                    string previewPath = await _services.CustomFilter.ApplyCustomFilterAsync(LastCapturedImagePath, customFilter.CubeFilePath, ct);
-                                    filterOptions.Add(new FilterOption(null, customFilter.Name, previewPath, customFilter.CustomFilterId));
-                                }
-
-                                SetState(BoothState.FilterPicker);
-                                FilterOption? chosenFilter = await WithGuestIdleTimeoutAsync(
-                                    _services.FilterSelection.SelectFilterAsync(filterOptions, ct), (FilterOption?)null, ct,
-                                    () => (_services.FilterSelection as UiFilterSelectionService)?.CancelPending());
-                                if (chosenFilter is not null)
-                                {
-                                    LastCapturedImagePath = chosenFilter.PreviewImagePath;
-                                }
-                            }
-                        }
-                    }
-
-                    // Green screen composites first, before the glam filter --
-                    // its green-dominance threshold needs the plain camera
-                    // colors, and a background composited after a B&W pass would
-                    // itself need to be desaturated to match, which isn't
-                    // attempted here. Skipped with no background configured:
-                    // nothing to composite against yet, even if the toggle is on.
-                    if (settings.GreenScreen is { Enabled: true, BackgroundImagePath: not null } greenScreen)
-                    {
-                        LastCapturedImagePath = await _services.GreenScreen.ApplyGreenScreenAsync(
-                            LastCapturedImagePath, greenScreen.BackgroundImagePath, ct);
-                    }
-
-                    // Glam filter (if this booth's settings have it on) applies
-                    // before branding, not after -- the caption bar is always white
-                    // text on a solid black bar regardless of the photo's colors, so
-                    // filter order doesn't affect its legibility either way, but
-                    // doing the color/contrast pass on the plain capture first keeps
-                    // the two effects independent and easy to reason about.
-                    if (settings.GlamFilterEnabled)
-                    {
-                        LastCapturedImagePath = await _services.Filter.ApplyGlamFilterAsync(LastCapturedImagePath, ct);
-                    }
-
-                    // Branded before anything downstream ever sees the path -- the
-                    // Reviewing screen, the print, and the upload should all show
-                    // the guest exactly the same (branded) photo, not three
-                    // different versions depending on which step ran first.
-                    LastCapturedImagePath = await _services.Branding.ApplyBrandingAsync(LastCapturedImagePath, settings.Theme.EventName, ct);
-
-                    poses.Add(LastCapturedImagePath);
-                    if (requiredPhotoCount > 1)
-                    {
-                        PosePhotoCaptured?.Invoke(poseIndex + 1, requiredPhotoCount, LastCapturedImagePath);
-                    }
-                }
-
-                LastCapturedImagePaths = poses;
-            }
+            await RunCaptureBranchAsync(settings, effectiveTemplate, ct);
 
             SetState(BoothState.Reviewing);
-            await Task.Delay(2000, ct); // guest sees the shot before it prints
+            await Task.Delay(TimeSpan.FromSeconds(settings.Screen.ReviewSeconds), ct); // guest sees the shot before it prints
 
             // The old sticker-overlay frame picker used to run here, after
             // Reviewing -- it's been retired in favor of the print-layout-
-            // template picker at the very start of the session (see above):
-            // the guest's "frame" is now the saved template itself, not a
-            // second PNG overlay layered on top of it. Applied to every
-            // captured pose (usually just the one), not only the last --
-            // every pose in the final print gets the same treatment.
+            // template picker at the very start of the session (see
+            // RunFramePickerAsync): the guest's "frame" is now the saved
+            // template itself, not a second PNG overlay layered on top of
+            // it. Applied to every captured pose (usually just the one), not
+            // only the last -- every pose in the final print gets the same
+            // treatment.
             List<string> processedPoses = LastCapturedImagePaths.ToList();
 
             // Watermark stamps last, on top of everything else (branding,
@@ -527,21 +330,9 @@ public class BoothStateMachine
             string? uploadEmail = consent is { EmailOptIn: true, Email: string toEmail } ? toEmail : null;
             Task<Uri?> uploadTask = UploadInBackgroundAsync(uploadImagePath, sessionId.Value, ct);
 
-            if (_mode == "vendo")
+            if (_mode == "vendo" && !payUpfront)
             {
-                string reference = Guid.NewGuid().ToString("N");
-                PaymentPrompt prompt = _services.Payment.Initiate(VendoPricePerPrint, reference);
-                PaymentInstructions = prompt.Instructions;
-                PaymentQrPng = prompt.QrCodePng;
-                SetState(BoothState.Payment);
-                PaymentResult result = await WithGuestIdleTimeoutAsync(
-                    _services.Payment.WaitForConfirmationAsync(reference, VendoPricePerPrint, ct),
-                    new PaymentResult(false, "timeout", null), ct);
-                if (!result.Success)
-                {
-                    throw new InvalidOperationException("Payment was not completed.");
-                }
-                await _services.Sessions.RecordPaymentAsync(sessionId.Value, VendoPricePerPrint, result.Method, ct);
+                await RunPaymentGateAsync(sessionId.Value, BoothState.Payment, ct);
             }
 
             // The guest has definitely earned their photo by this point --
@@ -559,7 +350,16 @@ public class BoothStateMachine
             // Skips the Printing state and Print row entirely rather than
             // handing SpoolerPrinterService a .gif/.mp4 it has no way to
             // rasterize onto paper.
-            if (!isNonPrintableCapture)
+            // PrintOptions.PrintLimitPerEvent caps total prints for the life of
+            // this instance (one app run = one event, same lifetime
+            // _printsThisEvent above documents) -- once reached, later
+            // sessions skip Printing entirely, same "no Printing state, no
+            // Print row, session still completes normally" shape
+            // GIF/Boomerang/Video already established for a different reason
+            // (see isNonPrintableCapture above). Was a stored-but-never-read
+            // admin setting before this -- AdminWindow already saved/
+            // validated it, nothing downstream ever checked it.
+            if (!isNonPrintableCapture && _printsThisEvent < settings.PrintOptions.PrintLimitPerEvent)
             {
                 // A template with a QrCode element needs a real upload URL to
                 // encode -- give the still-in-flight upload a bounded chance to
@@ -576,6 +376,7 @@ public class BoothStateMachine
                 var printContext = new PrintRenderContext(LastPhotoUrl, settings.Theme.EventName, DateTime.Now);
                 await _services.Printer.PrintAsync(LastCapturedImagePaths, effectiveTemplate, printContext, ct);
                 await _services.Sessions.RecordPrintAsync(sessionId.Value, LastCapturedImagePath, ct);
+                _printsThisEvent++;
             }
 
             if (_mode != "vendo")
@@ -600,91 +401,7 @@ public class BoothStateMachine
             int dwellSeconds = settings.Screen.SkipSharingScreen ? 1 : settings.Screen.FinalScreenTimeoutSeconds;
             await Task.Delay(TimeSpan.FromSeconds(dwellSeconds), ct);
 
-            // Best-effort, wrapped in its own try/catch, same reasoning as
-            // the Feedback block right below: a guest who walks away without
-            // tapping anything should never turn an already-completed
-            // session into an Error one.
-            try
-            {
-                SetState(BoothState.Guestbook);
-                // Same guest-idle-timeout protection every other guest-interactive
-                // state gets (see WithGuestIdleTimeoutAsync's own doc comment) --
-                // without it, a guest who walks away without tapping Record or Skip
-                // left the machine (and the booth) suspended here forever, since
-                // nothing else ever resolves this wait.
-                bool wantsToRecord = await WithGuestIdleTimeoutAsync(
-                    _services.GuestbookPrompt.AskToRecordAsync(ct), false, ct,
-                    () => (_services.GuestbookPrompt as UiGuestbookPromptService)?.CancelPending());
-                if (wantsToRecord)
-                {
-                    await _services.VideoGuestbook.StartRecordingAsync(ct);
-                    try
-                    {
-                        // Guest taps Stop, or a 60s safety-net timeout elapses --
-                        // ffmpeg should never be left recording indefinitely
-                        // because a guest walked away without tapping anything.
-                        await Task.WhenAny(
-                            _services.GuestbookPrompt.WaitForStopAsync(ct),
-                            Task.Delay(TimeSpan.FromSeconds(60), ct));
-                    }
-                    finally
-                    {
-                        GuestbookRecording recording = await _services.VideoGuestbook.StopRecordingAsync(ct);
-                        await _services.Sessions.RecordGuestbookVideoAsync(sessionId.Value, recording.FilePath, recording.Duration, ct);
-                    }
-                }
-            }
-            catch (Exception)
-            {
-            }
-
-            // Best-effort, wrapped in its own try/catch: a guest who walks
-            // away without tapping anything, or any other failure collecting
-            // feedback, should never turn an already-completed session into
-            // an Error one -- the photo's already been captured, paid for
-            // (if vendo), and printed by this point.
-            try
-            {
-                SetState(BoothState.Feedback);
-                FeedbackResult feedback = await WithGuestIdleTimeoutAsync(
-                    _services.Feedback.CollectAsync(ct), new FeedbackResult(null, null), ct,
-                    () => (_services.Feedback as UiFeedbackService)?.CancelPending());
-                if (!feedback.IsEmpty)
-                {
-                    await _services.Sessions.RecordFeedbackAsync(sessionId.Value, feedback.Rating, feedback.Comment, ct);
-                }
-            }
-            catch (Exception)
-            {
-            }
-
-            // Best-effort, wrapped in its own try/catch, same reasoning as the
-            // Feedback block just above: a guest who walks away without tapping
-            // anything, or any other failure collecting survey answers, should
-            // never turn an already-completed session into an Error one. Skipped
-            // entirely when the admin has it off, or there are no active
-            // questions configured -- same "empty table = feature invisible"
-            // reasoning FramePicker already established for an empty Frame table.
-            try
-            {
-                if (settings.Survey.Enabled)
-                {
-                    IReadOnlyList<SurveyQuestion> questions = await _services.Survey.GetActiveQuestionsAsync(ct);
-                    if (questions.Count > 0)
-                    {
-                        SetState(BoothState.Survey);
-                        IReadOnlyList<SurveyAnswer> answers = await WithGuestIdleTimeoutAsync(
-                            _services.Survey.CollectAnswersAsync(questions, ct), (IReadOnlyList<SurveyAnswer>)Array.Empty<SurveyAnswer>(), ct);
-                        if (answers.Count > 0)
-                        {
-                            await _services.Survey.RecordResponsesAsync(sessionId.Value, answers, ct);
-                        }
-                    }
-                }
-            }
-            catch (Exception)
-            {
-            }
+            await RunPostSessionPromptsAsync(sessionId.Value, settings, ct);
         }
         catch (OperationCanceledException)
         {
@@ -711,6 +428,400 @@ public class BoothStateMachine
         finally
         {
             SetState(BoothState.Idle);
+        }
+    }
+
+    /// <summary>
+    /// FramePicker, the guest's very first interactive step (before Consent).
+    /// Returns settings.PrintTemplate unchanged when the step is skipped or
+    /// the guest doesn't pick anything -- i.e. exactly today's
+    /// fixed-template behavior.
+    /// </summary>
+    private async Task<PrintTemplate> RunFramePickerAsync(BoothSettings settings, bool isNonPrintableCapture, CancellationToken ct)
+    {
+        // Frame/Layout picker is now the guest's very first interactive
+        // step, before Consent -- guests pick which saved, favorited
+        // print-layout template they want for this session (paper size +
+        // photo slots + any logo/text/QR the admin placed on it), rather
+        // than a separate sticker-overlay "frame" -- the Print Layout
+        // library is the only source of "frame" choices now. Skipped
+        // entirely (no state shown at all) when the admin has "Choose
+        // Template" off, or nothing is favorited yet, same "empty pool =
+        // feature invisible" reasoning the old frame/sticker picker (and
+        // FilterPicker/Survey) already established. A guest who skips or
+        // times out gets effectiveTemplate == settings.PrintTemplate,
+        // i.e. exactly today's fixed-template behavior.
+        PrintTemplate effectiveTemplate = settings.PrintTemplate;
+        if (!isNonPrintableCapture && settings.Screen.ChooseTemplateEnabled)
+        {
+            IReadOnlyList<PrintTemplate> favoriteTemplates = await _services.TemplateLibrary.GetFavoriteTemplatesAsync(ct);
+            if (favoriteTemplates.Count > 0)
+            {
+                SetState(BoothState.FramePicker);
+                PrintTemplate? chosenTemplate = await WithGuestIdleTimeoutAsync(
+                    _services.TemplateSelection.SelectTemplateAsync(favoriteTemplates, ct), (PrintTemplate?)null, ct,
+                    () => (_services.TemplateSelection as UiTemplateSelectionService)?.CancelPending());
+                LastSelectedTemplate = chosenTemplate;
+                if (chosenTemplate is not null)
+                {
+                    effectiveTemplate = chosenTemplate;
+                }
+            }
+        }
+
+        return effectiveTemplate;
+    }
+
+    /// <summary>
+    /// Consent, shown next. Declining abandons the session right here (the
+    /// caller's own `if (!consent.DisclaimerAccepted) return;` then exits
+    /// RunSessionAsync's try block with everything already recorded) --
+    /// there's no countdown, no capture, no print for a decline.
+    /// </summary>
+    private async Task<ConsentResult> RunConsentGateAsync(int sessionId, CancellationToken ct)
+    {
+        SetState(BoothState.Consent);
+        ConsentResult consent = await WithGuestIdleTimeoutAsync(
+            _services.Consent.CollectAsync(ct), new ConsentResult(false, false, null), ct);
+        LastConsent = consent;
+        await _services.Sessions.RecordConsentAsync(
+            sessionId, consent.DisclaimerAccepted, consent.EmailOptIn, consent.Email, ct);
+
+        if (!consent.DisclaimerAccepted)
+        {
+            // Declining is a legitimate guest choice, not a failure -- no
+            // countdown, no capture, and recorded as Abandoned rather
+            // than Error so the admin dashboard can tell the two apart.
+            await _services.Sessions.AbandonAsync(sessionId, ct);
+        }
+
+        return consent;
+    }
+
+    /// <summary>
+    /// Countdown/Capturing for whichever capture mode this booth is
+    /// configured for -- GIF/Boomerang, Video, or Photo (the default, with
+    /// its per-pose Filters/green-screen/glam/branding effects chain).
+    /// Leaves LastCapturedImagePath/LastCapturedImagePaths set to the
+    /// finished capture(s) when it returns.
+    /// </summary>
+    private async Task RunCaptureBranchAsync(BoothSettings settings, PrintTemplate effectiveTemplate, CancellationToken ct)
+    {
+        if (settings.Capture.Mode is "GIF" or "Boomerang")
+        {
+            SetState(BoothState.Countdown);
+            for (int i = settings.CountdownSeconds; i > 0; i--)
+            {
+                CountdownTick?.Invoke(i);
+                await Task.Delay(1000, ct);
+            }
+
+            SetState(BoothState.Capturing);
+            var framePaths = new List<string>();
+            for (int i = 0; i < settings.Capture.FrameCount; i++)
+            {
+                framePaths.Add(await _services.Camera.CaptureAsync(ct));
+                FrameCaptured?.Invoke(i + 1, settings.Capture.FrameCount, framePaths[^1]);
+                if (i < settings.Capture.FrameCount - 1)
+                {
+                    await Task.Delay(settings.Capture.FrameDelayMs, ct);
+                }
+            }
+
+            // Playback speed is deliberately independent of FrameDelayMs (which only
+            // paces the capture burst above): a real Boomerang/GIF booth shoots a fast
+            // burst and loops it back at a fixed, comfortable length regardless of how
+            // fast the shots were taken, rather than a loop that plays slower the slower
+            // the burst ran. Sequence length matches GdiGifComposerService's own splice
+            // math (forward + reversed-minus-both-ends for Boomerang, forward-only for
+            // GIF); Math.Max guards a 1-frame capture, where reversing has nothing to add.
+            int sequenceLength = settings.Capture.Mode == "Boomerang"
+                ? Math.Max(2 * settings.Capture.FrameCount - 2, 1)
+                : settings.Capture.FrameCount;
+            int playbackFrameDelayMs = Math.Max(TargetLoopDurationMs / sequenceLength, 1);
+
+            LastCapturedImagePath = await _services.GifComposer.ComposeAsync(
+                framePaths, reversed: settings.Capture.Mode == "Boomerang", playbackFrameDelayMs, ct);
+            LastCapturedImagePaths = new[] { LastCapturedImagePath };
+        }
+        else if (settings.Capture.Mode == "Video")
+        {
+            SetState(BoothState.Countdown);
+            for (int i = settings.CountdownSeconds; i > 0; i--)
+            {
+                CountdownTick?.Invoke(i);
+                await Task.Delay(1000, ct);
+            }
+
+            SetState(BoothState.Capturing);
+            // A fixed-duration recording (no "guest taps stop" UI yet,
+            // same simplification the guestbook recording's 60s safety
+            // net accepts for a different reason) -- starts, waits out
+            // VideoDurationSeconds, then stops. Independent of
+            // ICameraService entirely, same as IVideoGuestbookService.
+            await _services.BoothVideo.StartRecordingAsync(ct);
+            await Task.Delay(TimeSpan.FromSeconds(settings.Capture.VideoDurationSeconds), ct);
+            BoothVideoRecording recording = await _services.BoothVideo.StopRecordingAsync(ct);
+            LastCapturedImagePath = recording.FilePath;
+            LastCapturedImagePaths = new[] { LastCapturedImagePath };
+        }
+        else
+        {
+            // One Countdown/Capturing/effects cycle per required pose.
+            // RequiredPhotoCount is 1 for every template that predates
+            // PhotoSlot elements, so this loop runs exactly once --
+            // identical to the single-capture behavior that existed
+            // before true multi-pose templates -- for every template in
+            // use before this feature. Reads effectiveTemplate (the
+            // guest's own FramePicker pick, if any -- see
+            // RunFramePickerAsync), not settings.PrintTemplate directly, so
+            // a guest who picked a different saved layout gets that
+            // layout's own pose count.
+            int requiredPhotoCount = effectiveTemplate.RequiredPhotoCount;
+            var poses = new List<string>();
+            for (int poseIndex = 0; poseIndex < requiredPhotoCount; poseIndex++)
+            {
+                if (requiredPhotoCount > 1)
+                {
+                    PoseChanged?.Invoke(poseIndex + 1, requiredPhotoCount);
+                }
+
+                SetState(BoothState.Countdown);
+                for (int i = settings.CountdownSeconds; i > 0; i--)
+                {
+                    CountdownTick?.Invoke(i);
+                    await Task.Delay(1000, ct);
+                }
+
+                SetState(BoothState.Capturing);
+                LastCapturedImagePath = await _services.Camera.CaptureAsync(ct);
+
+                // Filters (see PhotoFilterPreset/GdiFilterPresetService,
+                // BoothState.FilterPicker) run first in the effects chain -- a
+                // foundational photographic treatment the rest (green screen
+                // background swap, branding caption, frame/sticker overlay,
+                // watermark) layer on top of. Skipped entirely when the
+                // Filters toggle is off or no preset is enabled, same
+                // "disabled/empty pool = feature invisible" reasoning
+                // FramePicker/Stickers already established.
+                if (settings.Effects.FiltersEnabled)
+                {
+                    List<PhotoFilterPreset> enabledPresets = PhotoFilterPresets.Parse(settings.Effects.EnabledFilterPresetIds);
+                    IReadOnlyList<CustomFilterOption> customFilters = await _services.CustomFilterLibrary.GetActiveCustomFiltersAsync(ct);
+                    if (enabledPresets.Count > 0 || customFilters.Count > 0)
+                    {
+                        if (settings.Effects.FiltersMode == "Auto")
+                        {
+                            // Silent -- no guest interaction, no FilterPicker state.
+                            // Built-in presets take priority over custom LUTs when
+                            // both exist -- there's no single ordering that spans a
+                            // fixed enum and an admin-orderable custom list, so this
+                            // is just the simplest deterministic choice.
+                            if (enabledPresets.Count > 0)
+                            {
+                                LastCapturedImagePath = await _services.FilterPreset.ApplyPresetAsync(LastCapturedImagePath, enabledPresets[0], ct);
+                            }
+                            else
+                            {
+                                LastCapturedImagePath = await _services.CustomFilter.ApplyCustomFilterAsync(LastCapturedImagePath, customFilters[0].CubeFilePath, ct);
+                            }
+                        }
+                        else
+                        {
+                            // Ask: render every enabled preset and every active
+                            // custom LUT against the actual capture up front --
+                            // each candidate is a real, fully-rendered result (not
+                            // a generic stock thumbnail), so whichever one the
+                            // guest taps is already the final file, no second
+                            // apply pass needed.
+                            var filterOptions = new List<FilterOption>();
+                            foreach (PhotoFilterPreset preset in enabledPresets)
+                            {
+                                string previewPath = await _services.FilterPreset.ApplyPresetAsync(LastCapturedImagePath, preset, ct);
+                                filterOptions.Add(new FilterOption(preset, PhotoFilterPresets.DisplayName(preset), previewPath));
+                            }
+                            foreach (CustomFilterOption customFilter in customFilters)
+                            {
+                                string previewPath = await _services.CustomFilter.ApplyCustomFilterAsync(LastCapturedImagePath, customFilter.CubeFilePath, ct);
+                                filterOptions.Add(new FilterOption(null, customFilter.Name, previewPath, customFilter.CustomFilterId));
+                            }
+
+                            SetState(BoothState.FilterPicker);
+                            FilterOption? chosenFilter = await WithGuestIdleTimeoutAsync(
+                                _services.FilterSelection.SelectFilterAsync(filterOptions, ct), (FilterOption?)null, ct,
+                                () => (_services.FilterSelection as UiFilterSelectionService)?.CancelPending());
+                            if (chosenFilter is not null)
+                            {
+                                LastCapturedImagePath = chosenFilter.PreviewImagePath;
+                            }
+                        }
+                    }
+                }
+
+                // Green screen composites first, before the glam filter --
+                // its green-dominance threshold needs the plain camera
+                // colors, and a background composited after a B&W pass would
+                // itself need to be desaturated to match, which isn't
+                // attempted here. Skipped with no background configured:
+                // nothing to composite against yet, even if the toggle is on.
+                if (settings.GreenScreen is { Enabled: true, BackgroundImagePath: not null } greenScreen)
+                {
+                    LastCapturedImagePath = await _services.GreenScreen.ApplyGreenScreenAsync(
+                        LastCapturedImagePath, greenScreen.BackgroundImagePath, ct);
+                }
+
+                // Glam filter (if this booth's settings have it on) applies
+                // before branding, not after -- the caption bar is always white
+                // text on a solid black bar regardless of the photo's colors, so
+                // filter order doesn't affect its legibility either way, but
+                // doing the color/contrast pass on the plain capture first keeps
+                // the two effects independent and easy to reason about.
+                if (settings.GlamFilterEnabled)
+                {
+                    LastCapturedImagePath = await _services.Filter.ApplyGlamFilterAsync(LastCapturedImagePath, ct);
+                }
+
+                // Branded before anything downstream ever sees the path -- the
+                // Reviewing screen, the print, and the upload should all show
+                // the guest exactly the same (branded) photo, not three
+                // different versions depending on which step ran first.
+                LastCapturedImagePath = await _services.Branding.ApplyBrandingAsync(LastCapturedImagePath, settings.Theme.EventName, ct);
+
+                poses.Add(LastCapturedImagePath);
+                if (requiredPhotoCount > 1)
+                {
+                    PosePhotoCaptured?.Invoke(poseIndex + 1, requiredPhotoCount, LastCapturedImagePath);
+                }
+            }
+
+            LastCapturedImagePaths = poses;
+        }
+    }
+
+    /// <summary>
+    /// Vendo-mode payment. Two call sites share this: the default
+    /// "SharingScreen" timing calls it with BoothState.Payment from its own
+    /// `if (_mode == "vendo" && !payUpfront)` guard, after Reviewing; the
+    /// "StartScreen" timing (SharingSettings.PaymentTiming) calls it with
+    /// BoothState.PrePayment before RunFramePickerAsync instead. Throws when
+    /// the guest doesn't pay (decline or guest-idle timeout) -- caught by
+    /// RunSessionAsync's own outer catch, which drives the session to
+    /// Error/FailAsync either way. A thrown/declined payment never returns
+    /// here, so nothing after this call site in RunSessionAsync treats the
+    /// guest as having earned their photo.
+    /// </summary>
+    private async Task RunPaymentGateAsync(int sessionId, BoothState state, CancellationToken ct)
+    {
+        string reference = Guid.NewGuid().ToString("N");
+        PaymentPrompt prompt = _services.Payment.Initiate(VendoPricePerPrint, reference);
+        PaymentInstructions = prompt.Instructions;
+        PaymentQrPng = prompt.QrCodePng;
+        SetState(state);
+        PaymentResult result = await WithGuestIdleTimeoutAsync(
+            _services.Payment.WaitForConfirmationAsync(reference, VendoPricePerPrint, ct),
+            new PaymentResult(false, "timeout", null), ct);
+        if (!result.Success)
+        {
+            throw new InvalidOperationException("Payment was not completed.");
+        }
+
+        await _services.Sessions.RecordPaymentAsync(sessionId, VendoPricePerPrint, result.Method, ct);
+    }
+
+    /// <summary>
+    /// Guestbook, Feedback, and Survey -- the three post-Complete guest
+    /// prompts, each wrapped in its own try/catch, same as before this was
+    /// its own method: a guest who walks away without tapping anything, or
+    /// any other failure collecting one of these, should never turn an
+    /// already-completed session (photo captured, paid for if vendo,
+    /// printed) into an Error one.
+    /// </summary>
+    private async Task RunPostSessionPromptsAsync(int sessionId, BoothSettings settings, CancellationToken ct)
+    {
+        // Best-effort, wrapped in its own try/catch, same reasoning as
+        // the Feedback block right below: a guest who walks away without
+        // tapping anything should never turn an already-completed
+        // session into an Error one.
+        try
+        {
+            SetState(BoothState.Guestbook);
+            // Same guest-idle-timeout protection every other guest-interactive
+            // state gets (see WithGuestIdleTimeoutAsync's own doc comment) --
+            // without it, a guest who walks away without tapping Record or Skip
+            // left the machine (and the booth) suspended here forever, since
+            // nothing else ever resolves this wait.
+            bool wantsToRecord = await WithGuestIdleTimeoutAsync(
+                _services.GuestbookPrompt.AskToRecordAsync(ct), false, ct,
+                () => (_services.GuestbookPrompt as UiGuestbookPromptService)?.CancelPending());
+            if (wantsToRecord)
+            {
+                await _services.VideoGuestbook.StartRecordingAsync(ct);
+                try
+                {
+                    // Guest taps Stop, or a 60s safety-net timeout elapses --
+                    // ffmpeg should never be left recording indefinitely
+                    // because a guest walked away without tapping anything.
+                    await Task.WhenAny(
+                        _services.GuestbookPrompt.WaitForStopAsync(ct),
+                        Task.Delay(TimeSpan.FromSeconds(60), ct));
+                }
+                finally
+                {
+                    GuestbookRecording recording = await _services.VideoGuestbook.StopRecordingAsync(ct);
+                    await _services.Sessions.RecordGuestbookVideoAsync(sessionId, recording.FilePath, recording.Duration, ct);
+                }
+            }
+        }
+        catch (Exception)
+        {
+        }
+
+        // Best-effort, wrapped in its own try/catch: a guest who walks
+        // away without tapping anything, or any other failure collecting
+        // feedback, should never turn an already-completed session into
+        // an Error one -- the photo's already been captured, paid for
+        // (if vendo), and printed by this point.
+        try
+        {
+            SetState(BoothState.Feedback);
+            FeedbackResult feedback = await WithGuestIdleTimeoutAsync(
+                _services.Feedback.CollectAsync(ct), new FeedbackResult(null, null), ct,
+                () => (_services.Feedback as UiFeedbackService)?.CancelPending());
+            if (!feedback.IsEmpty)
+            {
+                await _services.Sessions.RecordFeedbackAsync(sessionId, feedback.Rating, feedback.Comment, ct);
+            }
+        }
+        catch (Exception)
+        {
+        }
+
+        // Best-effort, wrapped in its own try/catch, same reasoning as the
+        // Feedback block just above: a guest who walks away without tapping
+        // anything, or any other failure collecting survey answers, should
+        // never turn an already-completed session into an Error one. Skipped
+        // entirely when the admin has it off, or there are no active
+        // questions configured -- same "empty table = feature invisible"
+        // reasoning FramePicker already established for an empty Frame table.
+        try
+        {
+            if (settings.Survey.Enabled)
+            {
+                IReadOnlyList<SurveyQuestion> questions = await _services.Survey.GetActiveQuestionsAsync(ct);
+                if (questions.Count > 0)
+                {
+                    SetState(BoothState.Survey);
+                    IReadOnlyList<SurveyAnswer> answers = await WithGuestIdleTimeoutAsync(
+                        _services.Survey.CollectAnswersAsync(questions, ct), (IReadOnlyList<SurveyAnswer>)Array.Empty<SurveyAnswer>(), ct);
+                    if (answers.Count > 0)
+                    {
+                        await _services.Survey.RecordResponsesAsync(sessionId, answers, ct);
+                    }
+                }
+            }
+        }
+        catch (Exception)
+        {
         }
     }
 

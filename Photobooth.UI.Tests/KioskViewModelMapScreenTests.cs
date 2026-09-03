@@ -21,6 +21,7 @@ public class KioskViewModelMapScreenTests
     [InlineData(BoothState.Printing, KioskScreen.Processing)]
     [InlineData(BoothState.FilterPicker, KioskScreen.FilterPicker)]
     [InlineData(BoothState.FramePicker, KioskScreen.FramePicker)]
+    [InlineData(BoothState.PrePayment, KioskScreen.Payment)]
     [InlineData(BoothState.Payment, KioskScreen.Payment)]
     [InlineData(BoothState.Guestbook, KioskScreen.Guestbook)]
     [InlineData(BoothState.Feedback, KioskScreen.Feedback)]

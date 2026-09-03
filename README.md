@@ -20,14 +20,20 @@ full system, not just the UI layer.
   without hardware and swappable between mock and real implementations
   without touching business logic.
 - **`BoothStateMachine`** — drives a guest session through
-  `Idle → Consent → Countdown → Capturing → Reviewing → FramePicker → Printing → Complete → Idle`
-  (`FramePicker` only shows when at least one admin-configured frame is
-  active — a fresh booth skips straight from `Reviewing` to `Printing`),
-  with every failure path recovering back to `Idle` instead of hanging.
-  Takes its dependencies as one `BoothServices` record rather than
-  thirteen separate constructor parameters — that seam grew one interface
-  at a time as features landed, and a bundle stayed readable (and cheap
-  to extend) where a positional parameter list stopped being.
+  `Idle → [FramePicker] → Consent → Countdown → Capturing → [FilterPicker] →
+  Reviewing → [Payment] → [Printing] → Complete → Guestbook → Feedback →
+  [Survey] → Idle` (bracketed states are conditional: `FramePicker` is the
+  guest's very first interactive step now — a print-layout pick, not a
+  post-capture overlay — shown only when template-picking is enabled and a
+  favorited layout exists; `FilterPicker` only when Filters is on and set
+  to "Ask"; `Payment` only in vendo mode; `Printing` skipped for
+  GIF/Boomerang/Video; `Survey` only when enabled with active questions —
+  see each state's own section below for the exact gate), with every
+  failure path recovering back to `Idle` instead of hanging. Takes its
+  dependencies as one `BoothServices` record rather than a growing list of
+  constructor parameters — that seam grew one interface at a time as
+  features landed, and a bundle stayed readable (and cheap to extend)
+  where a positional parameter list stopped being.
 - **`Photobooth.ConsoleDemo`** — proves the state machine end to end,
   including a forced failure, before any UI or real hardware exists.
 - **`schema.sql`** — relational schema covering locations, bookings,
@@ -456,9 +462,12 @@ already gives for hand-rolling BMP bytes instead of using it.
   works, not just that a mock returns a plausible path), so it's marked
   `[SupportedOSPlatform("windows")]` too — honest, since the whole
   solution only ever runs on the Windows booth machine anyway.
-- `BoothStateMachine` applies branding right after capture, before
-  anything else reads `LastCapturedImagePath` — so Reviewing, the
-  print, and the upload all see the same branded photo.
+- `BoothStateMachine` applies branding last in the per-pose effects
+  chain — after Filters/`FilterPicker`, green screen, and the glam
+  filter, each of which run against the plain capture first — but still
+  before anything downstream (`Reviewing`, the print, the upload) ever
+  reads `LastCapturedImagePath`, so every consumer sees the same, fully
+  composited photo regardless of which effects were on for that session.
 
 Verified via `Photobooth.Tests` (the real compositing path confirms a
 genuine JPEG comes out, taller than the input by a caption bar's worth,
@@ -878,6 +887,19 @@ Admin-managed frame overlays a guest can pick during a session, plus the
 picker screen itself — the two pieces flagged as "not started" the last
 time this project's status was reviewed.
 
+**Superseded (see "Print template editor" below and the dslrBooth
+feature-parity plan's Screen Editor phase in `BUILD_PLAN.md`):** the
+guest-facing `FramePicker` step described in this section — a post-`Reviewing`
+sticker-overlay pick — was later retired in favor of a print-layout-template
+picker that runs as the guest's very first interactive step, before
+`Consent`. `BoothStateMachine` itself documents the change inline. The
+schema/repository/service seam below (`Frame` table, `IFrameLibraryService`,
+`IFrameSelectionService`) is kept only so every existing `BoothServices`
+constructor call site keeps compiling — `IFrameOverlayService` is the one
+piece of this seam still exercised by a running session, now for the
+watermark pass, not a guest-chosen frame. Left in place below as a build
+record of what shipped at the time, not a description of current behavior.
+
 - **`Frame`** table in `schema.sql` (`Name`, `ImagePath`, `SortOrder`,
   `IsActive`). One row per overlay, scoped to a `Location` the same way
   `Printer`/`Booking` are. `IsActive` lets an admin retire a frame
@@ -910,22 +932,28 @@ time this project's status was reviewed.
   response to a tap. `MockFrameSelectionService` (picks the first option,
   or none if `SkipNext` is set) is what `Photobooth.Tests`/
   `Photobooth.ConsoleDemo` use instead.
-- **`BoothStateMachine`** reads the active frame list right after the
-  guest's seen their photo on `Reviewing`. If any exist, it shows
-  `FramePicker`, waits for a pick, and — if the guest chose one — applies
-  it before the upload starts and before printing, so the QR code and the
-  physical print both show the same final composited photo (same
-  invariant branding/filter ordering already established). If nothing's
-  configured, `FramePicker` never shows and the session behaves exactly
-  as it did before this feature existed.
-- **UI**: `MainWindow` gained a real `FramePickerView` — a WPF screen
-  built from actual frame thumbnails (not a placeholder), each a clickable
-  `Button` wired to `UiFrameSelectionService.SubmitSelection`, plus a "No
-  frame" button. `AdminWindow` gained a "Frame library" section: an
-  `ItemsControl` listing existing frames with an Active checkbox and
-  Delete button per row, and an "Add Frame" form (name + `OpenFileDialog`
-  image picker) that copies the chosen image into a local
-  `Assets/Frames/` folder and inserts the row.
+- **At the time:** `BoothStateMachine` read the active frame list right
+  after the guest's seen their photo on `Reviewing`. If any existed, it
+  showed `FramePicker`, waited for a pick, and — if the guest chose one —
+  applied it before the upload started and before printing, so the QR
+  code and the physical print both showed the same final composited
+  photo. If nothing was configured, `FramePicker` never showed. **Now:**
+  none of this runs — `FramePicker` fires before `Consent` and is driven
+  by `TemplateSelection`/`TemplateLibrary` picking a `PrintTemplate`, not
+  by `FrameSelection`/`FrameLibrary` picking a `FrameOption`; see the
+  updated `BoothStateMachine` bullet in "Architecture" above.
+- **UI, at the time:** `MainWindow` had a `FramePickerView` — a WPF
+  screen of clickable frame thumbnails wired to
+  `UiFrameSelectionService.SubmitSelection`, plus a "No frame" button —
+  and `AdminWindow` had a "Frame library" section (`ItemsControl` of
+  frames with Active/Delete controls, plus an "Add Frame" form). The
+  guest-facing screen has since been repurposed into `KioskWindow.xaml`'s
+  `FramePickerScreen` for the template picker instead (its own comment
+  there says "not a post-capture sticker overlay pick"); the admin-side
+  "Frame library" section's add handler no longer exists in
+  `AdminWindow.xaml.cs` — a few of that file's own comments still cite it
+  by name as precedent, which is itself now-stale, out of scope for this
+  pass.
 
 Verified via `Photobooth.Tests`: three new `BoothStateMachineTests` cases
 (frame chosen — `FramePicker` shows between `Reviewing` and `Printing`,

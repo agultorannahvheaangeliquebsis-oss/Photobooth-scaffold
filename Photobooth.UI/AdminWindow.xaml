@@ -626,6 +626,16 @@
                             <TextBlock Text="If disabled, only Canon/Nikon are used" Style="{StaticResource Row}"
                                        Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,2,0,0" />
 
+                            <TextBlock Text="Camera Device" Style="{StaticResource Row}" Margin="0,18,0,4" />
+                            <StackPanel Orientation="Horizontal">
+                                <ComboBox x:Name="CameraDeviceCombo" Width="220" HorizontalAlignment="Left" SelectedIndex="0"
+                                          SelectionChanged="CameraDeviceCombo_SelectionChanged" />
+                                <Button x:Name="RefreshCameraDevicesButton" Content="Refresh" Padding="8,4" Margin="8,0,0,0"
+                                        Click="RefreshCameraDevicesButton_Click" />
+                            </StackPanel>
+                            <TextBlock x:Name="CameraDeviceStatusText" Text=" " Style="{StaticResource Row}"
+                                       Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,2,0,0" />
+
                             <TextBlock Text="Webcam Resolution" Style="{StaticResource Row}" Margin="0,18,0,4" />
                             <Slider x:Name="WebcamResolutionSlider" Value="70" />
                             <Grid Margin="0,2,0,0">
@@ -653,18 +663,26 @@
                             <ComboBox x:Name="AudioInputCombo" Width="280" HorizontalAlignment="Left" SelectedIndex="0" />
                         </StackPanel>
 
-                        <!-- ===== Right: live preview; see AudioInputDevices/
-                             LoadAsync comments for why this stays a static
-                             placeholder rather than a real feed: the admin PIN
-                             overlay that reaches this screen can open mid-guest-
-                             session, and forcing the live-view timer on/off from
-                             here would race BoothStateMachine's own camera use
-                             during an active Capturing/Countdown step. ===== -->
+                        <!-- ===== Right: live preview, polled from whichever
+                             camera the bridge currently has selected (see
+                             AdminWindow.RefreshCameraDevicesAsync/PollCameraPreviewFrameAsync).
+                             Starting the bridge/polling frames here can race
+                             BoothStateMachine's own camera use if this window is
+                             opened mid-guest-session (the admin PIN overlay can
+                             reach this screen then): an accepted tradeoff, since
+                             the bridge's pipe server handles one command at a
+                             time regardless of caller, so the worst case is a
+                             stray admin LIVEVIEW poll adding a few hundred ms of
+                             queue delay to a guest's own CAPTURE/LIVEVIEW call,
+                             not a dropped or corrupted one. ===== -->
                         <Border Grid.Column="1" Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}"
-                                BorderThickness="1" CornerRadius="8" MinHeight="280">
-                            <TextBlock Text="Live preview isn't shown on this screen -- these settings apply the next time this event is launched."
-                                       Foreground="{StaticResource MutedBrush}" FontFamily="Segoe UI" FontSize="12" TextWrapping="Wrap"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center" Margin="30" TextAlignment="Center" />
+                                BorderThickness="1" CornerRadius="8" MinHeight="280" ClipToBounds="True">
+                            <Grid>
+                                <Image x:Name="CameraPreviewImage" Stretch="Uniform" Margin="4" />
+                                <TextBlock x:Name="CameraPreviewStatusText" Text="Open this section to connect to a camera and preview its feed."
+                                           Foreground="{StaticResource MutedBrush}" FontFamily="Segoe UI" FontSize="12" TextWrapping="Wrap"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" Margin="30" TextAlignment="Center" />
+                            </Grid>
                         </Border>
                     </Grid>
                 </StackPanel>
@@ -1042,6 +1060,14 @@
                               Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
                     <CheckBox x:Name="PrintEnabledCheckBox" Content="Print icon on Sharing screen"
                               Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
+
+                    <TextBlock Text="Request payment (vendo mode):" Style="{StaticResource Row}" Margin="0,8,0,0" />
+                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                        <RadioButton x:Name="PaymentTimingSharingScreenRadio" GroupName="PaymentTiming" Content="On Sharing Screen"
+                                     Foreground="{StaticResource InkBrush}" IsChecked="True" Margin="0,0,12,0" />
+                        <RadioButton x:Name="PaymentTimingStartScreenRadio" GroupName="PaymentTiming" Content="On Start Screen"
+                                     Foreground="{StaticResource InkBrush}" />
+                    </StackPanel>
 
                     <!-- Real SMTP delivery, see SmtpEmailDeliveryService.
                          The password field is left blank on load and only
