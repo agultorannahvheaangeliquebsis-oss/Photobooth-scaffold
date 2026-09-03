@@ -578,6 +578,32 @@ public record SharingSettings(bool EmailEnabled = true, bool SmsEnabled = false,
     /// <summary>DPAPI-protected at rest, same reasoning as
     /// EmailSmtpPasswordProtected -- a Twilio auth token is a real secret.</summary>
     public string TwilioAuthTokenProtected { get; init; } = "";
+
+    /// <summary>Which IPaymentService a vendo-mode booth actually uses --
+    /// "Mock" (default; MockQrPaymentService, always auto-confirms) or
+    /// "PayMongo" (GatewayPaymentService talks to the real PayMongo API, the
+    /// aggregator fronting GCash/Maya for this booth -- see that class's own
+    /// doc comment for why a direct GCash/Maya integration isn't realistic
+    /// for a small merchant). Read fresh per payment attempt by
+    /// GatewayPaymentService, same "admin's change takes effect for the next
+    /// guest" reasoning every other Sharing Settings field already follows --
+    /// switching back to Mock mid-event needs no restart.</summary>
+    public string PaymentProvider { get; init; } = "Mock";
+
+    /// <summary>Which e-wallet PayMongo should charge -- "gcash" or
+    /// "paymaya". PayMongo's Payment Method API takes one fixed type per
+    /// attempt (there's no single "either" option), so this booth supports
+    /// one wallet at a time rather than letting the guest choose at the
+    /// Payment screen.</summary>
+    public string PayMongoWalletType { get; init; } = "gcash";
+
+    /// <summary>DPAPI-protected at rest, same reasoning as
+    /// EmailSmtpPasswordProtected/TwilioAuthTokenProtected -- a PayMongo
+    /// secret key authenticates every charge this booth ever makes.
+    /// AdminWindow encrypts before saving; GatewayPaymentService decrypts
+    /// right before each API call, never holding the plain value longer than
+    /// one request.</summary>
+    public string PayMongoSecretKeyProtected { get; init; } = "";
 }
 
 /// <summary>Per-stage audio/video attendant cues, see dslrBooth's Virtual Attendant screen

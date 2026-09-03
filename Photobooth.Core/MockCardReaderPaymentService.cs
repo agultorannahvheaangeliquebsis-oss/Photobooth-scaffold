@@ -16,8 +16,8 @@ public class MockCardReaderPaymentService : IPaymentService
     /// pattern as MockCameraService.FailNextCapture.</summary>
     public bool DeclineNext { get; set; } = false;
 
-    public PaymentPrompt Initiate(decimal amount, string reference) =>
-        new("Tap, insert, or swipe your card to pay.", QrCodePng: null);
+    public Task<PaymentPrompt> InitiateAsync(decimal amount, string reference, CancellationToken ct = default) =>
+        Task.FromResult(new PaymentPrompt("Tap, insert, or swipe your card to pay.", QrCodePng: null));
 
     public async Task<PaymentResult> WaitForConfirmationAsync(string reference, decimal amount, CancellationToken ct = default)
     {

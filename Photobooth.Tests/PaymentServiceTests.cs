@@ -5,11 +5,11 @@ namespace Photobooth.Tests;
 public class MockQrPaymentServiceTests
 {
     [Fact]
-    public void Initiate_ReturnsScanInstructionsWithAQrCode()
+    public async Task InitiateAsync_ReturnsScanInstructionsWithAQrCode()
     {
         var payment = new MockQrPaymentService();
 
-        PaymentPrompt prompt = payment.Initiate(150m, "ref-1");
+        PaymentPrompt prompt = await payment.InitiateAsync(150m, "ref-1");
 
         Assert.Contains("Scan", prompt.Instructions);
         Assert.NotNull(prompt.QrCodePng);
@@ -33,11 +33,11 @@ public class MockQrPaymentServiceTests
 public class MockCardReaderPaymentServiceTests
 {
     [Fact]
-    public void Initiate_ReturnsCardInstructionsWithNoQrCode()
+    public async Task InitiateAsync_ReturnsCardInstructionsWithNoQrCode()
     {
         var payment = new MockCardReaderPaymentService();
 
-        PaymentPrompt prompt = payment.Initiate(150m, "ref-1");
+        PaymentPrompt prompt = await payment.InitiateAsync(150m, "ref-1");
 
         Assert.Contains("card", prompt.Instructions, StringComparison.OrdinalIgnoreCase);
         Assert.Null(prompt.QrCodePng);

@@ -1552,6 +1552,38 @@
                                      Foreground="{StaticResource InkBrush}" />
                     </StackPanel>
 
+                    <!-- Real gateway, see GatewayPaymentService: falls back
+                         to the Mock provider automatically whenever no
+                         secret key is on file, so leaving this on "Mock"
+                         (the default) is a safe, fully-working choice while
+                         a PayMongo account is still being set up. Same
+                         blank-unless-changed secret field pattern as the
+                         SMTP password/Twilio auth token below. -->
+                    <TextBlock Text="Payment Gateway" Style="{StaticResource SectionHeader}" />
+                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                        <RadioButton x:Name="PaymentProviderMockRadio" GroupName="PaymentProvider" Content="Mock (testing only)"
+                                     Foreground="{StaticResource InkBrush}" IsChecked="True" Margin="0,0,12,0" />
+                        <RadioButton x:Name="PaymentProviderManualRadio" GroupName="PaymentProvider" Content="Manual (attendant confirms)"
+                                     Foreground="{StaticResource InkBrush}" Margin="0,0,12,0" />
+                        <RadioButton x:Name="PaymentProviderPayMongoRadio" GroupName="PaymentProvider" Content="PayMongo"
+                                     Foreground="{StaticResource InkBrush}" />
+                    </StackPanel>
+                    <TextBlock Text="No business TIN yet? Use Manual -- the attendant collects cash or a personal GCash/Maya scan and taps Payment Received on the booth. PayMongo needs a verified business before it can settle real money."
+                               Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                    <TextBlock Text="Wallet:" Style="{StaticResource Row}" Margin="0,6,0,0" />
+                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                        <RadioButton x:Name="PayMongoWalletGcashRadio" GroupName="PayMongoWallet" Content="GCash"
+                                     Foreground="{StaticResource InkBrush}" IsChecked="True" Margin="0,0,12,0" />
+                        <RadioButton x:Name="PayMongoWalletMayaRadio" GroupName="PayMongoWallet" Content="Maya"
+                                     Foreground="{StaticResource InkBrush}" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text="Secret key:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="120" />
+                        <PasswordBox x:Name="PayMongoSecretKeyBox" Width="260" />
+                    </StackPanel>
+                    <TextBlock x:Name="PayMongoSecretKeyHintText" Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" Margin="120,2,0,0" />
+
                     <!-- Real SMTP delivery, see SmtpEmailDeliveryService.
                          The password field is left blank on load and only
                          overwrites the saved one if the admin types a new

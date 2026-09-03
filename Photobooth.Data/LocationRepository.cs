@@ -81,7 +81,8 @@ public class LocationRepository
                    VideoEnabled, VideoOrientationDegrees, VideoSize, VideoOutputQualityPercent, VideoType,
                    VideoNumberOfClips, VideoCountdownBeforeClip1Seconds, VideoCountdownBeforeOtherClipsSeconds,
                    VideoRecordOnMotionEnabled, VideoSoundtrackMp3Path, VideoImageOverlayPath,
-                   VideoBeforeRecordingClipPath, VideoAfterRecordingClipPath
+                   VideoBeforeRecordingClipPath, VideoAfterRecordingClipPath,
+                   PaymentProvider, PayMongoWalletType, PayMongoSecretKeyProtected
             FROM Location ORDER BY LocationId;
             """,
             connection);
@@ -218,6 +219,9 @@ public class LocationRepository
                     TwitterEnabled = reader.GetBoolean(104),
                     PrintEnabled = reader.GetBoolean(105),
                     PaymentTiming = reader.GetString(130),
+                    PaymentProvider = reader.GetString(163),
+                    PayMongoWalletType = reader.GetString(164),
+                    PayMongoSecretKeyProtected = reader.GetString(165),
                 },
                 new VirtualAttendantSettings(
                     reader.GetBoolean(51), reader.GetString(52), reader.GetBoolean(53), reader.GetBoolean(54),
@@ -575,7 +579,9 @@ public class LocationRepository
                 SharingIconsAlignment = @SharingIconsAlignment,
                 PoseStripBackgroundOpacityPercent = @PoseStripBackgroundOpacityPercent,
                 PoseStripActiveBorderColorHex = @PoseStripActiveBorderColorHex,
-                PoseStripShowPlaceholderNumbers = @PoseStripShowPlaceholderNumbers
+                PoseStripShowPlaceholderNumbers = @PoseStripShowPlaceholderNumbers,
+                PaymentProvider = @PaymentProvider, PayMongoWalletType = @PayMongoWalletType,
+                PayMongoSecretKeyProtected = @PayMongoSecretKeyProtected
             WHERE LocationId = @LocationId;
             """,
             connection);
@@ -664,6 +670,12 @@ public class LocationRepository
         command.Parameters.AddWithValue("@TwilioAuthTokenProtected", sharing.TwilioAuthTokenProtected);
         command.Parameters.AddWithValue("@TwitterEnabled", sharing.TwitterEnabled);
         command.Parameters.AddWithValue("@PrintEnabled", sharing.PrintEnabled);
+        command.Parameters.AddWithValue("@PaymentProvider", sharing.PaymentProvider);
+        command.Parameters.AddWithValue("@PayMongoWalletType", sharing.PayMongoWalletType);
+        // Already DPAPI-protected by the caller (AdminWindow) before this
+        // record was built, same reasoning EmailSmtpPasswordProtected/
+        // TwilioAuthTokenProtected above already establish.
+        command.Parameters.AddWithValue("@PayMongoSecretKeyProtected", sharing.PayMongoSecretKeyProtected);
         AddScreenEditorSettingsParameters(command, screen);
         command.Parameters.AddWithValue("@LocationId", locationId);
         await command.ExecuteNonQueryAsync(ct);

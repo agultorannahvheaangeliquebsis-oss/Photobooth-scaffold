@@ -540,6 +540,20 @@
                         Visibility="{Binding PaymentQrCode, Converter={StaticResource NullToVisibility}}">
                     <Image Source="{Binding PaymentQrCode}" Width="260" Height="260" />
                 </Border>
+
+                <!-- Attendant-only: SharingSettings.PaymentProvider == "Manual"
+                     (see ManualConfirmPaymentService) means there's no gateway
+                     to poll, so the attendant collects cash or watches their own
+                     phone for a personal GCash/Maya notification, then taps one
+                     of these to unblock the guest's session. Invisible for
+                     every other provider. -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,36,0,0"
+                            Visibility="{Binding IsManualPaymentConfirmVisible, Converter={StaticResource BoolToVisibility}}">
+                    <Button Style="{StaticResource KioskPrimaryButton}" Content="PAYMENT RECEIVED" Margin="0,0,16,0"
+                            Command="{Binding ConfirmPaymentReceivedCommand}" />
+                    <Button Style="{StaticResource KioskGhostButton}" Content="DECLINE / CANCEL"
+                            Command="{Binding DeclinePaymentCommand}" />
+                </StackPanel>
             </StackPanel>
         </Grid>
 

@@ -1,3 +1,5 @@
+using Serilog;
+
 namespace Photobooth.Core;
 
 /// <summary>
@@ -56,6 +58,14 @@ public class BoothStateMachine
 
     /// <summary>What to tell the guest on the Payment screen -- gateway-specific (e.g. "Scan to pay" vs "Tap your card"), set right before the Payment state shows. Only meaningful in vendo mode.</summary>
     public string? PaymentInstructions { get; private set; }
+
+    /// <summary>The reference RunPaymentGateAsync generated for the current/most
+    /// recent payment attempt, set right alongside PaymentInstructions/PaymentQrPng.
+    /// Needed by ManualConfirmPaymentService's ConfirmPayment/DeclinePayment --
+    /// the attendant's "Payment Received" tap has to name which pending
+    /// WaitForConfirmationAsync call to resolve, and this is the only place
+    /// that reference is exposed outside BoothStateMachine itself.</summary>
+    public string? PaymentReference { get; private set; }
 
     /// <summary>Outcome of the current/most recent session's disclaimer+opt-in prompt, set right after the Consent state shows.</summary>
     public ConsentResult? LastConsent { get; private set; }
@@ -343,7 +353,7 @@ public class BoothStateMachine
             // copy, nor a queued retry that would eventually email one).
             // Fire-and-forget so a still-in-flight upload or a slow email
             // send doesn't hold up Printing.
-            _ = FinalizeUploadAsync(uploadTask, uploadImagePath, uploadEmail, ct);
+            _ = FinalizeUploadAsync(uploadTask, uploadImagePath, uploadEmail, sessionId.Value, ct);
 
             // GIF/Boomerang/Video have nothing printable -- dslrBooth's own
             // Video/GIF modes are share-only too (see the Sharing Screen
@@ -769,9 +779,10 @@ public class BoothStateMachine
     private async Task RunPaymentGateAsync(int sessionId, BoothState state, CancellationToken ct)
     {
         string reference = Guid.NewGuid().ToString("N");
-        PaymentPrompt prompt = _services.Payment.Initiate(VendoPricePerPrint, reference);
+        PaymentPrompt prompt = await _services.Payment.InitiateAsync(VendoPricePerPrint, reference, ct);
         PaymentInstructions = prompt.Instructions;
         PaymentQrPng = prompt.QrCodePng;
+        PaymentReference = reference;
         SetState(state);
         PaymentResult result = await WithGuestIdleTimeoutAsync(
             _services.Payment.WaitForConfirmationAsync(reference, VendoPricePerPrint, ct),
@@ -894,11 +905,16 @@ public class BoothStateMachine
 
             return photoUrl;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // Deliberately doesn't queue the failure here -- see
             // FinalizeUploadAsync for why that decision waits until the
-            // payment gate has cleared.
+            // payment gate has cleared. Still logged (not just swallowed) so
+            // a booth that's silently failing every upload (bad Cloudinary
+            // credentials, dropped venue WiFi) shows up in
+            // %LocalAppData%\Photobooth\logs instead of just an
+            // ever-growing pending_uploads.json with no explanation.
+            Log.Warning(ex, "Photo upload failed for session {SessionId}; the guest's QR code won't show this session", sessionId);
             return null;
         }
     }
@@ -916,6 +932,7 @@ public class BoothStateMachine
         Task<Uri?> uploadTask,
         string imagePath,
         string? email,
+        int sessionId,
         CancellationToken ct)
     {
         Uri? photoUrl = await uploadTask; // UploadInBackgroundAsync catches its own failures, never throws
@@ -928,11 +945,16 @@ public class BoothStateMachine
                 {
                     await _services.Email.SendPhotoLinkAsync(email, photoUrl, ct);
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
                     // Best-effort: a failed email isn't the guest's problem
                     // to see -- they still have the QR code as a working way
-                    // to get their photo.
+                    // to get their photo. Logged (not just swallowed) so a
+                    // misconfigured SMTP host/credentials (the common real
+                    // cause -- see SmtpEmailDeliveryService) is diagnosable
+                    // from %LocalAppData%\Photobooth\logs instead of just
+                    // silently never reaching the guest.
+                    Log.Warning(ex, "Email send failed for session {SessionId} ({Email})", sessionId, email);
                 }
             }
         }
@@ -944,12 +966,15 @@ public class BoothStateMachine
             {
                 await _services.UploadQueue.EnqueueAsync(imagePath, email, ct);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // Best-effort: swallow so a failure to even queue can't
                 // surface as an unobserved task exception -- it's not on the
                 // guest-facing error path, just a missing QR code (and
-                // eventually, email) for this session.
+                // eventually, email) for this session. Still logged so a
+                // broken queue (e.g. an unwritable pending_uploads.json) is
+                // diagnosable rather than just quietly losing the retry.
+                Log.Warning(ex, "Couldn't queue failed upload for retry (session {SessionId}, {ImagePath})", sessionId, imagePath);
             }
         }
     }
@@ -981,27 +1006,33 @@ public class BoothStateMachine
                     {
                         await _services.Email.SendPhotoLinkAsync(toEmail, url, ct);
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
                         // Best-effort: the upload itself already succeeded --
                         // a failed email here isn't worth re-queuing over.
+                        // Still logged so a persistently misconfigured SMTP
+                        // setup is diagnosable instead of guests silently
+                        // never getting their retried photo link.
+                        Log.Warning(ex, "Retry email send failed for {Email} ({FilePath})", toEmail, item.FilePath);
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // Still offline (or this particular file's upload still
                 // fails) -- put it back for next time. Already claimed out
                 // of the queue by DequeueAllAsync above, so re-enqueue
                 // rather than leave it (as the old Get+Remove version did).
+                Log.Warning(ex, "Retry upload failed for {FilePath}; re-queuing", item.FilePath);
                 try
                 {
                     await _services.UploadQueue.EnqueueAsync(item.FilePath, item.Email, ct);
                 }
-                catch (Exception)
+                catch (Exception ex2)
                 {
                     // Best-effort: swallow so a failure to even re-queue
                     // can't surface as an unobserved task exception.
+                    Log.Warning(ex2, "Couldn't re-queue failed retry upload for {FilePath}", item.FilePath);
                 }
             }
         }

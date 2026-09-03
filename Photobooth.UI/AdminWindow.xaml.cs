@@ -108,6 +108,7 @@ public partial class AdminWindow : Window
     // already establish for files.
     private string _existingEmailSmtpPasswordProtected = "";
     private string _existingTwilioAuthTokenProtected = "";
+    private string _existingPayMongoSecretKeyProtected = "";
 
     // Source of truth for the six Randomize toggles now embedded in the Virtual
     // Attendant tile grid (see BuildAttendantStageCard) -- a plain dictionary
@@ -407,6 +408,12 @@ public partial class AdminWindow : Window
         OnCheck(PrintEnabledCheckBox, "Parity", SaveParityBundleAsync);
         OnRadio(PaymentTimingStartScreenRadio, "Parity", SaveParityBundleAsync);
         OnRadio(PaymentTimingSharingScreenRadio, "Parity", SaveParityBundleAsync);
+        OnRadio(PaymentProviderMockRadio, "Parity", SaveParityBundleAsync);
+        OnRadio(PaymentProviderManualRadio, "Parity", SaveParityBundleAsync);
+        OnRadio(PaymentProviderPayMongoRadio, "Parity", SaveParityBundleAsync);
+        OnRadio(PayMongoWalletGcashRadio, "Parity", SaveParityBundleAsync);
+        OnRadio(PayMongoWalletMayaRadio, "Parity", SaveParityBundleAsync);
+        OnPassword(PayMongoSecretKeyBox, "Parity", SaveParityBundleAsync);
         OnText(EmailFromAddressBox, "Parity", SaveParityBundleAsync);
         OnText(EmailSubjectBox, "Parity", SaveParityBundleAsync);
         OnText(EmailSmtpHostBox, "Parity", SaveParityBundleAsync);
@@ -1094,6 +1101,16 @@ public partial class AdminWindow : Window
                 PrintEnabledCheckBox.IsChecked = sharing.PrintEnabled;
                 PaymentTimingStartScreenRadio.IsChecked = sharing.PaymentTiming == "StartScreen";
                 PaymentTimingSharingScreenRadio.IsChecked = sharing.PaymentTiming != "StartScreen";
+                PaymentProviderPayMongoRadio.IsChecked = sharing.PaymentProvider == "PayMongo";
+                PaymentProviderManualRadio.IsChecked = sharing.PaymentProvider == "Manual";
+                PaymentProviderMockRadio.IsChecked = sharing.PaymentProvider is not ("PayMongo" or "Manual");
+                PayMongoWalletMayaRadio.IsChecked = sharing.PayMongoWalletType == "paymaya";
+                PayMongoWalletGcashRadio.IsChecked = sharing.PayMongoWalletType != "paymaya";
+                PayMongoSecretKeyBox.Password = string.Empty;
+                _existingPayMongoSecretKeyProtected = sharing.PayMongoSecretKeyProtected;
+                PayMongoSecretKeyHintText.Text = sharing.PayMongoSecretKeyProtected.Length > 0
+                    ? "A secret key is already saved. Leave blank to keep it."
+                    : "No secret key saved yet -- payments use the Mock provider until one is set.";
                 EmailFromAddressBox.Text = sharing.EmailFromAddress;
                 EmailSubjectBox.Text = sharing.EmailSubject;
                 EmailSmtpHostBox.Text = sharing.EmailSmtpHost;
@@ -1778,6 +1795,9 @@ public partial class AdminWindow : Window
         string twilioTokenProtected = TwilioAuthTokenBox.Password.Length > 0
             ? SecretProtector.Protect(TwilioAuthTokenBox.Password)
             : _existingTwilioAuthTokenProtected;
+        string payMongoSecretKeyProtected = PayMongoSecretKeyBox.Password.Length > 0
+            ? SecretProtector.Protect(PayMongoSecretKeyBox.Password)
+            : _existingPayMongoSecretKeyProtected;
         int.TryParse(EmailSmtpPortBox.Text, out int smtpPort);
 
         return new SharingSettings(EmailEnabledCheckBox.IsChecked == true, SmsEnabledCheckBox.IsChecked == true, QrEnabledCheckBox.IsChecked == true)
@@ -1785,6 +1805,11 @@ public partial class AdminWindow : Window
             TwitterEnabled = TwitterEnabledCheckBox.IsChecked == true,
             PrintEnabled = PrintEnabledCheckBox.IsChecked == true,
             PaymentTiming = PaymentTimingStartScreenRadio.IsChecked == true ? "StartScreen" : "SharingScreen",
+            PaymentProvider = PaymentProviderPayMongoRadio.IsChecked == true ? "PayMongo"
+                : PaymentProviderManualRadio.IsChecked == true ? "Manual"
+                : "Mock",
+            PayMongoWalletType = PayMongoWalletMayaRadio.IsChecked == true ? "paymaya" : "gcash",
+            PayMongoSecretKeyProtected = payMongoSecretKeyProtected,
             EmailFromAddress = EmailFromAddressBox.Text.Trim(),
             EmailSubject = EmailSubjectBox.Text.Trim(),
             EmailSmtpHost = EmailSmtpHostBox.Text.Trim(),
@@ -2053,14 +2078,19 @@ public partial class AdminWindow : Window
             _pendingVideoAfterClipPath = null;
             _existingEmailSmtpPasswordProtected = sharing.EmailSmtpPasswordProtected;
             _existingTwilioAuthTokenProtected = sharing.TwilioAuthTokenProtected;
+            _existingPayMongoSecretKeyProtected = sharing.PayMongoSecretKeyProtected;
             EmailSmtpPasswordBox.Password = string.Empty;
             TwilioAuthTokenBox.Password = string.Empty;
+            PayMongoSecretKeyBox.Password = string.Empty;
             EmailSmtpPasswordHintText.Text = sharing.EmailSmtpPasswordProtected.Length > 0
                 ? "A password is already saved. Leave blank to keep it."
                 : "No password saved yet.";
             TwilioAuthTokenHintText.Text = sharing.TwilioAuthTokenProtected.Length > 0
                 ? "An auth token is already saved. Leave blank to keep it."
                 : "No auth token saved yet.";
+            PayMongoSecretKeyHintText.Text = sharing.PayMongoSecretKeyProtected.Length > 0
+                ? "A secret key is already saved. Leave blank to keep it."
+                : "No secret key saved yet -- payments use the Mock provider until one is set.";
             statusText.Text = "Saved -- applied to the live kiosk.";
             statusText.Foreground = (System.Windows.Media.Brush)FindResource("MutedBrush");
         }

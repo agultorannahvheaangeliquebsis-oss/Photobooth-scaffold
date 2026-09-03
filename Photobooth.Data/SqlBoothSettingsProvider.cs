@@ -70,7 +70,8 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
                    VideoEnabled, VideoOrientationDegrees, VideoSize, VideoOutputQualityPercent, VideoType,
                    VideoNumberOfClips, VideoCountdownBeforeClip1Seconds, VideoCountdownBeforeOtherClipsSeconds,
                    VideoRecordOnMotionEnabled, VideoSoundtrackMp3Path, VideoImageOverlayPath,
-                   VideoBeforeRecordingClipPath, VideoAfterRecordingClipPath
+                   VideoBeforeRecordingClipPath, VideoAfterRecordingClipPath,
+                   PaymentProvider, PayMongoWalletType, PayMongoSecretKeyProtected
             FROM Location WHERE LocationId = @LocationId;
             """,
             connection);
@@ -223,6 +224,9 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
                 TwitterEnabled = reader.GetBoolean(99),
                 PrintEnabled = reader.GetBoolean(100),
                 PaymentTiming = reader.GetString(125),
+                PaymentProvider = reader.GetString(158),
+                PayMongoWalletType = reader.GetString(159),
+                PayMongoSecretKeyProtected = reader.GetString(160),
             };
             virtualAttendant = new VirtualAttendantSettings(
                 reader.GetBoolean(47), reader.GetString(48), reader.GetBoolean(49), reader.GetBoolean(50),

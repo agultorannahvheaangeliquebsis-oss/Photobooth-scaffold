@@ -45,7 +45,8 @@ public static class BoothCompositionRoot
         UiGuestbookPromptService GuestbookPrompt,
         SqlSurveyService Survey,
         UiFilterSelectionService FilterSelection,
-        UiTemplateSelectionService TemplateSelection);
+        UiTemplateSelectionService TemplateSelection,
+        ManualConfirmPaymentService ManualPayment);
 
     /// <summary>Blocking -- callers must invoke this off the UI thread's
     /// synchronous continuation via <c>Task.Run(() =&gt; Build())...GetAwaiter().GetResult()</c>
@@ -107,12 +108,13 @@ public static class BoothCompositionRoot
         // fresh on every send (see SmtpEmailDeliveryService/
         // TwilioSmsDeliveryService's own doc comments), not just once here.
         var settingsProvider = new SqlBoothSettingsProvider(seedIds.LocationId);
+        var manualPayment = new ManualConfirmPaymentService();
         var services = new BoothServices(
             Camera: new PtpCameraService(),
             Printer: new SpoolerPrinterService(),
             CloudUpload: new CloudinaryCloudUploadService(),
             Sessions: sessionRepository,
-            Payment: new MockQrPaymentService(),
+            Payment: new GatewayPaymentService(settingsProvider, manualPayment),
             UploadQueue: new FileSystemPendingUploadQueue(),
             Consent: new MockConsentService(),
             Email: new SmtpEmailDeliveryService(settingsProvider),
@@ -152,7 +154,8 @@ public static class BoothCompositionRoot
             guestbookPrompt,
             survey,
             filterSelection,
-            templateSelection);
+            templateSelection,
+            manualPayment);
     }
 
     /// <summary>Builds a real <see cref="KioskViewModel"/> for a real booth --
@@ -174,7 +177,8 @@ public static class BoothCompositionRoot
             booth.Survey,
             booth.SeedIds.LocationId,
             booth.FilterSelection,
-            booth.TemplateSelection);
+            booth.TemplateSelection,
+            booth.ManualPayment);
         return (viewModel, booth);
     }
 

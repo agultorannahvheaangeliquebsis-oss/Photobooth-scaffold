@@ -8,9 +8,9 @@ namespace Photobooth.Core;
 /// </summary>
 public class MockQrPaymentService : IPaymentService
 {
-    public PaymentPrompt Initiate(decimal amount, string reference) => new(
+    public Task<PaymentPrompt> InitiateAsync(decimal amount, string reference, CancellationToken ct = default) => Task.FromResult(new PaymentPrompt(
         "Scan to pay, then hold your phone still for a moment.",
-        QrCodeGenerator.GeneratePng($"photobooth-mock-pay://{reference}?amount={amount}"));
+        QrCodeGenerator.GeneratePng($"photobooth-mock-pay://{reference}?amount={amount}")));
 
     public async Task<PaymentResult> WaitForConfirmationAsync(string reference, decimal amount, CancellationToken ct = default)
     {

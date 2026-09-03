@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using Photobooth.Core;
 using Photobooth.UI.ViewModels;
 
@@ -245,11 +246,23 @@ public partial class KioskWindow : Window
     /// <summary>WelcomeBackgroundMediaElement has no built-in repeat, so each
     /// MediaEnded just rewinds and replays it -- same "muted attract loop"
     /// role AttendantMediaElement plays for cues, but this one never stops
-    /// on its own.</summary>
+    /// on its own. Deferred via BeginInvoke, not called inline: WPF is still
+    /// unwinding its own internal media-state transition while MediaEnded is
+    /// being raised, and calling Play()/setting Position synchronously from
+    /// inside this handler throws "Cannot control media unless LoadedBehavior
+    /// or UnloadedBehavior is set to Manual" (confirmed via
+    /// %LocalAppData%\Photobooth\logs -- it fired on every single loop, so
+    /// the welcome screen's background video played once and then sat on an
+    /// error dialog for the rest of the event instead of looping). Posting it
+    /// to run after the current dispatcher callback finishes avoids that
+    /// reentrancy.</summary>
     private void WelcomeBackgroundMediaElement_MediaEnded(object sender, RoutedEventArgs e)
     {
-        WelcomeBackgroundMediaElement.Position = TimeSpan.Zero;
-        WelcomeBackgroundMediaElement.Play();
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+        {
+            WelcomeBackgroundMediaElement.Position = TimeSpan.Zero;
+            WelcomeBackgroundMediaElement.Play();
+        }));
     }
 
     /// <summary>Plays a Virtual Attendant clip alongside whatever screen is

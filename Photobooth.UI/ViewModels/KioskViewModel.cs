@@ -75,6 +75,14 @@ public class KioskViewModel : ObservableObject, IDisposable
     private readonly UiGuestbookPromptService? _guestbookPrompt;
     private readonly SqlSurveyService? _survey;
 
+    /// <summary>Same "concrete instance passed alongside the interface-only
+    /// BoothServices" reasoning as _frameSelection/_feedback/etc. above --
+    /// IPaymentService has no ConfirmPayment/DeclinePayment (a card reader or
+    /// PayMongo poll has no such guest/attendant action), so the Payment
+    /// screen's two attendant buttons need the concrete type. Null in mock
+    /// mode, same as the others.</summary>
+    private readonly ManualConfirmPaymentService? _manualPayment;
+
     // Phase-6 screen-template overlays: null _locationId (mock/designer mode)
     // skips the SQL read entirely, since ScreenTemplateElementRepository has
     // no Mock* counterpart and CreateWithMockServices promises no LocalDB
@@ -109,7 +117,8 @@ public class KioskViewModel : ObservableObject, IDisposable
         SqlSurveyService? survey = null,
         int? locationId = null,
         UiFilterSelectionService? filterSelection = null,
-        UiTemplateSelectionService? templateSelection = null)
+        UiTemplateSelectionService? templateSelection = null,
+        ManualConfirmPaymentService? manualPayment = null)
     {
         // Application.Current.Dispatcher, not Dispatcher.CurrentDispatcher: this
         // constructor runs inside BoothCompositionRoot.BuildKioskViewModel, which
@@ -155,6 +164,8 @@ public class KioskViewModel : ObservableObject, IDisposable
         SelectFilterCommand = new RelayCommand(SelectFilter);
         SelectFrameCommand = new RelayCommand(SelectFrame);
         SelectTemplateCommand = new RelayCommand(SelectTemplate);
+        ConfirmPaymentReceivedCommand = new RelayCommand(() => _manualPayment?.ConfirmPayment(_stateMachine.PaymentReference));
+        DeclinePaymentCommand = new RelayCommand(() => _manualPayment?.DeclinePayment(_stateMachine.PaymentReference));
         RecordGuestbookMessageCommand = new RelayCommand(parameter =>
         {
             if (parameter is Guid requestToken)
@@ -253,6 +264,8 @@ public class KioskViewModel : ObservableObject, IDisposable
         {
             _templateSelection.SelectionRequestedWithToken += (options, token) => OnUi(() => ShowTemplateOptions(options, token));
         }
+
+        _manualPayment = manualPayment;
 
         _feedback = feedback;
         if (_feedback is not null)
@@ -920,6 +933,12 @@ public class KioskViewModel : ObservableObject, IDisposable
 
     public RelayCommand SelectTemplateCommand { get; }
 
+    /// <summary>The attendant's two buttons on the Payment screen, visible
+    /// only when IsManualPaymentConfirmVisible is true -- see
+    /// ManualConfirmPaymentService.</summary>
+    public RelayCommand ConfirmPaymentReceivedCommand { get; }
+    public RelayCommand DeclinePaymentCommand { get; }
+
     /// <summary>Bound to each layout tile's CommandParameter, and to the
     /// "Use default layout" button with a null parameter.</summary>
     private void SelectTemplate(object? parameter)
@@ -980,6 +999,20 @@ public class KioskViewModel : ObservableObject, IDisposable
         get => _paymentQrCode;
         private set => SetProperty(ref _paymentQrCode, value);
     }
+
+    /// <summary>Shows the Payment screen's two attendant-only buttons
+    /// (ConfirmPaymentReceivedCommand/DeclinePaymentCommand) -- only
+    /// meaningful when this booth has no registered business yet and is
+    /// running SharingSettings.PaymentProvider == "Manual" (see
+    /// ManualConfirmPaymentService's own doc comment for why: no aggregator
+    /// will issue live keys without a verified business, so a staffed event
+    /// has the attendant collect cash/a personal wallet scan and confirm it
+    /// here instead). False (and both commands are effectively inert, since
+    /// there'd be nothing to confirm) for every other provider, including
+    /// mock/testing and PayMongo once that's actually configured.</summary>
+    public bool IsManualPaymentConfirmVisible =>
+        _manualPayment is not null && _settings.Sharing.PaymentProvider == "Manual"
+        && CurrentBoothState is BoothState.Payment or BoothState.PrePayment;
 
     // =========================================================== guestbook ==
 
@@ -1610,11 +1643,20 @@ public class KioskViewModel : ObservableObject, IDisposable
             _ = BuildTemplatePreviewAsync(_stateMachine.LastCapturedImagePaths);
         }
 
-        if (state == BoothState.Payment)
+        if (state is BoothState.Payment or BoothState.PrePayment)
         {
+            // BoothState.PrePayment (SharingSettings.PaymentTiming ==
+            // "StartScreen") maps to the same guest-facing Payment screen as
+            // BoothState.Payment (see MapScreen below) but is a distinct
+            // BoothState -- this used to only match the latter, so a
+            // pay-before-capture booth showed the Payment screen with no
+            // instructions and no QR code at all (confirmed: RunPaymentGateAsync
+            // sets both on BoothStateMachine before SetState(BoothState.PrePayment),
+            // but nothing here ever read them for that state).
             PaymentInstructions = _stateMachine.PaymentInstructions;
             PaymentQrCode = _stateMachine.PaymentQrPng is byte[] qrPng ? LoadImageFromBytes(qrPng) : null;
         }
+        RaisePropertyChanged(nameof(IsManualPaymentConfirmVisible));
 
         if (CurrentScreenState == KioskScreen.Review)
         {
@@ -1852,6 +1894,7 @@ public class KioskViewModel : ObservableObject, IDisposable
             }
             ScreenOverlaysChanged?.Invoke();
             ApplyRemoteControlEnabled(settings.RemoteControlEnabled);
+            RaisePropertyChanged(nameof(IsManualPaymentConfirmVisible));
         });
     }
 

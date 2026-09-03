@@ -10,6 +10,7 @@
     <PackageReference Include="CloudinaryDotNet" Version="1.29.3" />
     <PackageReference Include="MailKit" Version="4.17.0" />
     <PackageReference Include="QRCoder" Version="1.6.0" />
+    <PackageReference Include="Serilog" Version="4.2.0" />
     <!-- Windows-only (System.Drawing.Printing.PrintDocument); fine, since
          this whole solution already only runs on the Windows booth machine
          (WPF UI, PTP camera bridge, print spooler, LocalDB). -->
