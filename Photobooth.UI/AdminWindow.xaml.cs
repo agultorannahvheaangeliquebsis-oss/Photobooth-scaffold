@@ -166,11 +166,79 @@ public partial class AdminWindow : Window
     /// started it and still needs it after this window closes.</summary>
     private Process? _ownedCameraBridgeProcess;
 
+    // ---- Autosave. Every settings control wired in WireAutosaveHandlers
+    // schedules a short-debounced save of its bundle instead of requiring an
+    // explicit Save click -- dslrBooth-style Save buttons are still wired
+    // and still work (instant feedback), but nothing is ever lost just
+    // because the admin hit Refresh/Close instead of finding the right
+    // button. _suppressAutosaveDepth blocks scheduling while LoadAsync is
+    // writing controls programmatically, or while a bundle's own save is
+    // applying its post-save side effects (e.g. clearing the password
+    // boxes) -- without it, either would immediately re-schedule a save of
+    // stale or redundant data.
+    private int _suppressAutosaveDepth;
+    private readonly Dictionary<string, (System.Windows.Threading.DispatcherTimer Timer, Func<Task> SaveAsync)> _autosaveTimers = new();
+    private bool _closeConfirmed;
+
+    private void ScheduleAutosave(string bundleKey, Func<Task> saveAsync)
+    {
+        if (_suppressAutosaveDepth > 0)
+        {
+            return;
+        }
+
+        if (!_autosaveTimers.TryGetValue(bundleKey, out var entry))
+        {
+            var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
+            entry = (timer, saveAsync);
+            _autosaveTimers[bundleKey] = entry;
+            timer.Tick += async (_, _) =>
+            {
+                timer.Stop();
+                await entry.SaveAsync();
+            };
+        }
+        entry.Timer.Stop();
+        entry.Timer.Start();
+    }
+
+    /// <summary>Immediately runs any bundle's still-pending debounced save --
+    /// called before Refresh (which would otherwise reload over an unsaved
+    /// edit) and before the window actually closes (see Window_Closing), so
+    /// the ~700ms debounce window can never lose a change.</summary>
+    private async Task FlushPendingAutosavesAsync()
+    {
+        var pending = _autosaveTimers.Values.Where(entry => entry.Timer.IsEnabled).ToList();
+        foreach (var entry in pending)
+        {
+            entry.Timer.Stop();
+        }
+        foreach (var entry in pending)
+        {
+            await entry.SaveAsync();
+        }
+    }
+
+    private async void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (_closeConfirmed || !_autosaveTimers.Values.Any(entry => entry.Timer.IsEnabled))
+        {
+            return;
+        }
+
+        e.Cancel = true;
+        await FlushPendingAutosavesAsync();
+        _closeConfirmed = true;
+        Close();
+    }
+
     public AdminWindow(int? locationId = null, string initialSection = "General", Action<bool>? onLockChanged = null)
     {
         InitializeComponent();
         _requestedLocationId = locationId;
         _onLockChanged = onLockChanged;
+        WireAutosaveHandlers();
+        Closing += Window_Closing;
         Closed += (_, _) =>
         {
             StopCameraPreview();
@@ -207,7 +275,164 @@ public partial class AdminWindow : Window
         };
     }
 
-    private async void RefreshButton_Click(object sender, RoutedEventArgs e) => await LoadAsync();
+    /// <summary>Subscribes an extra change handler (alongside whatever each
+    /// control's XAML already wires, e.g. OnOffToggle_Changed's label flip)
+    /// to every settings control, grouped into the same six save bundles the
+    /// dslrBooth-parity Save buttons already use -- General/Theme/Parity/
+    /// Attendant/Slideshow/RemoteControl. Called once from the constructor,
+    /// after InitializeComponent has applied every control's XAML-default
+    /// value (so nothing here fires before the window is even shown).
+    /// CameraDeviceCombo is deliberately not wired here -- it already has its
+    /// own dedicated SelectionChanged handler (CameraDeviceCombo_SelectionChanged)
+    /// guarded against RefreshCameraDevicesAsync's programmatic repopulation,
+    /// and schedules its own autosave from inside that guard instead.</summary>
+    private void WireAutosaveHandlers()
+    {
+        void OnCheck(CheckBox box, string key, Func<Task> save)
+        {
+            box.Checked += (_, _) => ScheduleAutosave(key, save);
+            box.Unchecked += (_, _) => ScheduleAutosave(key, save);
+        }
+        void OnRadio(RadioButton radio, string key, Func<Task> save) => radio.Checked += (_, _) => ScheduleAutosave(key, save);
+        void OnText(TextBox box, string key, Func<Task> save) => box.TextChanged += (_, _) => ScheduleAutosave(key, save);
+        void OnPassword(PasswordBox box, string key, Func<Task> save) => box.PasswordChanged += (_, _) => ScheduleAutosave(key, save);
+        void OnCombo(ComboBox combo, string key, Func<Task> save) => combo.SelectionChanged += (_, _) => ScheduleAutosave(key, save);
+        void OnSlider(Slider slider, string key, Func<Task> save) => slider.ValueChanged += (_, _) => ScheduleAutosave(key, save);
+
+        // General
+        OnText(CountdownSecondsBox, "General", SaveGeneralSettingsAsync);
+        OnCheck(GlamFilterCheckBox, "General", SaveGeneralSettingsAsync);
+        OnText(AdminPinBox, "General", SaveGeneralSettingsAsync);
+
+        // Theme
+        OnText(AccentColorBox, "Theme", SaveThemeSettingsAsync);
+        OnText(CanvasColorBox, "Theme", SaveThemeSettingsAsync);
+        OnText(InkColorBox, "Theme", SaveThemeSettingsAsync);
+        OnText(EventNameBox, "Theme", SaveThemeSettingsAsync);
+
+        // Capture -- Mode
+        OnRadio(CaptureModePhotoRadio, "Parity", SaveParityBundleAsync);
+        OnRadio(CaptureModeGifRadio, "Parity", SaveParityBundleAsync);
+        OnRadio(CaptureModeBoomerangRadio, "Parity", SaveParityBundleAsync);
+        OnRadio(CaptureModeVideoRadio, "Parity", SaveParityBundleAsync);
+
+        // Capture -- Photo
+        OnCheck(CapturePhotoEnabledCheckBox, "Parity", SaveParityBundleAsync);
+        OnSlider(CapturePhotoBeforePhoto1Slider, "Parity", SaveParityBundleAsync);
+        OnSlider(CapturePhotoBeforeOtherPhotosSlider, "Parity", SaveParityBundleAsync);
+        OnSlider(CapturePhotoReviewSlider, "Parity", SaveParityBundleAsync);
+        OnCheck(CapturePhotoAlsoCreateGifCheckBox, "Parity", SaveParityBundleAsync);
+
+        // Capture -- GIF
+        OnCheck(CaptureGifEnabledCheckBox, "Parity", SaveParityBundleAsync);
+        OnCombo(CaptureGifSizeCombo, "Parity", SaveParityBundleAsync);
+        OnSlider(CaptureGifBeforePhoto1Slider, "Parity", SaveParityBundleAsync);
+        OnSlider(CaptureGifBeforeOtherPhotosSlider, "Parity", SaveParityBundleAsync);
+        OnSlider(CaptureGifReviewSlider, "Parity", SaveParityBundleAsync);
+        OnSlider(CaptureGifFrameDelaySlider, "Parity", SaveParityBundleAsync);
+        OnCheck(CaptureGifReverseCheckBox, "Parity", SaveParityBundleAsync);
+        OnSlider(CaptureGifFrameCountSlider, "Parity", SaveParityBundleAsync);
+
+        // Capture -- Boomerang
+        OnCheck(CaptureBoomerangEnabledCheckBox, "Parity", SaveParityBundleAsync);
+        OnCombo(CaptureBoomerangSizeCombo, "Parity", SaveParityBundleAsync);
+        OnSlider(CaptureBoomerangCountdownSlider, "Parity", SaveParityBundleAsync);
+        OnSlider(CaptureBoomerangFrameDelaySlider, "Parity", SaveParityBundleAsync);
+        OnSlider(CaptureBoomerangRecordingDurationSlider, "Parity", SaveParityBundleAsync);
+
+        // Capture -- Video/360
+        OnCheck(CaptureVideoEnabledCheckBox, "Parity", SaveParityBundleAsync);
+        OnCombo(CaptureVideoOrientationCombo, "Parity", SaveParityBundleAsync);
+        OnCombo(CaptureVideoSizeCombo, "Parity", SaveParityBundleAsync);
+        OnSlider(CaptureVideoQualitySlider, "Parity", SaveParityBundleAsync);
+        OnRadio(CaptureVideoType360Radio, "Parity", SaveParityBundleAsync);
+        OnRadio(CaptureVideoTypeVideoRadio, "Parity", SaveParityBundleAsync);
+        OnCombo(CaptureVideoClipsCombo, "Parity", SaveParityBundleAsync);
+        OnSlider(CaptureVideoCountdownClip1Slider, "Parity", SaveParityBundleAsync);
+        OnSlider(CaptureVideoCountdownOtherClipsSlider, "Parity", SaveParityBundleAsync);
+        OnCheck(CaptureVideoRecordOnMotionCheckBox, "Parity", SaveParityBundleAsync);
+        OnSlider(CaptureVideoClipDurationSlider, "Parity", SaveParityBundleAsync);
+
+        // Camera Settings (saved as part of the Parity bundle's ScreenSettings)
+        OnCheck(EnableWebcamsCheckBox, "Parity", SaveParityBundleAsync);
+        OnSlider(WebcamResolutionSlider, "Parity", SaveParityBundleAsync);
+        OnCheck(CameraMirrorLiveViewCheckBox, "Parity", SaveParityBundleAsync);
+        OnCheck(SaveMirroredPhotosCheckBox, "Parity", SaveParityBundleAsync);
+        OnCombo(CameraRotationCombo, "Parity", SaveParityBundleAsync);
+        OnCombo(AudioInputCombo, "Parity", SaveParityBundleAsync);
+
+        // Effects
+        OnCheck(BeautyFilterCheckBox, "Parity", SaveParityBundleAsync);
+        OnCheck(BeautyFilterAlsoDuringCountdownCheckBox, "Parity", SaveParityBundleAsync);
+        OnCheck(FiltersEnabledCheckBox, "Parity", SaveParityBundleAsync);
+        OnRadio(FiltersModeAskRadio, "Parity", SaveParityBundleAsync);
+        OnRadio(FiltersModeAutoRadio, "Parity", SaveParityBundleAsync);
+        OnCheck(PostProcessingEnabledCheckBox, "Parity", SaveParityBundleAsync);
+        OnText(PostProcessingApplicationPathBox, "Parity", SaveParityBundleAsync);
+        OnCheck(WatermarkEnabledCheckBox, "Parity", SaveParityBundleAsync);
+
+        // Green Screen
+        OnCheck(GreenScreenEnabledCheckBox, "Parity", SaveParityBundleAsync);
+
+        // Survey (Enabled toggle only -- questions/responses save immediately elsewhere)
+        OnCheck(SurveyEnabledCheckBox, "Parity", SaveParityBundleAsync);
+
+        // Disclaimer
+        OnText(DisclaimerHeaderBox, "Parity", SaveParityBundleAsync);
+        OnText(DisclaimerTextBox, "Parity", SaveParityBundleAsync);
+
+        // Print Setup
+        OnCheck(PrintAutomaticallyCheckBox, "Parity", SaveParityBundleAsync);
+        OnCheck(ShowPrintButtonCheckBox, "Parity", SaveParityBundleAsync);
+        OnText(PrintLimitPerEventBox, "Parity", SaveParityBundleAsync);
+        OnText(PrintLimitPerSessionBox, "Parity", SaveParityBundleAsync);
+        OnRadio(PrintSharpeningLowRadio, "Parity", SaveParityBundleAsync);
+        OnRadio(PrintSharpeningMediumRadio, "Parity", SaveParityBundleAsync);
+        OnRadio(PrintSharpeningHighRadio, "Parity", SaveParityBundleAsync);
+
+        // Sharing Settings
+        OnCheck(EmailEnabledCheckBox, "Parity", SaveParityBundleAsync);
+        OnCheck(SmsEnabledCheckBox, "Parity", SaveParityBundleAsync);
+        OnCheck(QrEnabledCheckBox, "Parity", SaveParityBundleAsync);
+        OnCheck(TwitterEnabledCheckBox, "Parity", SaveParityBundleAsync);
+        OnCheck(PrintEnabledCheckBox, "Parity", SaveParityBundleAsync);
+        OnRadio(PaymentTimingStartScreenRadio, "Parity", SaveParityBundleAsync);
+        OnRadio(PaymentTimingSharingScreenRadio, "Parity", SaveParityBundleAsync);
+        OnText(EmailFromAddressBox, "Parity", SaveParityBundleAsync);
+        OnText(EmailSubjectBox, "Parity", SaveParityBundleAsync);
+        OnText(EmailSmtpHostBox, "Parity", SaveParityBundleAsync);
+        OnText(EmailSmtpPortBox, "Parity", SaveParityBundleAsync);
+        OnText(EmailSmtpUsernameBox, "Parity", SaveParityBundleAsync);
+        OnCheck(EmailUseSslCheckBox, "Parity", SaveParityBundleAsync);
+        OnPassword(EmailSmtpPasswordBox, "Parity", SaveParityBundleAsync);
+        OnText(TwilioAccountSidBox, "Parity", SaveParityBundleAsync);
+        OnText(TwilioFromNumberBox, "Parity", SaveParityBundleAsync);
+        OnPassword(TwilioAuthTokenBox, "Parity", SaveParityBundleAsync);
+
+        // Virtual Attendant (per-stage Randomize checkboxes schedule this
+        // same bundle from inside BuildAttendantStageCard instead, since
+        // they're rebuilt from scratch on every add/delete/reorder)
+        OnCheck(AttendantEnabledCheckBox, "Attendant", SaveAttendantSettingsAsync);
+        OnCombo(AttendantStyleCombo, "Attendant", SaveAttendantSettingsAsync);
+
+        // Slideshow
+        OnCheck(SlideshowEnabledCheckBox, "Slideshow", SaveSlideshowSettingsAsync);
+        OnText(SlideshowIntervalBox, "Slideshow", SaveSlideshowSettingsAsync);
+        OnRadio(SlideshowTransitionFadeRadio, "Slideshow", SaveSlideshowSettingsAsync);
+        OnRadio(SlideshowTransitionSlideRadio, "Slideshow", SaveSlideshowSettingsAsync);
+        OnRadio(SlideshowTransitionKenBurnsRadio, "Slideshow", SaveSlideshowSettingsAsync);
+        OnCheck(SlideshowShowLogoCheckBox, "Slideshow", SaveSlideshowSettingsAsync);
+        OnCheck(SlideshowShowQrCheckBox, "Slideshow", SaveSlideshowSettingsAsync);
+
+        // Remote Control
+        OnCheck(RemoteControlEnabledCheckBox, "RemoteControl", SaveRemoteControlSettingsAsync);
+    }
+
+    private async void RefreshButton_Click(object sender, RoutedEventArgs e)
+    {
+        await FlushPendingAutosavesAsync();
+        await LoadAsync();
+    }
 
     private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
 
@@ -419,7 +644,9 @@ public partial class AdminWindow : Window
         SettingsStatusText.Foreground = brush;
     }
 
-    private async void SaveSettingsButton_Click(object sender, RoutedEventArgs e)
+    private async void SaveSettingsButton_Click(object sender, RoutedEventArgs e) => await SaveGeneralSettingsAsync();
+
+    private async Task SaveGeneralSettingsAsync()
     {
         if (!int.TryParse(CountdownSecondsBox.Text, out int countdownSeconds) || countdownSeconds <= 0)
         {
@@ -434,6 +661,7 @@ public partial class AdminWindow : Window
             return;
         }
 
+        _suppressAutosaveDepth++;
         SaveSettingsButton.IsEnabled = false;
         try
         {
@@ -448,6 +676,7 @@ public partial class AdminWindow : Window
         finally
         {
             SaveSettingsButton.IsEnabled = true;
+            _suppressAutosaveDepth--;
         }
     }
 
@@ -521,10 +750,13 @@ public partial class AdminWindow : Window
         {
             _pendingThemeLogoPath = dialog.FileName;
             SelectedThemeLogoText.Text = System.IO.Path.GetFileName(dialog.FileName);
+            ScheduleAutosave("Theme", SaveThemeSettingsAsync);
         }
     }
 
-    private async void SaveThemeButton_Click(object sender, RoutedEventArgs e)
+    private async void SaveThemeButton_Click(object sender, RoutedEventArgs e) => await SaveThemeSettingsAsync();
+
+    private async Task SaveThemeSettingsAsync()
     {
         // A newly-picked logo gets copied into a local Assets/Theme folder,
         // same "own local copy, not a reference to wherever the admin picked
@@ -677,6 +909,7 @@ public partial class AdminWindow : Window
     private async Task LoadAsync()
     {
         RefreshButton.IsEnabled = false;
+        _suppressAutosaveDepth++;
         try
         {
             int sessionsToday = await _repository.GetSessionsTodayCountAsync();
@@ -926,6 +1159,7 @@ public partial class AdminWindow : Window
         finally
         {
             RefreshButton.IsEnabled = true;
+            _suppressAutosaveDepth--;
         }
     }
 
@@ -1076,6 +1310,7 @@ public partial class AdminWindow : Window
         CameraDeviceStatusText.Text = selected
             ? $"Switched to {deviceName}."
             : $"Couldn't switch to {deviceName} -- it may have been disconnected.";
+        ScheduleAutosave("Parity", SaveParityBundleAsync);
     }
 
     /// <summary>Starts (or restarts) the ~4fps live-preview poll against
@@ -1304,6 +1539,7 @@ public partial class AdminWindow : Window
         {
             _pendingWatermarkPath = dialog.FileName;
             SelectedWatermarkText.Text = System.IO.Path.GetFileName(dialog.FileName);
+            ScheduleAutosave("Parity", SaveParityBundleAsync);
         }
     }
 
@@ -1318,6 +1554,7 @@ public partial class AdminWindow : Window
         {
             _pendingGreenScreenBackgroundPath = dialog.FileName;
             SelectedGreenScreenBackgroundText.Text = System.IO.Path.GetFileName(dialog.FileName);
+            ScheduleAutosave("Parity", SaveParityBundleAsync);
         }
     }
 
@@ -1331,6 +1568,7 @@ public partial class AdminWindow : Window
         {
             _pendingGifImageOverlayPath = dialog.FileName;
             SelectedGifImageOverlayText.Text = System.IO.Path.GetFileName(dialog.FileName);
+            ScheduleAutosave("Parity", SaveParityBundleAsync);
         }
     }
 
@@ -1339,6 +1577,7 @@ public partial class AdminWindow : Window
         _pendingGifImageOverlayPath = null;
         _existingGifImageOverlayPath = null;
         SelectedGifImageOverlayText.Text = "No overlay selected.";
+        ScheduleAutosave("Parity", SaveParityBundleAsync);
     }
 
     private void BrowseBoomerangImageOverlayButton_Click(object sender, RoutedEventArgs e)
@@ -1348,6 +1587,7 @@ public partial class AdminWindow : Window
         {
             _pendingBoomerangImageOverlayPath = dialog.FileName;
             SelectedBoomerangImageOverlayText.Text = System.IO.Path.GetFileName(dialog.FileName);
+            ScheduleAutosave("Parity", SaveParityBundleAsync);
         }
     }
 
@@ -1356,6 +1596,7 @@ public partial class AdminWindow : Window
         _pendingBoomerangImageOverlayPath = null;
         _existingBoomerangImageOverlayPath = null;
         SelectedBoomerangImageOverlayText.Text = "No overlay selected.";
+        ScheduleAutosave("Parity", SaveParityBundleAsync);
     }
 
     private void BrowseVideoSoundtrackButton_Click(object sender, RoutedEventArgs e)
@@ -1365,6 +1606,7 @@ public partial class AdminWindow : Window
         {
             _pendingVideoSoundtrackPath = dialog.FileName;
             SelectedVideoSoundtrackText.Text = System.IO.Path.GetFileName(dialog.FileName);
+            ScheduleAutosave("Parity", SaveParityBundleAsync);
         }
     }
 
@@ -1373,6 +1615,7 @@ public partial class AdminWindow : Window
         _pendingVideoSoundtrackPath = null;
         _existingVideoSoundtrackPath = null;
         SelectedVideoSoundtrackText.Text = "No soundtrack selected.";
+        ScheduleAutosave("Parity", SaveParityBundleAsync);
     }
 
     private void BrowseVideoImageOverlayButton_Click(object sender, RoutedEventArgs e)
@@ -1382,6 +1625,7 @@ public partial class AdminWindow : Window
         {
             _pendingVideoImageOverlayPath = dialog.FileName;
             SelectedVideoImageOverlayText.Text = System.IO.Path.GetFileName(dialog.FileName);
+            ScheduleAutosave("Parity", SaveParityBundleAsync);
         }
     }
 
@@ -1390,6 +1634,7 @@ public partial class AdminWindow : Window
         _pendingVideoImageOverlayPath = null;
         _existingVideoImageOverlayPath = null;
         SelectedVideoImageOverlayText.Text = "No overlay selected.";
+        ScheduleAutosave("Parity", SaveParityBundleAsync);
     }
 
     private void BrowseVideoBeforeClipButton_Click(object sender, RoutedEventArgs e)
@@ -1399,6 +1644,7 @@ public partial class AdminWindow : Window
         {
             _pendingVideoBeforeClipPath = dialog.FileName;
             SelectedVideoBeforeClipText.Text = System.IO.Path.GetFileName(dialog.FileName);
+            ScheduleAutosave("Parity", SaveParityBundleAsync);
         }
     }
 
@@ -1409,6 +1655,7 @@ public partial class AdminWindow : Window
         {
             _pendingVideoAfterClipPath = dialog.FileName;
             SelectedVideoAfterClipText.Text = System.IO.Path.GetFileName(dialog.FileName);
+            ScheduleAutosave("Parity", SaveParityBundleAsync);
         }
     }
 
@@ -1425,6 +1672,11 @@ public partial class AdminWindow : Window
     /// this data is grouped in the database.</summary>
     private async void SaveParitySettingsButton_Click(object sender, RoutedEventArgs e)
         => await SaveParitySettingsAsync(SaveParitySettingsButton, ParitySettingsStatusText);
+
+    /// <summary>Bundle-name-agnostic wrapper so WireAutosaveHandlers/Browse
+    /// button handlers can schedule this bundle's save via a plain
+    /// Func&lt;Task&gt;, same as every other section's own SaveXSettingsAsync.</summary>
+    private Task SaveParityBundleAsync() => SaveParitySettingsAsync(SaveParitySettingsButton, ParitySettingsStatusText);
 
     private async void SaveSurveySettingsButton_Click(object sender, RoutedEventArgs e)
         => await SaveParitySettingsAsync(SaveSurveySettingsButton, SurveySettingsStatusText);
@@ -1701,6 +1953,7 @@ public partial class AdminWindow : Window
         var sharing = BuildSharingSettingsFromForm();
 
         triggerButton.IsEnabled = false;
+        _suppressAutosaveDepth++;
         try
         {
             await _locations.UpdateDslrBoothParitySettingsAsync(_locationId, capture, screen, effects, greenScreen, survey, disclaimer, printOptions, sharing);
@@ -1744,10 +1997,13 @@ public partial class AdminWindow : Window
         finally
         {
             triggerButton.IsEnabled = true;
+            _suppressAutosaveDepth--;
         }
     }
 
-    private async void SaveAttendantSettingsButton_Click(object sender, RoutedEventArgs e)
+    private async void SaveAttendantSettingsButton_Click(object sender, RoutedEventArgs e) => await SaveAttendantSettingsAsync();
+
+    private async Task SaveAttendantSettingsAsync()
     {
         string style = AttendantStyleCombo.SelectedItem is ComboBoxItem { Tag: "Formal" } ? "Formal" : "Friendly";
         var settings = new VirtualAttendantSettings(
@@ -1835,8 +2091,8 @@ public partial class AdminWindow : Window
                 Margin = new Thickness(8, 0, 0, 0),
                 IsChecked = _randomizeByStage.GetValueOrDefault(stage),
             };
-            randomizeCheckBox.Checked += (_, _) => _randomizeByStage[stage] = true;
-            randomizeCheckBox.Unchecked += (_, _) => _randomizeByStage[stage] = false;
+            randomizeCheckBox.Checked += (_, _) => { _randomizeByStage[stage] = true; ScheduleAutosave("Attendant", SaveAttendantSettingsAsync); };
+            randomizeCheckBox.Unchecked += (_, _) => { _randomizeByStage[stage] = false; ScheduleAutosave("Attendant", SaveAttendantSettingsAsync); };
             Grid.SetColumn(randomizeCheckBox, 1);
             headerRow.Children.Add(randomizeCheckBox);
         }
@@ -1979,7 +2235,9 @@ public partial class AdminWindow : Window
     // Slideshow
     // ================================================================
 
-    private async void SaveSlideshowSettingsButton_Click(object sender, RoutedEventArgs e)
+    private async void SaveSlideshowSettingsButton_Click(object sender, RoutedEventArgs e) => await SaveSlideshowSettingsAsync();
+
+    private async Task SaveSlideshowSettingsAsync()
     {
         if (!int.TryParse(SlideshowIntervalBox.Text, out int intervalSeconds) || intervalSeconds <= 0)
         {
@@ -2255,7 +2513,9 @@ public partial class AdminWindow : Window
     // Remote Control
     // ================================================================
 
-    private async void SaveRemoteControlSettingsButton_Click(object sender, RoutedEventArgs e)
+    private async void SaveRemoteControlSettingsButton_Click(object sender, RoutedEventArgs e) => await SaveRemoteControlSettingsAsync();
+
+    private async Task SaveRemoteControlSettingsAsync()
     {
         bool enabled = RemoteControlEnabledCheckBox.IsChecked == true;
         SaveRemoteControlSettingsButton.IsEnabled = false;
