@@ -30,6 +30,7 @@ public partial class AdminWindow : Window
     private readonly SurveyRepository _survey = new();
     private readonly VirtualAttendantClipRepository _attendantClips = new();
     private readonly SharingLogRepository _sharingLog = new();
+    private readonly StickerRepository _stickers = new();
 
     // Which event/location this dashboard is editing. A booth machine can now
     // have several saved events (see EventLauncherWindow) -- _requestedLocationId
@@ -67,6 +68,13 @@ public partial class AdminWindow : Window
 
     private string? _pendingWatermarkPath;
     private string? _existingWatermarkPath;
+
+    // Stickers card's browsable preview -- loaded fresh (not cached) each
+    // time LoadAsync/ManageStickersButton_Click runs, same "read fresh" call
+    // as everything else on this window, so an add/remove in
+    // StickerLibraryWindow shows up here immediately.
+    private List<StickerRecord> _stickerPreviewRecords = new();
+    private int _stickerPreviewIndex;
     private string? _pendingGreenScreenBackgroundPath;
     private string? _existingGreenScreenBackgroundPath;
 
@@ -369,6 +377,7 @@ public partial class AdminWindow : Window
         OnRadio(FiltersModeAutoRadio, "Parity", SaveParityBundleAsync);
         OnCheck(PostProcessingEnabledCheckBox, "Parity", SaveParityBundleAsync);
         OnText(PostProcessingApplicationPathBox, "Parity", SaveParityBundleAsync);
+        OnCheck(StickersEnabledCheckBox, "Parity", SaveParityBundleAsync);
         OnCheck(WatermarkEnabledCheckBox, "Parity", SaveParityBundleAsync);
 
         // Green Screen
@@ -1043,6 +1052,8 @@ public partial class AdminWindow : Window
                 FiltersModeAutoRadio.IsChecked = effects.FiltersMode == "Auto";
                 SetOnOffToggle(PostProcessingEnabledCheckBox, effects.PostProcessingEnabled);
                 PostProcessingApplicationPathBox.Text = effects.PostProcessingApplicationPath ?? string.Empty;
+                SetOnOffToggle(StickersEnabledCheckBox, effects.StickersEnabled);
+                await LoadStickerPreviewAsync();
                 SetOnOffToggle(WatermarkEnabledCheckBox, effects.WatermarkEnabled);
                 _existingWatermarkPath = effects.WatermarkImagePath;
                 _pendingWatermarkPath = null;
@@ -1528,6 +1539,73 @@ public partial class AdminWindow : Window
         }
     }
 
+    private async Task LoadStickerPreviewAsync()
+    {
+        _stickerPreviewRecords = await _stickers.GetActiveByLocationAsync(_locationId);
+        _stickerPreviewIndex = 0;
+        RefreshStickerPreview();
+    }
+
+    private void RefreshStickerPreview()
+    {
+        bool hasStickers = _stickerPreviewRecords.Count > 0;
+        StickerPreviewPrevButton.IsEnabled = hasStickers;
+        StickerPreviewNextButton.IsEnabled = hasStickers;
+        StickerPreviewEmptyText.Visibility = hasStickers ? Visibility.Collapsed : Visibility.Visible;
+
+        if (!hasStickers)
+        {
+            StickerPreviewImage.Source = null;
+            StickerPreviewCounterText.Text = "0 props";
+            return;
+        }
+
+        StickerRecord current = _stickerPreviewRecords[_stickerPreviewIndex];
+        try
+        {
+            var bitmap = new System.Windows.Media.Imaging.BitmapImage();
+            bitmap.BeginInit();
+            bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+            bitmap.UriSource = new Uri(current.ImagePath, UriKind.Absolute);
+            bitmap.EndInit();
+            bitmap.Freeze();
+            StickerPreviewImage.Source = bitmap;
+        }
+        catch (Exception)
+        {
+            // Missing/unreadable file -- same "show nothing rather than
+            // crash" reasoning FilterLibraryWindow.LoadImage already uses.
+            StickerPreviewImage.Source = null;
+        }
+        StickerPreviewCounterText.Text = $"{_stickerPreviewIndex + 1} of {_stickerPreviewRecords.Count}";
+    }
+
+    private void StickerPreviewPrevButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_stickerPreviewRecords.Count == 0)
+        {
+            return;
+        }
+        _stickerPreviewIndex = (_stickerPreviewIndex - 1 + _stickerPreviewRecords.Count) % _stickerPreviewRecords.Count;
+        RefreshStickerPreview();
+    }
+
+    private void StickerPreviewNextButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_stickerPreviewRecords.Count == 0)
+        {
+            return;
+        }
+        _stickerPreviewIndex = (_stickerPreviewIndex + 1) % _stickerPreviewRecords.Count;
+        RefreshStickerPreview();
+    }
+
+    private async void ManageStickersButton_Click(object sender, RoutedEventArgs e)
+    {
+        new StickerLibraryWindow(_locationId) { Owner = this }.ShowDialog();
+        await LoadStickerPreviewAsync();
+    }
+
     private void BrowseWatermarkButton_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
@@ -1939,10 +2017,7 @@ public partial class AdminWindow : Window
             FiltersEnabledCheckBox.IsChecked == true,
             PostProcessingEnabledCheckBox.IsChecked == true,
             postProcessingApplicationPath,
-            // Stickers (the old per-location overlay library) is retired --
-            // a guest's "frame" is now the Print Layout template itself, see
-            // BoothStateMachine.RunSessionAsync's FramePicker step.
-            false,
+            StickersEnabledCheckBox.IsChecked == true,
             WatermarkEnabledCheckBox.IsChecked == true);
         var greenScreen = new GreenScreenSettings(GreenScreenEnabledCheckBox.IsChecked == true, greenScreenBackgroundPath);
         var survey = new SurveySettings(SurveyEnabledCheckBox.IsChecked == true);

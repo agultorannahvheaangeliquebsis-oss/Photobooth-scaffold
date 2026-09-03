@@ -254,6 +254,23 @@ CREATE TABLE CustomFilter (
     CreatedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
 );
 
+-- Admin-uploaded digital props (hats, glasses, mustaches, etc.) a guest can
+-- add to their own photo -- see dslrBooth's own Stickers screen,
+-- AdminWindow's Stickers card, StickerLibraryWindow. Same IsActive/SortOrder
+-- shape as Frame/CustomFilter -- ImagePath points at the transparent PNG
+-- copied into Assets/Stickers, not the admin's original file location. Only
+-- the admin-side library (add/remove, Effects & Stickers on/off toggle) is
+-- wired up so far; nothing at guest-session time reads this table yet.
+CREATE TABLE Sticker (
+    StickerId       INT IDENTITY(1,1) PRIMARY KEY,
+    LocationId      INT             NOT NULL REFERENCES Location(LocationId),
+    Name            NVARCHAR(100)   NOT NULL,
+    ImagePath       NVARCHAR(500)   NOT NULL,
+    SortOrder       INT             NOT NULL DEFAULT 0,
+    IsActive        BIT             NOT NULL DEFAULT 1,
+    CreatedAt       DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME()
+);
+
 -- General guest feedback (rating/comment), shown right after Complete (see
 -- BoothStateMachine's Feedback state, IFeedbackService). Both columns are
 -- nullable and a row is only ever inserted when at least one is non-null --
@@ -388,6 +405,7 @@ CREATE INDEX IX_Consent_Session ON Consent(SessionId);
 CREATE INDEX IX_InventoryLog_Printer_LoggedAt ON InventoryLog(PrinterId, LoggedAt DESC);
 CREATE INDEX IX_Frame_Location_Active ON Frame(LocationId, IsActive, SortOrder);
 CREATE INDEX IX_CustomFilter_Location_Active ON CustomFilter(LocationId, IsActive, SortOrder);
+CREATE INDEX IX_Sticker_Location_Active ON Sticker(LocationId, IsActive, SortOrder);
 CREATE INDEX IX_Feedback_Session ON Feedback(SessionId);
 CREATE INDEX IX_GuestbookVideo_Session ON GuestbookVideo(SessionId);
 CREATE INDEX IX_PrintTemplateElement_Location ON PrintTemplateElement(LocationId, SortOrder);

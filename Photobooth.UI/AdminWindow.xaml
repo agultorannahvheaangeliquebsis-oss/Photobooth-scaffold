@@ -1314,12 +1314,56 @@
                         <!-- ===== Right column: Watermark ===== -->
                         <StackPanel Grid.Column="1">
 
-                            <!-- The old Stickers card (a per-location "sticker overlay"
-                                 library, plus a redundant Add-Frame entry point duplicating
-                                 the Print Layout editor's own) has been retired: a guest's
-                                 "frame" is now the Print Layout template itself, picked (if
-                                 "Choose Template" is on) at the very start of the session.
-                                 See BoothStateMachine.RunSessionAsync's FramePicker step. -->
+                            <!-- ===== Stickers card, see dslrBooth's own "digital props"
+                                 Stickers card and StickerLibraryWindow ("Your digital
+                                 props"). Distinct from the Print Layout template picked
+                                 at the start of a session, which is a single full-photo
+                                 frame; stickers are a library of small individual PNG
+                                 props an admin manages here. Only the admin-side library
+                                 is wired up so far; there's no guest-facing placement
+                                 screen yet, see StickerRepository's own doc comment. ===== -->
+                            <Border Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}"
+                                    BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Stickers" FontSize="14" FontWeight="Bold"
+                                                   Foreground="{StaticResource InkBrush}" VerticalAlignment="Center" />
+                                        <CheckBox Grid.Column="1" x:Name="StickersEnabledCheckBox" Content="On" VerticalAlignment="Center"
+                                                  Checked="OnOffToggle_Changed" Unchecked="OnOffToggle_Changed" />
+                                    </Grid>
+                                    <TextBlock Text="Allow guests to add graphics such as hats, moustaches, or custom graphics to their photos." Style="{StaticResource Row}"
+                                               Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,8,0,0" />
+
+                                    <Grid Margin="0,12,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Button Grid.Column="0" x:Name="StickerPreviewPrevButton" Content="&lt;" Padding="10,6"
+                                                VerticalAlignment="Center" Click="StickerPreviewPrevButton_Click" />
+                                        <Border Grid.Column="1" Background="{StaticResource CanvasBrush}" BorderBrush="{StaticResource LineBrush}"
+                                                BorderThickness="1" CornerRadius="6" Margin="8,0" Height="80">
+                                            <Grid>
+                                                <Image x:Name="StickerPreviewImage" Stretch="Uniform" Margin="8" />
+                                                <TextBlock x:Name="StickerPreviewEmptyText" Text="No props added yet." Style="{StaticResource Row}"
+                                                           Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Border>
+                                        <Button Grid.Column="2" x:Name="StickerPreviewNextButton" Content="&gt;" Padding="10,6"
+                                                VerticalAlignment="Center" Click="StickerPreviewNextButton_Click" />
+                                    </Grid>
+                                    <TextBlock x:Name="StickerPreviewCounterText" Text="0 props" Style="{StaticResource Row}"
+                                               Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Center" Margin="0,4,0,0" />
+
+                                    <Button x:Name="ManageStickersButton" Content="Manage Stickers" Padding="14,6"
+                                            HorizontalAlignment="Left" Margin="0,10,0,0" Click="ManageStickersButton_Click" />
+                                </StackPanel>
+                            </Border>
 
                             <!-- ===== Watermark card ===== -->
                             <Border Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}"
