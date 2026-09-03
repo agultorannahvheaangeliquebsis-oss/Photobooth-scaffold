@@ -651,6 +651,14 @@
                                           Checked="OnOffToggle_Changed" Unchecked="OnOffToggle_Changed" />
                             </StackPanel>
 
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <TextBlock Text="Save Mirrored Photos" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
+                                <CheckBox x:Name="SaveMirroredPhotosCheckBox" Content="On" VerticalAlignment="Center" IsChecked="True"
+                                          Checked="OnOffToggle_Changed" Unchecked="OnOffToggle_Changed" />
+                            </StackPanel>
+                            <TextBlock Text="On: the saved photo matches the mirrored preview exactly as seen on screen. Off: the saved photo flips back to true-to-life orientation." Style="{StaticResource Row}"
+                                       Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
+
                             <TextBlock Text="Rotation" Style="{StaticResource Row}" Margin="0,18,0,4" />
                             <ComboBox x:Name="CameraRotationCombo" Width="160" HorizontalAlignment="Left" SelectedIndex="0">
                                 <ComboBoxItem Content="0 degrees" Tag="0" />

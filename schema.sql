@@ -33,6 +33,7 @@ CREATE TABLE Location (
     BoothIconsEnabled   BIT          NOT NULL DEFAULT 0,
     ShowLiveView        BIT          NOT NULL DEFAULT 1,
     MirrorLiveView      BIT          NOT NULL DEFAULT 1,
+    SaveMirroredPhotos  BIT          NOT NULL DEFAULT 1,   -- when MirrorLiveView is on, also flip the SAVED photo to match -- see GdiPhotoMirrorService
     LiveViewRotation    INT          NOT NULL DEFAULT 0,
     EnableWebcams       BIT          NOT NULL DEFAULT 1,   -- if 0, only Canon/Nikon are used -- see AdminWindow's Camera Settings section
     WebcamResolutionQuality INT      NOT NULL DEFAULT 70,  -- 0 (fastest framerate) - 100 (highest quality)

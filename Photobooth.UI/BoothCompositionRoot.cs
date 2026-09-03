@@ -134,6 +134,7 @@ public static class BoothCompositionRoot
             GreenScreen = new GdiGreenScreenService(),
             PostProcessing = new ProcessPostProcessingService(),
             FilterPreset = new GdiFilterPresetService(),
+            Mirror = new GdiPhotoMirrorService(),
             FilterSelection = filterSelection,
             CustomFilterLibrary = new SqlCustomFilterLibraryService(seedIds.LocationId),
             CustomFilter = new GdiCubeLutFilterService(),

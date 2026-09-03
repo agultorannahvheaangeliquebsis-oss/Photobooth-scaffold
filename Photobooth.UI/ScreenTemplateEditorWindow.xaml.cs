@@ -213,6 +213,7 @@ public partial class ScreenTemplateEditorWindow : UserControl
             ShowLiveViewCheckBox.IsChecked = _screenSettings.ShowLiveView;
             CropLiveViewCheckBox.IsChecked = _screenSettings.CropLiveView;
             MirrorLiveViewCheckBox.IsChecked = _screenSettings.MirrorLiveView;
+            SaveMirroredPhotosCheckBox.IsChecked = _screenSettings.SaveMirroredPhotos;
             AutoTriggerCameraCheckBox.IsChecked = _screenSettings.AutoTriggerCamera;
             FlashScreenWhiteCheckBox.IsChecked = _screenSettings.FlashScreenWhite;
             ShowCancelButtonCheckBox.IsChecked = _screenSettings.ShowCancelButton;
@@ -297,6 +298,7 @@ public partial class ScreenTemplateEditorWindow : UserControl
             ShowLiveView = ShowLiveViewCheckBox.IsChecked == true,
             CropLiveView = CropLiveViewCheckBox.IsChecked == true,
             MirrorLiveView = MirrorLiveViewCheckBox.IsChecked == true,
+            SaveMirroredPhotos = SaveMirroredPhotosCheckBox.IsChecked == true,
             AutoTriggerCamera = AutoTriggerCameraCheckBox.IsChecked == true,
             FlashScreenWhite = FlashScreenWhiteCheckBox.IsChecked == true,
             ShowCancelButton = ShowCancelButtonCheckBox.IsChecked == true,

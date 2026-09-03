@@ -131,6 +131,16 @@ public record ScreenSettings(
     /// comment already covers for that same external process.</summary>
     public string? CameraDeviceName { get; init; }
 
+    /// <summary>When MirrorLiveView is on, whether the SAVED photo also gets
+    /// flipped to match the mirrored preview the guest actually saw (true, the
+    /// default -- "what you see is what you get", same as dslrBooth's "Save
+    /// Mirrored Photos"), or whether the saved file is instead flipped back to
+    /// the camera's true-to-life orientation on capture (false). No effect
+    /// when MirrorLiveView itself is off -- there's no mirrored preview to
+    /// match in the first place. See BoothStateMachine's capture step /
+    /// GdiPhotoMirrorService.</summary>
+    public bool SaveMirroredPhotos { get; init; } = true;
+
     public bool BoothIconLabelsEnabled { get; init; } = true;
 
     // Booth Icons group -- the Photo/GIF/Boomerang/Video mode tiles. Each

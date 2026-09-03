@@ -61,7 +61,7 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
                    SharingIconsGroupEnabled, SharingIconsPositionXPercent, SharingIconsPositionYPercent,
                    SharingIconsLayout, SharingIconsAlignment,
                    PoseStripBackgroundOpacityPercent, PoseStripActiveBorderColorHex, PoseStripShowPlaceholderNumbers,
-                   PaymentTiming, CameraDeviceName
+                   PaymentTiming, CameraDeviceName, SaveMirroredPhotos
             FROM Location WHERE LocationId = @LocationId;
             """,
             connection);
@@ -162,6 +162,7 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
                 PoseStripActiveBorderColorHex = reader.GetString(123),
                 PoseStripShowPlaceholderNumbers = reader.GetBoolean(124),
                 CameraDeviceName = reader.IsDBNull(126) ? null : reader.GetString(126),
+                SaveMirroredPhotos = reader.GetBoolean(127),
             };
             effects = new EffectsSettings(
                 reader.GetBoolean(24), reader.GetString(25), reader.IsDBNull(26) ? null : reader.GetString(26),

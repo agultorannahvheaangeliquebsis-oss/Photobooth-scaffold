@@ -1187,6 +1187,10 @@
 
                         <CheckBox x:Name="MirrorLiveViewCheckBox" Content="Mirror live view" Click="ScreenSettingsCheckBox_Click" Margin="0,0,0,10" />
 
+                        <CheckBox x:Name="SaveMirroredPhotosCheckBox" Content="Save mirrored photos" Click="ScreenSettingsCheckBox_Click" />
+                        <TextBlock Text="On: the saved photo matches the mirrored preview exactly as seen on screen. Off: the saved photo flips back to true-to-life orientation on capture." Style="{StaticResource EditorLabel}"
+                                   Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,10" />
+
                         <CheckBox x:Name="AutoTriggerCameraCheckBox" Content="Auto trigger camera" Click="ScreenSettingsCheckBox_Click" />
                         <TextBlock Text="Capture photo at the end of countdown." Style="{StaticResource EditorLabel}"
                                    Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,10" />

@@ -67,6 +67,18 @@
             <Image Source="{Binding WelcomeBackgroundImage}" Stretch="UniformToFill"
                    Visibility="{Binding WelcomeBackgroundImage, Converter={StaticResource NullToVisibility}}" />
 
+            <!-- ScreenSettings.StartScreenVideoPath: an optional muted,
+                 looping video layered on top of WelcomeBackgroundImage/Brush.
+                 LoadedBehavior=Play autoplays as soon as the Source binding
+                 resolves; looping itself has no XAML equivalent, so
+                 KioskWindow's WelcomeBackgroundMediaElement_MediaEnded
+                 restarts it from the code-behind. -->
+            <MediaElement x:Name="WelcomeBackgroundMediaElement" Source="{Binding WelcomeBackgroundVideo}"
+                          Stretch="UniformToFill" Volume="0" IsHitTestVisible="False"
+                          LoadedBehavior="Play" UnloadedBehavior="Stop"
+                          MediaEnded="WelcomeBackgroundMediaElement_MediaEnded"
+                          Visibility="{Binding WelcomeBackgroundVideo, Converter={StaticResource NullToVisibility}}" />
+
             <!-- Full-bleed touch-to-start target sitting behind the content, so
                  a tap anywhere on empty canvas starts a session while the mode
                  tiles above it still get their own taps. -->

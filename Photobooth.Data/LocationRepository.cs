@@ -72,7 +72,7 @@ public class LocationRepository
                    SharingIconsGroupEnabled, SharingIconsPositionXPercent, SharingIconsPositionYPercent,
                    SharingIconsLayout, SharingIconsAlignment,
                    PoseStripBackgroundOpacityPercent, PoseStripActiveBorderColorHex, PoseStripShowPlaceholderNumbers,
-                   PaymentTiming, CameraDeviceName
+                   PaymentTiming, CameraDeviceName, SaveMirroredPhotos
             FROM Location ORDER BY LocationId;
             """,
             connection);
@@ -157,6 +157,7 @@ public class LocationRepository
                     PoseStripActiveBorderColorHex = reader.GetString(128),
                     PoseStripShowPlaceholderNumbers = reader.GetBoolean(129),
                     CameraDeviceName = reader.IsDBNull(131) ? null : reader.GetString(131),
+                    SaveMirroredPhotos = reader.GetBoolean(132),
                 },
                 new EffectsSettings(
                     reader.GetBoolean(28), reader.GetString(29), reader.IsDBNull(30) ? null : reader.GetString(30),
@@ -268,7 +269,7 @@ public class LocationRepository
             """
             UPDATE Location SET
                 BoothIconsEnabled = @BoothIconsEnabled, ShowLiveView = @ShowLiveView,
-                MirrorLiveView = @MirrorLiveView, LiveViewRotation = @LiveViewRotation,
+                MirrorLiveView = @MirrorLiveView, SaveMirroredPhotos = @SaveMirroredPhotos, LiveViewRotation = @LiveViewRotation,
                 EnableWebcams = @EnableWebcams, WebcamResolutionQuality = @WebcamResolutionQuality,
                 AudioInputDeviceName = @AudioInputDeviceName, CameraDeviceName = @CameraDeviceName,
                 PoseStripPosition = @PoseStripPosition,
@@ -307,6 +308,7 @@ public class LocationRepository
         command.Parameters.AddWithValue("@BoothIconsEnabled", screen.BoothIconsEnabled);
         command.Parameters.AddWithValue("@ShowLiveView", screen.ShowLiveView);
         command.Parameters.AddWithValue("@MirrorLiveView", screen.MirrorLiveView);
+        command.Parameters.AddWithValue("@SaveMirroredPhotos", screen.SaveMirroredPhotos);
         command.Parameters.AddWithValue("@LiveViewRotation", screen.LiveViewRotation);
         command.Parameters.AddWithValue("@EnableWebcams", screen.EnableWebcams);
         command.Parameters.AddWithValue("@WebcamResolutionQuality", screen.WebcamResolutionQuality);
@@ -474,7 +476,7 @@ public class LocationRepository
                 CaptureMode = @CaptureMode, AlsoCreateGif = @AlsoCreateGif, GifFrameCount = @GifFrameCount,
                 GifFrameDelayMs = @GifFrameDelayMs, VideoDurationSeconds = @VideoDurationSeconds,
                 BoothIconsEnabled = @BoothIconsEnabled, ShowLiveView = @ShowLiveView,
-                MirrorLiveView = @MirrorLiveView, LiveViewRotation = @LiveViewRotation,
+                MirrorLiveView = @MirrorLiveView, SaveMirroredPhotos = @SaveMirroredPhotos, LiveViewRotation = @LiveViewRotation,
                 EnableWebcams = @EnableWebcams, WebcamResolutionQuality = @WebcamResolutionQuality,
                 AudioInputDeviceName = @AudioInputDeviceName, CameraDeviceName = @CameraDeviceName,
                 PoseStripPosition = @PoseStripPosition,
@@ -536,6 +538,7 @@ public class LocationRepository
         command.Parameters.AddWithValue("@BoothIconsEnabled", screen.BoothIconsEnabled);
         command.Parameters.AddWithValue("@ShowLiveView", screen.ShowLiveView);
         command.Parameters.AddWithValue("@MirrorLiveView", screen.MirrorLiveView);
+        command.Parameters.AddWithValue("@SaveMirroredPhotos", screen.SaveMirroredPhotos);
         command.Parameters.AddWithValue("@LiveViewRotation", screen.LiveViewRotation);
         command.Parameters.AddWithValue("@EnableWebcams", screen.EnableWebcams);
         command.Parameters.AddWithValue("@WebcamResolutionQuality", screen.WebcamResolutionQuality);

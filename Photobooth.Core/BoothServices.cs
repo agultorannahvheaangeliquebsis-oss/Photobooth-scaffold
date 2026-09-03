@@ -60,6 +60,12 @@ public record BoothServices(
     /// GreenScreen/PostProcessing are.</summary>
     public IFilterPresetService FilterPreset { get; init; } = new MockFilterPresetService();
 
+    /// <summary>Flips the saved photo to match the mirrored live preview (see
+    /// ScreenSettings.SaveMirroredPhotos, BoothStateMachine's capture step) --
+    /// an init property here for the same reason Sms/GreenScreen/
+    /// PostProcessing are.</summary>
+    public IPhotoMirrorService Mirror { get; init; } = new MockPhotoMirrorService();
+
     /// <summary>Collects the guest's filter pick during FilterPicker -- an init
     /// property here for the same reason Sms/GreenScreen/PostProcessing are.</summary>
     public IFilterSelectionService FilterSelection { get; init; } = new MockFilterSelectionService();

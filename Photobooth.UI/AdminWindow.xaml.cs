@@ -799,10 +799,11 @@ public partial class AdminWindow : Window
     }
 
     /// <summary>Populates Camera Settings' controls -- Enable Webcams/Webcam
-    /// Resolution/Audio Input are new here; Mirror/Rotation reuse the same
-    /// ScreenSettings fields ScreenTemplateEditorWindow's own Settings tab also
-    /// edits (two admin surfaces over the same two columns, same as dslrBooth's
-    /// own Camera Settings and Screen Editor both touching mirror/rotate). The
+    /// Resolution/Audio Input are new here; Mirror/Save Mirrored Photos/Rotation
+    /// reuse the same ScreenSettings fields ScreenTemplateEditorWindow's own
+    /// Settings tab also edits (two admin surfaces over the same columns, same
+    /// as dslrBooth's own Camera Settings and Screen Editor both touching
+    /// mirror/rotate). The
     /// audio device list is re-enumerated on every load rather than cached --
     /// it's a cheap winmm call and a USB mic could be plugged in between opens.</summary>
     private void LoadCameraSettings(ScreenSettings screen)
@@ -810,6 +811,7 @@ public partial class AdminWindow : Window
         SetOnOffToggle(EnableWebcamsCheckBox, screen.EnableWebcams);
         WebcamResolutionSlider.Value = screen.WebcamResolutionQuality;
         SetOnOffToggle(CameraMirrorLiveViewCheckBox, screen.MirrorLiveView);
+        SetOnOffToggle(SaveMirroredPhotosCheckBox, screen.SaveMirroredPhotos);
         CameraRotationCombo.SelectedIndex = screen.LiveViewRotation switch
         {
             90 => 1,
@@ -1375,6 +1377,7 @@ public partial class AdminWindow : Window
         var screen = _currentScreenSettings with
         {
             MirrorLiveView = CameraMirrorLiveViewCheckBox.IsChecked == true,
+            SaveMirroredPhotos = SaveMirroredPhotosCheckBox.IsChecked == true,
             LiveViewRotation = liveViewRotation,
             EnableWebcams = EnableWebcamsCheckBox.IsChecked == true,
             WebcamResolutionQuality = (int)WebcamResolutionSlider.Value,

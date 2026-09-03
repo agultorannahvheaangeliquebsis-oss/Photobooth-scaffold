@@ -213,6 +213,98 @@ public class BoothStateMachineTests
     }
 
     [Fact]
+    public async Task RunSessionAsync_SaveMirroredPhotosDefaultOn_MirrorsBeforeFilterAndBranding()
+    {
+        var camera = new MockCameraService();
+        var printer = new MockPrinterService();
+        var cloudUpload = new MockCloudUploadService();
+        var paymentService = new MockQrPaymentService();
+        var sessions = new MockSessionRepository();
+        var uploadQueue = new MockPendingUploadQueue();
+        var consent = new MockConsentService();
+        var email = new MockEmailDeliveryService();
+        var branding = new MockPhotoBrandingService();
+        var filter = new MockPhotoFilterService();
+        // ScreenSettings.Default has MirrorLiveView and SaveMirroredPhotos both
+        // on -- the "selfie" default this feature is meant to give guests --
+        // with Glam Booth mode also on so both steps show up in one filename.
+        var settings = new MockBoothSettingsProvider { Settings = new BoothSettings(CountdownSeconds: 3, GlamFilterEnabled: true, PrintTemplate: PrintTemplate.Default) { Screen = ScreenSettings.Default with { FinalScreenTimeoutSeconds = 1 } } };
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
+        var machine = new BoothStateMachine(services, mode: "event");
+
+        await machine.RunSessionAsync();
+
+        Assert.NotNull(machine.LastCapturedImagePath);
+        // Mirror runs first, so "_mirrored" appears before "_glam" and
+        // "_branded" in the final filename -- proves the ordering, not just
+        // that all three ran.
+        int mirroredIndex = machine.LastCapturedImagePath!.IndexOf("_mirrored", StringComparison.Ordinal);
+        int glamIndex = machine.LastCapturedImagePath.IndexOf("_glam", StringComparison.Ordinal);
+        int brandedIndex = machine.LastCapturedImagePath.IndexOf("_branded", StringComparison.Ordinal);
+        Assert.True(mirroredIndex >= 0 && glamIndex >= 0 && brandedIndex >= 0
+            && mirroredIndex < glamIndex && glamIndex < brandedIndex);
+    }
+
+    [Fact]
+    public async Task RunSessionAsync_SaveMirroredPhotosOff_SkipsMirrorStep()
+    {
+        var camera = new MockCameraService();
+        var printer = new MockPrinterService();
+        var cloudUpload = new MockCloudUploadService();
+        var paymentService = new MockQrPaymentService();
+        var sessions = new MockSessionRepository();
+        var uploadQueue = new MockPendingUploadQueue();
+        var consent = new MockConsentService();
+        var email = new MockEmailDeliveryService();
+        var branding = new MockPhotoBrandingService();
+        var filter = new MockPhotoFilterService();
+        var settings = new MockBoothSettingsProvider
+        {
+            Settings = new BoothSettings(CountdownSeconds: 3, GlamFilterEnabled: false, PrintTemplate: PrintTemplate.Default)
+            {
+                Screen = ScreenSettings.Default with { SaveMirroredPhotos = false, FinalScreenTimeoutSeconds = 1 },
+            },
+        };
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
+        var machine = new BoothStateMachine(services, mode: "event");
+
+        await machine.RunSessionAsync();
+
+        Assert.NotNull(machine.LastCapturedImagePath);
+        Assert.DoesNotContain("_mirrored", machine.LastCapturedImagePath);
+    }
+
+    [Fact]
+    public async Task RunSessionAsync_MirrorLiveViewOff_SkipsMirrorStepEvenWithSaveMirroredPhotosOn()
+    {
+        var camera = new MockCameraService();
+        var printer = new MockPrinterService();
+        var cloudUpload = new MockCloudUploadService();
+        var paymentService = new MockQrPaymentService();
+        var sessions = new MockSessionRepository();
+        var uploadQueue = new MockPendingUploadQueue();
+        var consent = new MockConsentService();
+        var email = new MockEmailDeliveryService();
+        var branding = new MockPhotoBrandingService();
+        var filter = new MockPhotoFilterService();
+        var settings = new MockBoothSettingsProvider
+        {
+            Settings = new BoothSettings(CountdownSeconds: 3, GlamFilterEnabled: false, PrintTemplate: PrintTemplate.Default)
+            {
+                // No mirrored preview to match in the first place -- SaveMirroredPhotos alone shouldn't flip anything.
+                Screen = ScreenSettings.Default with { MirrorLiveView = false, SaveMirroredPhotos = true, FinalScreenTimeoutSeconds = 1 },
+            },
+        };
+        var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
+        var machine = new BoothStateMachine(services, mode: "event");
+
+        await machine.RunSessionAsync();
+
+        Assert.NotNull(machine.LastCapturedImagePath);
+        Assert.DoesNotContain("_mirrored", machine.LastCapturedImagePath);
+    }
+
+    [Fact]
     public async Task RunSessionAsync_CustomCountdownInSettings_FiresThatManyCountdownTicks()
     {
         var camera = new MockCameraService();

@@ -234,6 +234,16 @@ public partial class KioskWindow : Window
         }
     }
 
+    /// <summary>WelcomeBackgroundMediaElement has no built-in repeat, so each
+    /// MediaEnded just rewinds and replays it -- same "muted attract loop"
+    /// role AttendantMediaElement plays for cues, but this one never stops
+    /// on its own.</summary>
+    private void WelcomeBackgroundMediaElement_MediaEnded(object sender, RoutedEventArgs e)
+    {
+        WelcomeBackgroundMediaElement.Position = TimeSpan.Zero;
+        WelcomeBackgroundMediaElement.Play();
+    }
+
     /// <summary>Plays a Virtual Attendant clip alongside whatever screen is
     /// already showing -- best-effort, same reasoning BoothStateMachine's
     /// FireAttendantCueAsync already swallows lookup failures for: a

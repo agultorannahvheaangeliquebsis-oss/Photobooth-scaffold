@@ -596,6 +596,19 @@ public class BoothStateMachine
                 SetState(BoothState.Capturing);
                 LastCapturedImagePath = await _services.Camera.CaptureAsync(ct);
 
+                // "Save Mirrored Photos" (ScreenSettings.SaveMirroredPhotos): the
+                // raw capture is always true-to-life/un-mirrored (see
+                // KioskViewModel.LiveViewTransform's own doc comment), so when the
+                // live preview was shown mirrored and this toggle is on (the
+                // default), flip the saved file to match what the guest actually
+                // saw -- before any of the effects below, so a mirrored caption/
+                // overlay is never itself mirrored back. A no-op with
+                // MirrorLiveView off: there's no mirrored preview to match.
+                if (settings.Screen.MirrorLiveView && settings.Screen.SaveMirroredPhotos)
+                {
+                    LastCapturedImagePath = await _services.Mirror.FlipHorizontallyAsync(LastCapturedImagePath, ct);
+                }
+
                 // Filters (see PhotoFilterPreset/GdiFilterPresetService,
                 // BoothState.FilterPicker) run first in the effects chain -- a
                 // foundational photographic treatment the rest (green screen

@@ -585,6 +585,19 @@ public class KioskViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref _welcomeBackgroundImage, value);
     }
 
+    private Uri? _welcomeBackgroundVideo;
+
+    /// <summary>ScreenSettings.StartScreenVideoPath -- an optional full-bleed,
+    /// muted, looping video layered over WelcomeBackgroundImage/Brush on
+    /// IdleScreen (KioskWindow drives the actual looping via its
+    /// WelcomeBackgroundMediaElement's MediaEnded handler, since MediaElement
+    /// has no built-in repeat). Null means no video.</summary>
+    public Uri? WelcomeBackgroundVideo
+    {
+        get => _welcomeBackgroundVideo;
+        private set => SetProperty(ref _welcomeBackgroundVideo, value);
+    }
+
     private Brush _captureBackgroundBrush = HexToBrush("#17181A");
 
     /// <summary>ScreenSettings.CaptureBackgroundColorHex -- CountdownScreen
@@ -1781,6 +1794,7 @@ public class KioskViewModel : ObservableObject, IDisposable
             CountdownColorBrush = HexToBrush(settings.Screen.CountdownColorHex);
             WelcomeBackgroundBrush = HexToBrush(settings.Screen.WelcomeBackgroundColorHex);
             WelcomeBackgroundImage = LoadImageFromPath(settings.Screen.WelcomeBackgroundImagePath);
+            WelcomeBackgroundVideo = LoadVideoUriFromPath(settings.Screen.StartScreenVideoPath);
             CaptureBackgroundBrush = HexToBrush(settings.Screen.CaptureBackgroundColorHex);
             CaptureBackgroundImage = LoadImageFromPath(settings.Screen.CaptureBackgroundImagePath);
             SharingBackgroundBrush = HexToBrush(settings.Screen.SharingBackgroundColorHex);
@@ -2224,6 +2238,9 @@ public class KioskViewModel : ObservableObject, IDisposable
     }
 
     // ============================================================== helpers ==
+
+    private static Uri? LoadVideoUriFromPath(string? path) =>
+        string.IsNullOrWhiteSpace(path) || !File.Exists(path) ? null : new Uri(Path.GetFullPath(path));
 
     private static ImageSource? LoadImageFromPath(string? path)
     {
