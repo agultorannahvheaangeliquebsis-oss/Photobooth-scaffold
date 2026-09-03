@@ -70,6 +70,23 @@ public partial class AdminWindow : Window
     private string? _pendingGreenScreenBackgroundPath;
     private string? _existingGreenScreenBackgroundPath;
 
+    // Capture Settings' six file pickers (GIF/Boomerang image overlays, Video's
+    // soundtrack/image overlay/before-recording/after-recording clips) -- same
+    // "own local copy, only overwrite on a real change" pattern as
+    // _pendingWatermarkPath/_existingWatermarkPath above.
+    private string? _pendingGifImageOverlayPath;
+    private string? _existingGifImageOverlayPath;
+    private string? _pendingBoomerangImageOverlayPath;
+    private string? _existingBoomerangImageOverlayPath;
+    private string? _pendingVideoSoundtrackPath;
+    private string? _existingVideoSoundtrackPath;
+    private string? _pendingVideoImageOverlayPath;
+    private string? _existingVideoImageOverlayPath;
+    private string? _pendingVideoBeforeClipPath;
+    private string? _existingVideoBeforeClipPath;
+    private string? _pendingVideoAfterClipPath;
+    private string? _existingVideoAfterClipPath;
+
     // Show Lock Screen's current state, and the rows behind Sharing Status'
     // list (kept so RetrySharingLogButton_Click can look up a row's
     // Method/Destination/PhotoUrl from just the SharingLogId its Tag carries).
@@ -221,6 +238,30 @@ public partial class AdminWindow : Window
     {
         checkBox.IsChecked = value;
         checkBox.Content = value ? "On" : "Off";
+    }
+
+    /// <summary>Keeps a Capture Settings slider+numeric-box pair in sync, both
+    /// directions. One shared handler pair rather than one per pair (there are
+    /// 14 of them on that screen) -- each Slider/TextBox cross-references its
+    /// partner via Tag="{Binding ElementName=...}" in the XAML, so this just
+    /// follows Tag rather than needing a dedicated method per named control.
+    /// Setting Slider.Value programmatically (e.g. from LoadAsync) already
+    /// raises ValueChanged, so that alone keeps the paired box in sync too --
+    /// callers never need to set both.</summary>
+    private void CaptureSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (sender is Slider { Tag: TextBox box } slider)
+        {
+            box.Text = ((int)slider.Value).ToString();
+        }
+    }
+
+    private void CaptureSliderBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (sender is TextBox { Tag: Slider slider } box && int.TryParse(box.Text, out int value))
+        {
+            slider.Value = Math.Clamp(value, slider.Minimum, slider.Maximum);
+        }
     }
 
     // ---- Two-layer admin navigation (Layer 1 dropdown mega-menu + Layer 2
@@ -696,10 +737,70 @@ public partial class AdminWindow : Window
                 CaptureModeGifRadio.IsChecked = capture.Mode == "GIF";
                 CaptureModeBoomerangRadio.IsChecked = capture.Mode == "Boomerang";
                 CaptureModeVideoRadio.IsChecked = capture.Mode == "Video";
-                AlsoCreateGifCheckBox.IsChecked = capture.AlsoCreateGif;
-                FrameCountBox.Text = capture.FrameCount.ToString();
-                FrameDelayBox.Text = capture.FrameDelayMs.ToString();
-                VideoDurationBox.Text = capture.VideoDurationSeconds.ToString();
+
+                PhotoCaptureSettings photo = capture.Photo;
+                SetOnOffToggle(CapturePhotoEnabledCheckBox, photo.Enabled);
+                CapturePhotoBeforePhoto1Slider.Value = photo.BeforePhoto1Seconds;
+                CapturePhotoBeforeOtherPhotosSlider.Value = photo.BeforeOtherPhotosSeconds;
+                CapturePhotoReviewSlider.Value = photo.PhotoReviewSeconds;
+                SetOnOffToggle(CapturePhotoAlsoCreateGifCheckBox, photo.AlsoCreateGif);
+
+                GifCaptureSettings gif = capture.Gif;
+                SetOnOffToggle(CaptureGifEnabledCheckBox, gif.Enabled);
+                CaptureGifBeforePhoto1Slider.Value = gif.BeforePhoto1Seconds;
+                CaptureGifBeforeOtherPhotosSlider.Value = gif.BeforeOtherPhotosSeconds;
+                CaptureGifReviewSlider.Value = gif.PhotoReviewSeconds;
+                CaptureGifFrameDelaySlider.Value = gif.FrameDelayMs;
+                SetOnOffToggle(CaptureGifReverseCheckBox, gif.ReverseGif);
+                CaptureGifFrameCountSlider.Value = gif.FrameCount;
+                _existingGifImageOverlayPath = gif.ImageOverlayPath;
+                _pendingGifImageOverlayPath = null;
+                SelectedGifImageOverlayText.Text = gif.ImageOverlayPath is null
+                    ? "No overlay selected." : System.IO.Path.GetFileName(gif.ImageOverlayPath);
+
+                BoomerangCaptureSettings boomerang = capture.Boomerang;
+                SetOnOffToggle(CaptureBoomerangEnabledCheckBox, boomerang.Enabled);
+                CaptureBoomerangCountdownSlider.Value = boomerang.CountdownSeconds;
+                CaptureBoomerangFrameDelaySlider.Value = boomerang.FrameDelayMs;
+                CaptureBoomerangRecordingDurationSlider.Value = boomerang.RecordingDurationSeconds;
+                _existingBoomerangImageOverlayPath = boomerang.ImageOverlayPath;
+                _pendingBoomerangImageOverlayPath = null;
+                SelectedBoomerangImageOverlayText.Text = boomerang.ImageOverlayPath is null
+                    ? "No overlay selected." : System.IO.Path.GetFileName(boomerang.ImageOverlayPath);
+
+                VideoCaptureSettings video = capture.Video;
+                SetOnOffToggle(CaptureVideoEnabledCheckBox, video.Enabled);
+                CaptureVideoOrientationCombo.SelectedIndex = video.OrientationDegrees switch
+                {
+                    90 => 1,
+                    180 => 2,
+                    270 => 3,
+                    _ => 0,
+                };
+                CaptureVideoQualitySlider.Value = video.OutputQualityPercent;
+                CaptureVideoType360Radio.IsChecked = video.Type == "360SlowMotion";
+                CaptureVideoTypeVideoRadio.IsChecked = video.Type != "360SlowMotion";
+                CaptureVideoClipsCombo.SelectedIndex = Math.Clamp(video.NumberOfClips - 1, 0, 3);
+                CaptureVideoCountdownClip1Slider.Value = video.CountdownBeforeClip1Seconds;
+                CaptureVideoCountdownOtherClipsSlider.Value = video.CountdownBeforeOtherClipsSeconds;
+                SetOnOffToggle(CaptureVideoRecordOnMotionCheckBox, video.RecordOnMotionEnabled);
+                CaptureVideoClipDurationSlider.Value = video.ClipDurationSeconds;
+                _existingVideoSoundtrackPath = video.SoundtrackMp3Path;
+                _pendingVideoSoundtrackPath = null;
+                SelectedVideoSoundtrackText.Text = video.SoundtrackMp3Path is null
+                    ? "No soundtrack selected." : System.IO.Path.GetFileName(video.SoundtrackMp3Path);
+                _existingVideoImageOverlayPath = video.ImageOverlayPath;
+                _pendingVideoImageOverlayPath = null;
+                SelectedVideoImageOverlayText.Text = video.ImageOverlayPath is null
+                    ? "No overlay selected." : System.IO.Path.GetFileName(video.ImageOverlayPath);
+                _existingVideoBeforeClipPath = video.BeforeRecordingClipPath;
+                _pendingVideoBeforeClipPath = null;
+                SelectedVideoBeforeClipText.Text = video.BeforeRecordingClipPath is null
+                    ? "No clip selected." : System.IO.Path.GetFileName(video.BeforeRecordingClipPath);
+                _existingVideoAfterClipPath = video.AfterRecordingClipPath;
+                _pendingVideoAfterClipPath = null;
+                SelectedVideoAfterClipText.Text = video.AfterRecordingClipPath is null
+                    ? "No clip selected." : System.IO.Path.GetFileName(video.AfterRecordingClipPath);
 
                 EffectsSettings effects = location.Effects;
                 SetOnOffToggle(BeautyFilterCheckBox, effects.BeautyFilterEnabled);
@@ -1220,6 +1321,97 @@ public partial class AdminWindow : Window
         }
     }
 
+    // ---- Capture Settings' six file pickers -- same Browse/Clear shape as
+    // BrowseWatermarkButton_Click/BrowseGreenScreenBackgroundButton_Click above,
+    // one pair per field since each has its own filter/title/backing fields.
+    private void BrowseGifImageOverlayButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "PNG files (*.png)|*.png", Title = "Choose a GIF overlay image" };
+        if (dialog.ShowDialog() == true)
+        {
+            _pendingGifImageOverlayPath = dialog.FileName;
+            SelectedGifImageOverlayText.Text = System.IO.Path.GetFileName(dialog.FileName);
+        }
+    }
+
+    private void ClearGifImageOverlayButton_Click(object sender, RoutedEventArgs e)
+    {
+        _pendingGifImageOverlayPath = null;
+        _existingGifImageOverlayPath = null;
+        SelectedGifImageOverlayText.Text = "No overlay selected.";
+    }
+
+    private void BrowseBoomerangImageOverlayButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "PNG files (*.png)|*.png", Title = "Choose a Boomerang overlay image" };
+        if (dialog.ShowDialog() == true)
+        {
+            _pendingBoomerangImageOverlayPath = dialog.FileName;
+            SelectedBoomerangImageOverlayText.Text = System.IO.Path.GetFileName(dialog.FileName);
+        }
+    }
+
+    private void ClearBoomerangImageOverlayButton_Click(object sender, RoutedEventArgs e)
+    {
+        _pendingBoomerangImageOverlayPath = null;
+        _existingBoomerangImageOverlayPath = null;
+        SelectedBoomerangImageOverlayText.Text = "No overlay selected.";
+    }
+
+    private void BrowseVideoSoundtrackButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "MP3 files (*.mp3)|*.mp3", Title = "Choose a Video/360 soundtrack" };
+        if (dialog.ShowDialog() == true)
+        {
+            _pendingVideoSoundtrackPath = dialog.FileName;
+            SelectedVideoSoundtrackText.Text = System.IO.Path.GetFileName(dialog.FileName);
+        }
+    }
+
+    private void ClearVideoSoundtrackButton_Click(object sender, RoutedEventArgs e)
+    {
+        _pendingVideoSoundtrackPath = null;
+        _existingVideoSoundtrackPath = null;
+        SelectedVideoSoundtrackText.Text = "No soundtrack selected.";
+    }
+
+    private void BrowseVideoImageOverlayButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "PNG files (*.png)|*.png", Title = "Choose a Video/360 overlay image" };
+        if (dialog.ShowDialog() == true)
+        {
+            _pendingVideoImageOverlayPath = dialog.FileName;
+            SelectedVideoImageOverlayText.Text = System.IO.Path.GetFileName(dialog.FileName);
+        }
+    }
+
+    private void ClearVideoImageOverlayButton_Click(object sender, RoutedEventArgs e)
+    {
+        _pendingVideoImageOverlayPath = null;
+        _existingVideoImageOverlayPath = null;
+        SelectedVideoImageOverlayText.Text = "No overlay selected.";
+    }
+
+    private void BrowseVideoBeforeClipButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "MP4 files (*.mp4)|*.mp4", Title = "Choose a before-recording clip" };
+        if (dialog.ShowDialog() == true)
+        {
+            _pendingVideoBeforeClipPath = dialog.FileName;
+            SelectedVideoBeforeClipText.Text = System.IO.Path.GetFileName(dialog.FileName);
+        }
+    }
+
+    private void BrowseVideoAfterClipButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Filter = "MP4 files (*.mp4)|*.mp4", Title = "Choose an after-recording clip" };
+        if (dialog.ShowDialog() == true)
+        {
+            _pendingVideoAfterClipPath = dialog.FileName;
+            SelectedVideoAfterClipText.Text = System.IO.Path.GetFileName(dialog.FileName);
+        }
+    }
+
     /// <summary>Saves Capture/Effects/Green Screen/Survey/Disclaimer/Print/Sharing
     /// settings added in Phase 1 (BUILD_PLAN.md's dslrBooth feature-parity plan).
     /// Kept as its own button/status text, same one-save-button-per-section
@@ -1350,17 +1542,35 @@ public partial class AdminWindow : Window
         }
     }
 
-    private async Task SaveParitySettingsAsync(Button triggerButton, TextBlock statusText)
+    /// <summary>Shared by SaveParitySettingsAsync's six Capture Settings file
+    /// pickers -- same "own local copy, only copy a newly-picked file, keep
+    /// the existing path otherwise" logic watermarkPath/
+    /// greenScreenBackgroundPath each hand-rolled above, consolidated since
+    /// this screen has six of them (GIF/Boomerang overlays, Video's
+    /// soundtrack/overlay/before/after clips) rather than two.</summary>
+    private static string? CopyPendingCaptureFile(string? pendingPath, string? existingPath, string subfolder)
     {
-        if (!int.TryParse(FrameCountBox.Text, out int frameCount) || frameCount <= 0
-            || !int.TryParse(FrameDelayBox.Text, out int frameDelayMs) || frameDelayMs <= 0
-            || !int.TryParse(VideoDurationBox.Text, out int videoDurationSeconds) || videoDurationSeconds <= 0)
+        if (pendingPath is null)
         {
-            statusText.Text = "Frame count, frame delay, and video duration must be whole numbers greater than 0.";
-            statusText.Foreground = System.Windows.Media.Brushes.Firebrick;
-            return;
+            return existingPath;
         }
 
+        string directory = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "Capture", subfolder);
+        System.IO.Directory.CreateDirectory(directory);
+        string storedFileName = $"{Guid.NewGuid():N}{System.IO.Path.GetExtension(pendingPath)}";
+        string storedPath = System.IO.Path.Combine(directory, storedFileName);
+        System.IO.File.Copy(pendingPath, storedPath, overwrite: true);
+        return storedPath;
+    }
+
+    private async Task SaveParitySettingsAsync(Button triggerButton, TextBlock statusText)
+    {
+        // Every Capture Settings numeric field below is Slider-backed (see
+        // CaptureSlider_ValueChanged/CaptureSliderBox_TextChanged), so reading
+        // (int)Slider.Value directly -- rather than re-parsing its paired
+        // TextBox -- is always a valid number within Minimum/Maximum by
+        // construction; no separate validation block needed for these, unlike
+        // the plain TextBoxes below.
         if (!int.TryParse(PrintLimitPerEventBox.Text, out int printLimitPerEvent) || printLimitPerEvent <= 0
             || !int.TryParse(PrintLimitPerSessionBox.Text, out int printLimitPerSession) || printLimitPerSession <= 0)
         {
@@ -1400,7 +1610,63 @@ public partial class AdminWindow : Window
             System.IO.File.Copy(_pendingGreenScreenBackgroundPath, greenScreenBackgroundPath, overwrite: true);
         }
 
-        var capture = new CaptureSettings(captureMode, AlsoCreateGifCheckBox.IsChecked == true, frameCount, frameDelayMs, videoDurationSeconds);
+        // Same "own local copy, only copy a newly-picked file" pattern as
+        // watermarkPath/greenScreenBackgroundPath above, one Assets subfolder
+        // per field.
+        string? gifImageOverlayPath = CopyPendingCaptureFile(_pendingGifImageOverlayPath, _existingGifImageOverlayPath, "Gif");
+        string? boomerangImageOverlayPath = CopyPendingCaptureFile(_pendingBoomerangImageOverlayPath, _existingBoomerangImageOverlayPath, "Boomerang");
+        string? videoSoundtrackPath = CopyPendingCaptureFile(_pendingVideoSoundtrackPath, _existingVideoSoundtrackPath, "VideoSoundtrack");
+        string? videoImageOverlayPath = CopyPendingCaptureFile(_pendingVideoImageOverlayPath, _existingVideoImageOverlayPath, "VideoOverlay");
+        string? videoBeforeClipPath = CopyPendingCaptureFile(_pendingVideoBeforeClipPath, _existingVideoBeforeClipPath, "VideoBefore");
+        string? videoAfterClipPath = CopyPendingCaptureFile(_pendingVideoAfterClipPath, _existingVideoAfterClipPath, "VideoAfter");
+
+        var capture = new CaptureSettings(captureMode)
+        {
+            Photo = new PhotoCaptureSettings(
+                CapturePhotoEnabledCheckBox.IsChecked == true,
+                (int)CapturePhotoBeforePhoto1Slider.Value,
+                (int)CapturePhotoBeforeOtherPhotosSlider.Value,
+                (int)CapturePhotoReviewSlider.Value,
+                CapturePhotoAlsoCreateGifCheckBox.IsChecked == true),
+            Gif = new GifCaptureSettings(
+                CaptureGifEnabledCheckBox.IsChecked == true,
+                CaptureGifSizeCombo.SelectedItem is ComboBoxItem { Tag: string gifSizeTag } ? gifSizeTag : "Regular (720x480)",
+                (int)CaptureGifBeforePhoto1Slider.Value,
+                (int)CaptureGifBeforeOtherPhotosSlider.Value,
+                (int)CaptureGifReviewSlider.Value,
+                (int)CaptureGifFrameDelaySlider.Value,
+                CaptureGifReverseCheckBox.IsChecked == true,
+                (int)CaptureGifFrameCountSlider.Value)
+            {
+                ImageOverlayPath = gifImageOverlayPath,
+            },
+            Boomerang = new BoomerangCaptureSettings(
+                CaptureBoomerangEnabledCheckBox.IsChecked == true,
+                CaptureBoomerangSizeCombo.SelectedItem is ComboBoxItem { Tag: string boomerangSizeTag } ? boomerangSizeTag : "Regular (720x480)",
+                (int)CaptureBoomerangCountdownSlider.Value,
+                (int)CaptureBoomerangFrameDelaySlider.Value,
+                (int)CaptureBoomerangRecordingDurationSlider.Value)
+            {
+                ImageOverlayPath = boomerangImageOverlayPath,
+            },
+            Video = new VideoCaptureSettings(
+                CaptureVideoEnabledCheckBox.IsChecked == true,
+                CaptureVideoOrientationCombo.SelectedItem is ComboBoxItem { Tag: string orientationTag } ? int.Parse(orientationTag) : 0,
+                CaptureVideoSizeCombo.SelectedItem is ComboBoxItem { Tag: string videoSizeTag } ? videoSizeTag : "1280x720",
+                (int)CaptureVideoQualitySlider.Value,
+                CaptureVideoType360Radio.IsChecked == true ? "360SlowMotion" : "Video",
+                CaptureVideoClipsCombo.SelectedItem is ComboBoxItem { Tag: string clipsTag } ? int.Parse(clipsTag) : 1,
+                (int)CaptureVideoCountdownClip1Slider.Value,
+                (int)CaptureVideoCountdownOtherClipsSlider.Value,
+                CaptureVideoRecordOnMotionCheckBox.IsChecked == true,
+                (int)CaptureVideoClipDurationSlider.Value)
+            {
+                SoundtrackMp3Path = videoSoundtrackPath,
+                ImageOverlayPath = videoImageOverlayPath,
+                BeforeRecordingClipPath = videoBeforeClipPath,
+                AfterRecordingClipPath = videoAfterClipPath,
+            },
+        };
         int liveViewRotation = CameraRotationCombo.SelectedItem is ComboBoxItem { Tag: string rotationTag } ? int.Parse(rotationTag) : 0;
         string? audioInputDeviceName = AudioInputCombo.SelectedItem is ComboBoxItem { Tag: string deviceName } ? deviceName : null;
         string? cameraDeviceName = CameraDeviceCombo.SelectedItem is ComboBoxItem { Tag: string selectedCameraName } ? selectedCameraName : null;
@@ -1445,6 +1711,18 @@ public partial class AdminWindow : Window
             _pendingWatermarkPath = null;
             _existingGreenScreenBackgroundPath = greenScreenBackgroundPath;
             _pendingGreenScreenBackgroundPath = null;
+            _existingGifImageOverlayPath = gifImageOverlayPath;
+            _pendingGifImageOverlayPath = null;
+            _existingBoomerangImageOverlayPath = boomerangImageOverlayPath;
+            _pendingBoomerangImageOverlayPath = null;
+            _existingVideoSoundtrackPath = videoSoundtrackPath;
+            _pendingVideoSoundtrackPath = null;
+            _existingVideoImageOverlayPath = videoImageOverlayPath;
+            _pendingVideoImageOverlayPath = null;
+            _existingVideoBeforeClipPath = videoBeforeClipPath;
+            _pendingVideoBeforeClipPath = null;
+            _existingVideoAfterClipPath = videoAfterClipPath;
+            _pendingVideoAfterClipPath = null;
             _existingEmailSmtpPasswordProtected = sharing.EmailSmtpPasswordProtected;
             _existingTwilioAuthTokenProtected = sharing.TwilioAuthTokenProtected;
             EmailSmtpPasswordBox.Password = string.Empty;

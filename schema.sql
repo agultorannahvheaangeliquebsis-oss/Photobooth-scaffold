@@ -26,10 +26,54 @@ CREATE TABLE Location (
     -- above -- one booth machine has one Location, so these live here
     -- rather than a new settings table.
     CaptureMode         NVARCHAR(20) NOT NULL DEFAULT 'Photo' CHECK (CaptureMode IN ('Photo', 'GIF', 'Boomerang', 'Video')),
-    AlsoCreateGif       BIT          NOT NULL DEFAULT 0,
-    GifFrameCount       INT          NOT NULL DEFAULT 4,   -- GIF/Boomerang capture loop, see BoothStateMachine's Phase 2 branch
-    GifFrameDelayMs     INT          NOT NULL DEFAULT 500,
-    VideoDurationSeconds INT         NOT NULL DEFAULT 10,  -- Video mode recording length, see IBoothVideoService
+    AlsoCreateGif       BIT          NOT NULL DEFAULT 0,   -- PhotoCaptureSettings.AlsoCreateGif
+    GifFrameCount       INT          NOT NULL DEFAULT 4,   -- GifCaptureSettings.FrameCount ("Photos to capture"), see BoothStateMachine's GIF branch
+    GifFrameDelayMs     INT          NOT NULL DEFAULT 500, -- GifCaptureSettings.FrameDelayMs (composed GIF's own playback speed)
+    VideoDurationSeconds INT         NOT NULL DEFAULT 10,  -- VideoCaptureSettings.ClipDurationSeconds, see IBoothVideoService
+
+    -- Capture Settings split into four independently-configurable panels
+    -- (see dslrBooth's own Capture Settings screen and
+    -- Photobooth.Core/IBoothSettingsProvider.cs's PhotoCaptureSettings/
+    -- GifCaptureSettings/BoomerangCaptureSettings/VideoCaptureSettings) --
+    -- each with its own Enabled flag, gating that mode's Welcome-screen tile
+    -- alongside ScreenSettings.WelcomeXIconEnabled (see
+    -- KioskViewModel.ApplySettings). The columns above (CaptureMode/
+    -- AlsoCreateGif/GifFrameCount/GifFrameDelayMs/VideoDurationSeconds)
+    -- predate this split and are reused as-is rather than duplicated.
+    PhotoEnabled                    BIT          NOT NULL DEFAULT 1,
+    PhotoBeforePhoto1Seconds        INT          NOT NULL DEFAULT 10,
+    PhotoBeforeOtherPhotosSeconds   INT          NOT NULL DEFAULT 10,
+    PhotoReviewSeconds              INT          NOT NULL DEFAULT 3,
+
+    GifEnabled                      BIT          NOT NULL DEFAULT 1,
+    GifSize                         NVARCHAR(40) NOT NULL DEFAULT 'Regular (720x480)',
+    GifBeforePhoto1Seconds          INT          NOT NULL DEFAULT 5,
+    GifBeforeOtherPhotosSeconds     INT          NOT NULL DEFAULT 5,
+    GifPhotoReviewSeconds           INT          NOT NULL DEFAULT 3,
+    GifReverseGif                   BIT          NOT NULL DEFAULT 0,
+    GifImageOverlayPath             NVARCHAR(500) NULL,
+
+    BoomerangEnabled                 BIT          NOT NULL DEFAULT 1,
+    BoomerangSize                    NVARCHAR(40) NOT NULL DEFAULT 'Regular (720x480)',
+    BoomerangCountdownSeconds        INT          NOT NULL DEFAULT 5,
+    BoomerangFrameDelayMs            INT          NOT NULL DEFAULT 50,
+    BoomerangRecordingDurationSeconds INT         NOT NULL DEFAULT 1,
+    BoomerangImageOverlayPath        NVARCHAR(500) NULL,
+
+    VideoEnabled                          BIT          NOT NULL DEFAULT 1,
+    VideoOrientationDegrees               INT          NOT NULL DEFAULT 0,
+    VideoSize                             NVARCHAR(40) NOT NULL DEFAULT '1280x720',
+    VideoOutputQualityPercent             INT          NOT NULL DEFAULT 50,
+    VideoType                             NVARCHAR(20) NOT NULL DEFAULT 'Video' CHECK (VideoType IN ('Video', '360SlowMotion')),
+    VideoNumberOfClips                    INT          NOT NULL DEFAULT 1,
+    VideoCountdownBeforeClip1Seconds      INT          NOT NULL DEFAULT 5,
+    VideoCountdownBeforeOtherClipsSeconds INT          NOT NULL DEFAULT 5,
+    VideoRecordOnMotionEnabled            BIT          NOT NULL DEFAULT 0,
+    VideoSoundtrackMp3Path                NVARCHAR(500) NULL,
+    VideoImageOverlayPath                 NVARCHAR(500) NULL,
+    VideoBeforeRecordingClipPath          NVARCHAR(500) NULL,
+    VideoAfterRecordingClipPath           NVARCHAR(500) NULL,
+
     BoothIconsEnabled   BIT          NOT NULL DEFAULT 0,
     ShowLiveView        BIT          NOT NULL DEFAULT 1,
     MirrorLiveView      BIT          NOT NULL DEFAULT 1,

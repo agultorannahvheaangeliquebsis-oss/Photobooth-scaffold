@@ -259,7 +259,7 @@ Console.WriteLine();
 // branding/filter/frame-picker pipeline entirely for these modes.
 Console.WriteLine("--- Session 18 (event, admin switches capture mode to GIF) ---");
 Console.WriteLine("  (simulating an admin switching from Photo to GIF mode, 3 frames)");
-settings.Settings = settings.Settings with { Capture = new CaptureSettings(Mode: "GIF", FrameCount: 3, FrameDelayMs: 10) };
+settings.Settings = settings.Settings with { Capture = new CaptureSettings(Mode: "GIF") { Gif = new GifCaptureSettings(FrameCount: 3, FrameDelayMs: 10) } };
 await eventMachine.RunSessionAsync();
 Console.WriteLine($"  Frames composed: {gifComposer.LastFrameCount} (reversed: {gifComposer.LastReversed})");
 Console.WriteLine($"  Final photo path: {eventMachine.LastCapturedImagePath}");
@@ -268,7 +268,7 @@ Console.WriteLine();
 
 Console.WriteLine("--- Session 19 (event, admin switches capture mode to Boomerang) ---");
 Console.WriteLine("  (simulating an admin switching from GIF to Boomerang mode, 4 frames)");
-settings.Settings = settings.Settings with { Capture = new CaptureSettings(Mode: "Boomerang", FrameCount: 4, FrameDelayMs: 10) };
+settings.Settings = settings.Settings with { Capture = new CaptureSettings(Mode: "Boomerang") { Boomerang = new BoomerangCaptureSettings(RecordingDurationSeconds: 1, FrameDelayMs: 250) } };
 await eventMachine.RunSessionAsync();
 Console.WriteLine($"  Frames composed: {gifComposer.LastFrameCount} (reversed: {gifComposer.LastReversed})");
 Console.WriteLine($"  Final photo path: {eventMachine.LastCapturedImagePath}");
@@ -277,7 +277,7 @@ Console.WriteLine();
 
 Console.WriteLine("--- Session 20 (event, admin switches capture mode to Video) ---");
 Console.WriteLine("  (simulating an admin switching to Video mode, 1s recording for a fast demo)");
-settings.Settings = settings.Settings with { Capture = new CaptureSettings(Mode: "Video", VideoDurationSeconds: 1) };
+settings.Settings = settings.Settings with { Capture = new CaptureSettings(Mode: "Video") { Video = new VideoCaptureSettings(ClipDurationSeconds: 1) } };
 int printCountBeforeVideo = printer.PrintedTemplates.Count;
 await eventMachine.RunSessionAsync();
 Console.WriteLine($"  Recorded file: {boothVideo.RecordedFiles[^1]}");

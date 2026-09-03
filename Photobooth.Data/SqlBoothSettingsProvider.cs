@@ -61,7 +61,16 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
                    SharingIconsGroupEnabled, SharingIconsPositionXPercent, SharingIconsPositionYPercent,
                    SharingIconsLayout, SharingIconsAlignment,
                    PoseStripBackgroundOpacityPercent, PoseStripActiveBorderColorHex, PoseStripShowPlaceholderNumbers,
-                   PaymentTiming, CameraDeviceName, SaveMirroredPhotos
+                   PaymentTiming, CameraDeviceName, SaveMirroredPhotos,
+                   PhotoEnabled, PhotoBeforePhoto1Seconds, PhotoBeforeOtherPhotosSeconds, PhotoReviewSeconds,
+                   GifEnabled, GifSize, GifBeforePhoto1Seconds, GifBeforeOtherPhotosSeconds, GifPhotoReviewSeconds,
+                   GifReverseGif, GifImageOverlayPath,
+                   BoomerangEnabled, BoomerangSize, BoomerangCountdownSeconds, BoomerangFrameDelayMs,
+                   BoomerangRecordingDurationSeconds, BoomerangImageOverlayPath,
+                   VideoEnabled, VideoOrientationDegrees, VideoSize, VideoOutputQualityPercent, VideoType,
+                   VideoNumberOfClips, VideoCountdownBeforeClip1Seconds, VideoCountdownBeforeOtherClipsSeconds,
+                   VideoRecordOnMotionEnabled, VideoSoundtrackMp3Path, VideoImageOverlayPath,
+                   VideoBeforeRecordingClipPath, VideoAfterRecordingClipPath
             FROM Location WHERE LocationId = @LocationId;
             """,
             connection);
@@ -105,7 +114,31 @@ public class SqlBoothSettingsProvider : IBoothSettingsProvider
                 reader.IsDBNull(9) ? null : reader.GetString(9),
                 reader.GetString(10));
             adminPin = reader.GetString(11);
-            capture = new CaptureSettings(reader.GetString(12), reader.GetBoolean(13), reader.GetInt32(14), reader.GetInt32(15), reader.GetInt32(16));
+            capture = new CaptureSettings(reader.GetString(12))
+            {
+                Photo = new PhotoCaptureSettings(
+                    reader.GetBoolean(128), reader.GetInt32(129), reader.GetInt32(130), reader.GetInt32(131), reader.GetBoolean(13)),
+                Gif = new GifCaptureSettings(
+                    reader.GetBoolean(132), reader.GetString(133), reader.GetInt32(134), reader.GetInt32(135), reader.GetInt32(136),
+                    reader.GetInt32(15), reader.GetBoolean(137), reader.GetInt32(14))
+                {
+                    ImageOverlayPath = reader.IsDBNull(138) ? null : reader.GetString(138),
+                },
+                Boomerang = new BoomerangCaptureSettings(
+                    reader.GetBoolean(139), reader.GetString(140), reader.GetInt32(141), reader.GetInt32(142), reader.GetInt32(143))
+                {
+                    ImageOverlayPath = reader.IsDBNull(144) ? null : reader.GetString(144),
+                },
+                Video = new VideoCaptureSettings(
+                    reader.GetBoolean(145), reader.GetInt32(146), reader.GetString(147), reader.GetInt32(148), reader.GetString(149),
+                    reader.GetInt32(150), reader.GetInt32(151), reader.GetInt32(152), reader.GetBoolean(153), reader.GetInt32(16))
+                {
+                    SoundtrackMp3Path = reader.IsDBNull(154) ? null : reader.GetString(154),
+                    ImageOverlayPath = reader.IsDBNull(155) ? null : reader.GetString(155),
+                    BeforeRecordingClipPath = reader.IsDBNull(156) ? null : reader.GetString(156),
+                    AfterRecordingClipPath = reader.IsDBNull(157) ? null : reader.GetString(157),
+                },
+            };
             screen = new ScreenSettings(
                 reader.GetBoolean(17), reader.GetBoolean(18), reader.GetBoolean(19), reader.GetInt32(20),
                 reader.GetBoolean(21), reader.GetInt32(22), reader.IsDBNull(23) ? null : reader.GetString(23),

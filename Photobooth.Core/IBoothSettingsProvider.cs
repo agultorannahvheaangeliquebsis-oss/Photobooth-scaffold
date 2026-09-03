@@ -1,11 +1,18 @@
 namespace Photobooth.Core;
 
-/// <summary>Admin-editable per-booth settings. Countdown duration, whether Glam
-/// Booth mode is on, and the print layout (paper size / single vs. strip) -- see
-/// AdminWindow's Settings section. AdminPin gates MainWindow's Setup/launch
-/// screen (see BoothState.Setup) -- a positional parameter with a literal
-/// default, unlike Theme below, since "1234" (matching the schema column's own
-/// default) is a compile-time constant a positional parameter can default to.</summary>
+/// <summary>Admin-editable per-booth settings. Countdown duration for Photo
+/// mode's per-pose capture loop (every pose shares this one value -- see
+/// BoothStateMachine's Photo branch; PhotoCaptureSettings.BeforePhoto1Seconds/
+/// BeforeOtherPhotosSeconds round out real per-pose timing but aren't
+/// consumed yet, same "stored, not yet wired" status several CaptureSettings
+/// fields carry), whether Glam Booth mode is on, and the print layout (paper
+/// size / single vs. strip) -- see AdminWindow's Settings section. GIF/
+/// Boomerang/Video each read their OWN countdown field instead (see
+/// CaptureSettings) -- this is unused for those three modes. AdminPin gates
+/// MainWindow's Setup/launch screen (see BoothState.Setup) -- a positional
+/// parameter with a literal default, unlike Theme below, since "1234"
+/// (matching the schema column's own default) is a compile-time constant a
+/// positional parameter can default to.</summary>
 public record BoothSettings(int CountdownSeconds, bool GlamFilterEnabled, PrintTemplate PrintTemplate, string AdminPin = "1234")
 {
     /// <summary>Brand identity (colors/logo/event name). An init-only property
@@ -76,14 +83,129 @@ public record SlideshowSettings(
     public static SlideshowSettings Default { get; } = new();
 }
 
-/// <summary>Capture mode + related timing, see dslrBooth's Capture Settings screen.
-/// FrameCount/FrameDelayMs drive the GIF/Boomerang capture loop (see
-/// BoothStateMachine, IGifComposerService); VideoDurationSeconds drives the
-/// Video-mode recording length (see IBoothVideoService). All three are
-/// unused when Mode is "Photo".</summary>
-public record CaptureSettings(string Mode = "Photo", bool AlsoCreateGif = false, int FrameCount = 4, int FrameDelayMs = 500, int VideoDurationSeconds = 10)
+/// <summary>Capture mode + each mode's own settings, see dslrBooth's Capture
+/// Settings screen -- Photo/GIF/Boomerang/Video are four independently
+/// configurable panels there, not one shared set of fields behind a single
+/// radio choice. Mode is which one is active for the CURRENT session: the
+/// admin's configured default, or a guest's own tile tap on the Welcome
+/// screen (see CaptureModeOverrideSettingsProvider, which swaps this value
+/// per session without touching anything else). Each of Photo/Gif/Boomerang/
+/// Video below carries its own Enabled flag -- combined with
+/// ScreenSettings.WelcomeXIconEnabled (a layout/visibility concern) to decide
+/// whether that mode's Welcome tile shows at all, see
+/// KioskViewModel.ApplySettings.</summary>
+public record CaptureSettings(string Mode = "Photo")
 {
     public static CaptureSettings Default { get; } = new();
+
+    public PhotoCaptureSettings Photo { get; init; } = PhotoCaptureSettings.Default;
+    public GifCaptureSettings Gif { get; init; } = GifCaptureSettings.Default;
+    public BoomerangCaptureSettings Boomerang { get; init; } = BoomerangCaptureSettings.Default;
+    public VideoCaptureSettings Video { get; init; } = VideoCaptureSettings.Default;
+}
+
+/// <summary>See dslrBooth's Capture Settings > Photo panel. Enabled is the
+/// only field BoothStateMachine actually reads (see KioskViewModel's Welcome
+/// tile gating) -- BeforePhoto1Seconds/BeforeOtherPhotosSeconds/
+/// PhotoReviewSeconds/AlsoCreateGif round-trip through admin save/load but
+/// aren't consumed by the capture pipeline yet: Photo mode's per-pose
+/// countdown still shares the single BoothSettings.CountdownSeconds, and its
+/// Reviewing dwell still shares ScreenSettings.ReviewSeconds, both same as
+/// before Capture Settings split into per-mode panels -- wiring true per-pose/
+/// per-mode timing here would mean updating every test that deliberately
+/// zeroes those two shared fields to also zero these new ones, not attempted
+/// in this pass. Same "round-trips, not yet built" status AlsoCreateGif
+/// always had as a flat CaptureSettings field.</summary>
+public record PhotoCaptureSettings(
+    bool Enabled = true,
+    int BeforePhoto1Seconds = 10,
+    int BeforeOtherPhotosSeconds = 10,
+    int PhotoReviewSeconds = 3,
+    bool AlsoCreateGif = false)
+{
+    public static PhotoCaptureSettings Default { get; } = new();
+}
+
+/// <summary>See dslrBooth's Capture Settings > GIF panel. FrameCount ("Photos
+/// to capture") and the per-frame BeforePhoto1Seconds/BeforeOtherPhotosSeconds
+/// countdown drive BoothStateMachine's GIF capture loop -- each frame gets its
+/// own posed countdown, unlike Boomerang's single rapid burst below (and
+/// unlike Photo mode's own multi-pose loop, which -- for now -- still shares
+/// the single BoothSettings.CountdownSeconds rather than these two fields;
+/// see PhotoCaptureSettings). FrameDelayMs is purely a PLAYBACK setting here
+/// (the composed GIF's own frame interval, passed straight to
+/// IGifComposerService.ComposeAsync) since the per-frame countdown already
+/// paces the capture itself. PhotoReviewSeconds/Size/ImageOverlayPath are
+/// stored but not yet consumed -- the Reviewing dwell still shares
+/// ScreenSettings.ReviewSeconds (same reasoning PhotoCaptureSettings.
+/// PhotoReviewSeconds documents), and no resize or overlay-compositing pass
+/// runs over the composed GIF yet.</summary>
+public record GifCaptureSettings(
+    bool Enabled = true,
+    string Size = "Regular (720x480)",
+    int BeforePhoto1Seconds = 5,
+    int BeforeOtherPhotosSeconds = 5,
+    int PhotoReviewSeconds = 3,
+    int FrameDelayMs = 500,
+    bool ReverseGif = false,
+    int FrameCount = 4)
+{
+    public static GifCaptureSettings Default { get; } = new();
+
+    public string? ImageOverlayPath { get; init; }
+}
+
+/// <summary>See dslrBooth's Capture Settings > Boomerang panel -- a single
+/// rapid burst (one CountdownSeconds, then a fixed-cadence capture loop),
+/// unlike GIF's per-frame-countdown loop above. FrameDelayMs paces BOTH the
+/// capture burst and the composed clip's own playback (BoothStateMachine
+/// passes the same value to IGifComposerService.ComposeAsync as its
+/// frameDelayMs) -- a real Boomerang plays back at roughly the rate it shot,
+/// so one admin-facing field covers both ends. RecordingDurationSeconds
+/// combines with FrameDelayMs to derive how many frames the burst captures
+/// (see BoothStateMachine.RunCaptureBranchAsync), clamped to a sane range
+/// since this engine's capture loop (unlike a real camera's native burst
+/// mode) can't safely sustain an arbitrarily short inter-frame delay. Size/
+/// ImageOverlayPath are stored but not yet consumed, same as GIF's above.</summary>
+public record BoomerangCaptureSettings(
+    bool Enabled = true,
+    string Size = "Regular (720x480)",
+    int CountdownSeconds = 5,
+    int FrameDelayMs = 50,
+    int RecordingDurationSeconds = 1)
+{
+    public static BoomerangCaptureSettings Default { get; } = new();
+
+    public string? ImageOverlayPath { get; init; }
+}
+
+/// <summary>See dslrBooth's Capture Settings > Video/360 panel. Only
+/// CountdownBeforeClip1Seconds and ClipDurationSeconds are actually consumed
+/// today (BoothStateMachine's Video branch: pre-roll countdown, then
+/// IBoothVideoService.StartRecordingAsync for this many seconds) -- every
+/// other field here rounds out real dslrBooth parity (multi-clip recording,
+/// motion-triggered start, orientation/quality/soundtrack/overlays) that this
+/// build's single Start/Stop IBoothVideoService can't yet act on, same
+/// "admin's choice round-trips, pipeline doesn't implement it yet" status
+/// EffectsSettings.BeautyFilterEnabled and friends already carry.</summary>
+public record VideoCaptureSettings(
+    bool Enabled = true,
+    int OrientationDegrees = 0,
+    string Size = "1280x720",
+    int OutputQualityPercent = 50,
+    string Type = "Video",
+    int NumberOfClips = 1,
+    int CountdownBeforeClip1Seconds = 5,
+    int CountdownBeforeOtherClipsSeconds = 5,
+    bool RecordOnMotionEnabled = false,
+    int ClipDurationSeconds = 10)
+{
+    public static VideoCaptureSettings Default { get; } = new();
+
+    public string? SoundtrackMp3Path { get; init; }
+    public string? ImageOverlayPath { get; init; }
+    public string? BeforeRecordingClipPath { get; init; }
+    public string? AfterRecordingClipPath { get; init; }
 }
 
 /// <summary>Welcome/Capture screen behavior plus camera hardware selection, see

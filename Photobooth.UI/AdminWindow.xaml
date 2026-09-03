@@ -564,8 +564,10 @@
                                    HorizontalAlignment="Right" Tag="CameraSettings" MouseLeftButtonDown="NextSection_Click" />
                     </Grid>
 
-                    <TextBlock Text="Mode:" Style="{StaticResource Row}" />
-                    <StackPanel Orientation="Horizontal" Margin="0,2">
+                    <TextBlock Text="Default Mode:" Style="{StaticResource Row}" />
+                    <TextBlock Text="Which panel below runs a session when a guest doesn't pick one from the Welcome screen's own tiles." Style="{StaticResource Row}"
+                               Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,0,0,6" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Margin="0,2,0,18">
                         <RadioButton x:Name="CaptureModePhotoRadio" GroupName="CaptureMode" Content="Photo"
                                      Foreground="{StaticResource InkBrush}" IsChecked="True" Margin="0,0,12,0" />
                         <RadioButton x:Name="CaptureModeGifRadio" GroupName="CaptureMode" Content="GIF"
@@ -575,20 +577,446 @@
                         <RadioButton x:Name="CaptureModeVideoRadio" GroupName="CaptureMode" Content="Video"
                                      Foreground="{StaticResource InkBrush}" />
                     </StackPanel>
-                    <CheckBox x:Name="AlsoCreateGifCheckBox" Content="Also create a GIF alongside the main capture"
-                              Foreground="{StaticResource InkBrush}" Margin="0,8,0,0" />
-                    <StackPanel Orientation="Horizontal" Margin="0,4">
-                        <TextBlock Text="GIF/Boomerang frame count:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
-                        <TextBox x:Name="FrameCountBox" Width="60" />
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,4">
-                        <TextBlock Text="Frame delay (ms):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
-                        <TextBox x:Name="FrameDelayBox" Width="60" />
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,4">
-                        <TextBlock Text="Video duration (seconds):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="220" />
-                        <TextBox x:Name="VideoDurationBox" Width="60" />
-                    </StackPanel>
+
+                    <!-- Two-column layout, matching dslrBooth's own Capture Settings
+                         screen: Photo/GIF/Boomerang stacked on the left, one tall
+                         Video/360 panel on the right. Each panel is its own card with
+                         an Enabled toggle in the header; see CaptureSlider_ValueChanged/
+                         CaptureSliderBox_TextChanged for how every slider+box pair below
+                         stays in sync (paired via Tag={Binding ElementName=...}, not one
+                         handler per pair; there are 14 of them on this screen). -->
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="20" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <!-- ===== Left column: Photo / GIF / Boomerang ===== -->
+                        <StackPanel Grid.Column="0">
+
+                            <!-- ===== Photo panel ===== -->
+                            <Border Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}"
+                                    BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Photo" FontSize="14" FontWeight="Bold"
+                                                   Foreground="{StaticResource InkBrush}" VerticalAlignment="Center" />
+                                        <CheckBox Grid.Column="1" x:Name="CapturePhotoEnabledCheckBox" Content="On" IsChecked="True" VerticalAlignment="Center"
+                                                  Checked="OnOffToggle_Changed" Unchecked="OnOffToggle_Changed" />
+                                    </Grid>
+
+                                    <TextBlock Text="Before photo 1" Style="{StaticResource Row}" Margin="0,12,0,4" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="52" />
+                                            <ColumnDefinition Width="30" />
+                                        </Grid.ColumnDefinitions>
+                                        <Slider x:Name="CapturePhotoBeforePhoto1Slider" Grid.Column="0" Minimum="0" Maximum="60" Value="10"
+                                                Tag="{Binding ElementName=CapturePhotoBeforePhoto1Box}" ValueChanged="CaptureSlider_ValueChanged" VerticalAlignment="Center" />
+                                        <TextBox x:Name="CapturePhotoBeforePhoto1Box" Grid.Column="1" Text="10" Margin="8,0,0,0" TextAlignment="Center"
+                                                 Tag="{Binding ElementName=CapturePhotoBeforePhoto1Slider}" TextChanged="CaptureSliderBox_TextChanged" />
+                                        <TextBlock Grid.Column="2" Text="sec" Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}"
+                                                   FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                    </Grid>
+
+                                    <TextBlock Text="Before other photos" Style="{StaticResource Row}" Margin="0,10,0,4" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="52" />
+                                            <ColumnDefinition Width="30" />
+                                        </Grid.ColumnDefinitions>
+                                        <Slider x:Name="CapturePhotoBeforeOtherPhotosSlider" Grid.Column="0" Minimum="0" Maximum="60" Value="10"
+                                                Tag="{Binding ElementName=CapturePhotoBeforeOtherPhotosBox}" ValueChanged="CaptureSlider_ValueChanged" VerticalAlignment="Center" />
+                                        <TextBox x:Name="CapturePhotoBeforeOtherPhotosBox" Grid.Column="1" Text="10" Margin="8,0,0,0" TextAlignment="Center"
+                                                 Tag="{Binding ElementName=CapturePhotoBeforeOtherPhotosSlider}" TextChanged="CaptureSliderBox_TextChanged" />
+                                        <TextBlock Grid.Column="2" Text="sec" Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}"
+                                                   FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                    </Grid>
+
+                                    <TextBlock Text="Photo review time" Style="{StaticResource Row}" Margin="0,10,0,4" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="52" />
+                                            <ColumnDefinition Width="30" />
+                                        </Grid.ColumnDefinitions>
+                                        <Slider x:Name="CapturePhotoReviewSlider" Grid.Column="0" Minimum="0" Maximum="15" Value="3"
+                                                Tag="{Binding ElementName=CapturePhotoReviewBox}" ValueChanged="CaptureSlider_ValueChanged" VerticalAlignment="Center" />
+                                        <TextBox x:Name="CapturePhotoReviewBox" Grid.Column="1" Text="3" Margin="8,0,0,0" TextAlignment="Center"
+                                                 Tag="{Binding ElementName=CapturePhotoReviewSlider}" TextChanged="CaptureSliderBox_TextChanged" />
+                                        <TextBlock Grid.Column="2" Text="sec" Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}"
+                                                   FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                    </Grid>
+
+                                    <CheckBox x:Name="CapturePhotoAlsoCreateGifCheckBox" Content="Off" Margin="0,14,0,0"
+                                              Checked="OnOffToggle_Changed" Unchecked="OnOffToggle_Changed" />
+                                    <TextBlock Text="Also create a GIF alongside this capture." Style="{StaticResource Row}"
+                                               Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,2,0,0" />
+
+                                    <TextBlock Text="Print Layout &gt;" Style="{StaticResource WizardLink}" Tag="PrintLayout"
+                                               MouseLeftButtonDown="NextSection_Click" HorizontalAlignment="Right" Margin="0,14,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- ===== GIF panel ===== -->
+                            <Border Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}"
+                                    BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="GIF" FontSize="14" FontWeight="Bold"
+                                                   Foreground="{StaticResource InkBrush}" VerticalAlignment="Center" />
+                                        <CheckBox Grid.Column="1" x:Name="CaptureGifEnabledCheckBox" Content="On" IsChecked="True" VerticalAlignment="Center"
+                                                  Checked="OnOffToggle_Changed" Unchecked="OnOffToggle_Changed" />
+                                    </Grid>
+
+                                    <TextBlock Text="Size" Style="{StaticResource Row}" Margin="0,12,0,4" />
+                                    <ComboBox x:Name="CaptureGifSizeCombo" HorizontalAlignment="Left" Width="200" SelectedIndex="0">
+                                        <ComboBoxItem Content="Regular (720x480)" Tag="Regular (720x480)" />
+                                    </ComboBox>
+
+                                    <TextBlock Text="Before photo 1" Style="{StaticResource Row}" Margin="0,10,0,4" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="52" />
+                                            <ColumnDefinition Width="30" />
+                                        </Grid.ColumnDefinitions>
+                                        <Slider x:Name="CaptureGifBeforePhoto1Slider" Grid.Column="0" Minimum="0" Maximum="60" Value="5"
+                                                Tag="{Binding ElementName=CaptureGifBeforePhoto1Box}" ValueChanged="CaptureSlider_ValueChanged" VerticalAlignment="Center" />
+                                        <TextBox x:Name="CaptureGifBeforePhoto1Box" Grid.Column="1" Text="5" Margin="8,0,0,0" TextAlignment="Center"
+                                                 Tag="{Binding ElementName=CaptureGifBeforePhoto1Slider}" TextChanged="CaptureSliderBox_TextChanged" />
+                                        <TextBlock Grid.Column="2" Text="sec" Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}"
+                                                   FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                    </Grid>
+
+                                    <TextBlock Text="Before other photos" Style="{StaticResource Row}" Margin="0,10,0,4" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="52" />
+                                            <ColumnDefinition Width="30" />
+                                        </Grid.ColumnDefinitions>
+                                        <Slider x:Name="CaptureGifBeforeOtherPhotosSlider" Grid.Column="0" Minimum="0" Maximum="60" Value="5"
+                                                Tag="{Binding ElementName=CaptureGifBeforeOtherPhotosBox}" ValueChanged="CaptureSlider_ValueChanged" VerticalAlignment="Center" />
+                                        <TextBox x:Name="CaptureGifBeforeOtherPhotosBox" Grid.Column="1" Text="5" Margin="8,0,0,0" TextAlignment="Center"
+                                                 Tag="{Binding ElementName=CaptureGifBeforeOtherPhotosSlider}" TextChanged="CaptureSliderBox_TextChanged" />
+                                        <TextBlock Grid.Column="2" Text="sec" Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}"
+                                                   FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                    </Grid>
+
+                                    <TextBlock Text="Photo review time" Style="{StaticResource Row}" Margin="0,10,0,4" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="52" />
+                                            <ColumnDefinition Width="30" />
+                                        </Grid.ColumnDefinitions>
+                                        <Slider x:Name="CaptureGifReviewSlider" Grid.Column="0" Minimum="0" Maximum="15" Value="3"
+                                                Tag="{Binding ElementName=CaptureGifReviewBox}" ValueChanged="CaptureSlider_ValueChanged" VerticalAlignment="Center" />
+                                        <TextBox x:Name="CaptureGifReviewBox" Grid.Column="1" Text="3" Margin="8,0,0,0" TextAlignment="Center"
+                                                 Tag="{Binding ElementName=CaptureGifReviewSlider}" TextChanged="CaptureSliderBox_TextChanged" />
+                                        <TextBlock Grid.Column="2" Text="sec" Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}"
+                                                   FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                    </Grid>
+
+                                    <TextBlock Text="Delay Between Frames" Style="{StaticResource Row}" Margin="0,10,0,4" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="52" />
+                                            <ColumnDefinition Width="30" />
+                                        </Grid.ColumnDefinitions>
+                                        <Slider x:Name="CaptureGifFrameDelaySlider" Grid.Column="0" Minimum="0" Maximum="2000" Value="500"
+                                                Tag="{Binding ElementName=CaptureGifFrameDelayBox}" ValueChanged="CaptureSlider_ValueChanged" VerticalAlignment="Center" />
+                                        <TextBox x:Name="CaptureGifFrameDelayBox" Grid.Column="1" Text="500" Margin="8,0,0,0" TextAlignment="Center"
+                                                 Tag="{Binding ElementName=CaptureGifFrameDelaySlider}" TextChanged="CaptureSliderBox_TextChanged" />
+                                        <TextBlock Grid.Column="2" Text="ms" Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}"
+                                                   FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                    </Grid>
+
+                                    <CheckBox x:Name="CaptureGifReverseCheckBox" Content="Off" Margin="0,14,0,0"
+                                              Checked="OnOffToggle_Changed" Unchecked="OnOffToggle_Changed" />
+                                    <TextBlock Text="Reverse GIF -- play forwards then backwards." Style="{StaticResource Row}"
+                                               Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,2,0,0" />
+
+                                    <TextBlock Text="Photos to capture" Style="{StaticResource Row}" Margin="0,10,0,4" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="52" />
+                                            <ColumnDefinition Width="44" />
+                                        </Grid.ColumnDefinitions>
+                                        <Slider x:Name="CaptureGifFrameCountSlider" Grid.Column="0" Minimum="2" Maximum="10" Value="4"
+                                                Tag="{Binding ElementName=CaptureGifFrameCountBox}" ValueChanged="CaptureSlider_ValueChanged" VerticalAlignment="Center" />
+                                        <TextBox x:Name="CaptureGifFrameCountBox" Grid.Column="1" Text="4" Margin="8,0,0,0" TextAlignment="Center"
+                                                 Tag="{Binding ElementName=CaptureGifFrameCountSlider}" TextChanged="CaptureSliderBox_TextChanged" />
+                                        <TextBlock Grid.Column="2" Text="photos" Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}"
+                                                   FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                    </Grid>
+                                    <TextBlock Text="If a guest starts a photo session, the number of photos is set by the print layout instead." Style="{StaticResource Row}"
+                                               Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
+
+                                    <TextBlock Text="Image Overlays" Style="{StaticResource Row}" Margin="0,14,0,4" />
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button x:Name="BrowseGifImageOverlayButton" Content="Choose (Transparent PNG)" Padding="14,6"
+                                                Click="BrowseGifImageOverlayButton_Click" />
+                                        <Button Content="Clear" Padding="14,6" Margin="8,0,0,0" Click="ClearGifImageOverlayButton_Click" />
+                                    </StackPanel>
+                                    <TextBlock x:Name="SelectedGifImageOverlayText" Text="No overlay selected." Style="{StaticResource Row}"
+                                               Foreground="{StaticResource MutedBrush}" Margin="0,6,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- ===== Boomerang panel ===== -->
+                            <Border Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}"
+                                    BorderThickness="1" CornerRadius="8" Padding="16">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Boomerang" FontSize="14" FontWeight="Bold"
+                                                   Foreground="{StaticResource InkBrush}" VerticalAlignment="Center" />
+                                        <CheckBox Grid.Column="1" x:Name="CaptureBoomerangEnabledCheckBox" Content="On" IsChecked="True" VerticalAlignment="Center"
+                                                  Checked="OnOffToggle_Changed" Unchecked="OnOffToggle_Changed" />
+                                    </Grid>
+
+                                    <TextBlock Text="Size" Style="{StaticResource Row}" Margin="0,12,0,4" />
+                                    <ComboBox x:Name="CaptureBoomerangSizeCombo" HorizontalAlignment="Left" Width="200" SelectedIndex="0">
+                                        <ComboBoxItem Content="Regular (720x480)" Tag="Regular (720x480)" />
+                                    </ComboBox>
+
+                                    <TextBlock Text="Countdown" Style="{StaticResource Row}" Margin="0,10,0,4" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="52" />
+                                            <ColumnDefinition Width="30" />
+                                        </Grid.ColumnDefinitions>
+                                        <Slider x:Name="CaptureBoomerangCountdownSlider" Grid.Column="0" Minimum="0" Maximum="30" Value="5"
+                                                Tag="{Binding ElementName=CaptureBoomerangCountdownBox}" ValueChanged="CaptureSlider_ValueChanged" VerticalAlignment="Center" />
+                                        <TextBox x:Name="CaptureBoomerangCountdownBox" Grid.Column="1" Text="5" Margin="8,0,0,0" TextAlignment="Center"
+                                                 Tag="{Binding ElementName=CaptureBoomerangCountdownSlider}" TextChanged="CaptureSliderBox_TextChanged" />
+                                        <TextBlock Grid.Column="2" Text="sec" Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}"
+                                                   FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                    </Grid>
+
+                                    <TextBlock Text="Delay Between Frames" Style="{StaticResource Row}" Margin="0,10,0,4" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="52" />
+                                            <ColumnDefinition Width="30" />
+                                        </Grid.ColumnDefinitions>
+                                        <Slider x:Name="CaptureBoomerangFrameDelaySlider" Grid.Column="0" Minimum="10" Maximum="500" Value="50"
+                                                Tag="{Binding ElementName=CaptureBoomerangFrameDelayBox}" ValueChanged="CaptureSlider_ValueChanged" VerticalAlignment="Center" />
+                                        <TextBox x:Name="CaptureBoomerangFrameDelayBox" Grid.Column="1" Text="50" Margin="8,0,0,0" TextAlignment="Center"
+                                                 Tag="{Binding ElementName=CaptureBoomerangFrameDelaySlider}" TextChanged="CaptureSliderBox_TextChanged" />
+                                        <TextBlock Grid.Column="2" Text="ms" Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}"
+                                                   FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                    </Grid>
+
+                                    <TextBlock Text="Recording duration" Style="{StaticResource Row}" Margin="0,10,0,4" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="52" />
+                                            <ColumnDefinition Width="30" />
+                                        </Grid.ColumnDefinitions>
+                                        <Slider x:Name="CaptureBoomerangRecordingDurationSlider" Grid.Column="0" Minimum="1" Maximum="10" Value="1"
+                                                Tag="{Binding ElementName=CaptureBoomerangRecordingDurationBox}" ValueChanged="CaptureSlider_ValueChanged" VerticalAlignment="Center" />
+                                        <TextBox x:Name="CaptureBoomerangRecordingDurationBox" Grid.Column="1" Text="1" Margin="8,0,0,0" TextAlignment="Center"
+                                                 Tag="{Binding ElementName=CaptureBoomerangRecordingDurationSlider}" TextChanged="CaptureSliderBox_TextChanged" />
+                                        <TextBlock Grid.Column="2" Text="sec" Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}"
+                                                   FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                    </Grid>
+
+                                    <TextBlock Text="Image Overlays" Style="{StaticResource Row}" Margin="0,14,0,4" />
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button x:Name="BrowseBoomerangImageOverlayButton" Content="Choose (Transparent PNG)" Padding="14,6"
+                                                Click="BrowseBoomerangImageOverlayButton_Click" />
+                                        <Button Content="Clear" Padding="14,6" Margin="8,0,0,0" Click="ClearBoomerangImageOverlayButton_Click" />
+                                    </StackPanel>
+                                    <TextBlock x:Name="SelectedBoomerangImageOverlayText" Text="No overlay selected." Style="{StaticResource Row}"
+                                               Foreground="{StaticResource MutedBrush}" Margin="0,6,0,0" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- ===== Right column: Video/360 ===== -->
+                        <StackPanel Grid.Column="2">
+                            <Border Background="{StaticResource FieldBrush}" BorderBrush="{StaticResource LineBrush}"
+                                    BorderThickness="1" CornerRadius="8" Padding="16">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="Video/360" FontSize="14" FontWeight="Bold"
+                                                   Foreground="{StaticResource InkBrush}" VerticalAlignment="Center" />
+                                        <CheckBox Grid.Column="1" x:Name="CaptureVideoEnabledCheckBox" Content="On" IsChecked="True" VerticalAlignment="Center"
+                                                  Checked="OnOffToggle_Changed" Unchecked="OnOffToggle_Changed" />
+                                    </Grid>
+
+                                    <TextBlock Text="Video Orientation" Style="{StaticResource Row}" Margin="0,12,0,4" />
+                                    <ComboBox x:Name="CaptureVideoOrientationCombo" HorizontalAlignment="Left" Width="200" SelectedIndex="0">
+                                        <ComboBoxItem Content="0 degrees" Tag="0" />
+                                        <ComboBoxItem Content="90 degrees" Tag="90" />
+                                        <ComboBoxItem Content="180 degrees" Tag="180" />
+                                        <ComboBoxItem Content="270 degrees" Tag="270" />
+                                    </ComboBox>
+
+                                    <TextBlock Text="Size" Style="{StaticResource Row}" Margin="0,10,0,4" />
+                                    <ComboBox x:Name="CaptureVideoSizeCombo" HorizontalAlignment="Left" Width="200" SelectedIndex="0">
+                                        <ComboBoxItem Content="1280x720" Tag="1280x720" />
+                                    </ComboBox>
+
+                                    <TextBlock Text="Output Quality" Style="{StaticResource Row}" Margin="0,10,0,4" />
+                                    <Slider x:Name="CaptureVideoQualitySlider" Value="50" />
+                                    <Grid Margin="0,2,0,0">
+                                        <TextBlock Text="Smaller File Size" Style="{StaticResource Row}"
+                                                   Foreground="{StaticResource MutedBrush}" FontSize="11" HorizontalAlignment="Left" />
+                                        <TextBlock Text="Higher Quality" Style="{StaticResource Row}"
+                                                   Foreground="{StaticResource MutedBrush}" FontSize="11" HorizontalAlignment="Right" />
+                                    </Grid>
+
+                                    <TextBlock Text="Type" Style="{StaticResource Row}" Margin="0,10,0,4" />
+                                    <StackPanel Orientation="Horizontal">
+                                        <RadioButton x:Name="CaptureVideoTypeVideoRadio" GroupName="CaptureVideoType" Content="Video"
+                                                     IsChecked="True" Margin="0,0,8,0" />
+                                        <RadioButton x:Name="CaptureVideoType360Radio" GroupName="CaptureVideoType" Content="360/Slow motion" />
+                                    </StackPanel>
+
+                                    <TextBlock Text="Number of Clips" Style="{StaticResource Row}" Margin="0,10,0,4" />
+                                    <ComboBox x:Name="CaptureVideoClipsCombo" HorizontalAlignment="Left" Width="100" SelectedIndex="0">
+                                        <ComboBoxItem Content="1" Tag="1" />
+                                        <ComboBoxItem Content="2" Tag="2" />
+                                        <ComboBoxItem Content="3" Tag="3" />
+                                        <ComboBoxItem Content="4" Tag="4" />
+                                    </ComboBox>
+
+                                    <TextBlock Text="Countdown Before Clip 1" Style="{StaticResource Row}" Margin="0,10,0,4" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="52" />
+                                            <ColumnDefinition Width="30" />
+                                        </Grid.ColumnDefinitions>
+                                        <Slider x:Name="CaptureVideoCountdownClip1Slider" Grid.Column="0" Minimum="0" Maximum="30" Value="5"
+                                                Tag="{Binding ElementName=CaptureVideoCountdownClip1Box}" ValueChanged="CaptureSlider_ValueChanged" VerticalAlignment="Center" />
+                                        <TextBox x:Name="CaptureVideoCountdownClip1Box" Grid.Column="1" Text="5" Margin="8,0,0,0" TextAlignment="Center"
+                                                 Tag="{Binding ElementName=CaptureVideoCountdownClip1Slider}" TextChanged="CaptureSliderBox_TextChanged" />
+                                        <TextBlock Grid.Column="2" Text="sec" Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}"
+                                                   FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                    </Grid>
+
+                                    <TextBlock Text="Countdown Before Other Clips" Style="{StaticResource Row}" Margin="0,10,0,4" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="52" />
+                                            <ColumnDefinition Width="30" />
+                                        </Grid.ColumnDefinitions>
+                                        <Slider x:Name="CaptureVideoCountdownOtherClipsSlider" Grid.Column="0" Minimum="0" Maximum="30" Value="5"
+                                                Tag="{Binding ElementName=CaptureVideoCountdownOtherClipsBox}" ValueChanged="CaptureSlider_ValueChanged" VerticalAlignment="Center" />
+                                        <TextBox x:Name="CaptureVideoCountdownOtherClipsBox" Grid.Column="1" Text="5" Margin="8,0,0,0" TextAlignment="Center"
+                                                 Tag="{Binding ElementName=CaptureVideoCountdownOtherClipsSlider}" TextChanged="CaptureSliderBox_TextChanged" />
+                                        <TextBlock Grid.Column="2" Text="sec" Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}"
+                                                   FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                    </Grid>
+
+                                    <Grid Margin="0,14,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="Record on Motion" Style="{StaticResource Row}" />
+                                            <TextBlock Text="Start recording when the tablet starts rotating sideways." Style="{StaticResource Row}"
+                                                       Foreground="{StaticResource MutedBrush}" FontSize="11" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <CheckBox Grid.Column="1" x:Name="CaptureVideoRecordOnMotionCheckBox" Content="Off" VerticalAlignment="Top"
+                                                  Checked="OnOffToggle_Changed" Unchecked="OnOffToggle_Changed" />
+                                    </Grid>
+                                    <Button Content="Configure sensitivity" Padding="14,6" HorizontalAlignment="Left" Margin="0,8,0,0"
+                                            IsEnabled="False" ToolTip="Not yet available." />
+
+                                    <TextBlock Text="Clip duration" Style="{StaticResource Row}" Margin="0,10,0,4" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="52" />
+                                            <ColumnDefinition Width="30" />
+                                        </Grid.ColumnDefinitions>
+                                        <Slider x:Name="CaptureVideoClipDurationSlider" Grid.Column="0" Minimum="1" Maximum="60" Value="10"
+                                                Tag="{Binding ElementName=CaptureVideoClipDurationBox}" ValueChanged="CaptureSlider_ValueChanged" VerticalAlignment="Center" />
+                                        <TextBox x:Name="CaptureVideoClipDurationBox" Grid.Column="1" Text="10" Margin="8,0,0,0" TextAlignment="Center"
+                                                 Tag="{Binding ElementName=CaptureVideoClipDurationSlider}" TextChanged="CaptureSliderBox_TextChanged" />
+                                        <TextBlock Grid.Column="2" Text="sec" Style="{StaticResource Row}" Foreground="{StaticResource MutedBrush}"
+                                                   FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                    </Grid>
+
+                                    <TextBlock Text="MP3 soundtrack" Style="{StaticResource Row}" Margin="0,14,0,4" />
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button x:Name="BrowseVideoSoundtrackButton" Content="Choose (MP3)" Padding="14,6"
+                                                Click="BrowseVideoSoundtrackButton_Click" />
+                                        <Button Content="Clear" Padding="14,6" Margin="8,0,0,0" Click="ClearVideoSoundtrackButton_Click" />
+                                    </StackPanel>
+                                    <TextBlock x:Name="SelectedVideoSoundtrackText" Text="No soundtrack selected." Style="{StaticResource Row}"
+                                               Foreground="{StaticResource MutedBrush}" Margin="0,6,0,0" />
+
+                                    <TextBlock Text="Video Overlays" Style="{StaticResource Row}" Margin="0,14,0,4" />
+                                    <Button Content="Configure" Padding="14,6" HorizontalAlignment="Left" IsEnabled="False" ToolTip="Not yet available." />
+
+                                    <TextBlock Text="Image Overlays" Style="{StaticResource Row}" Margin="0,14,0,4" />
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button x:Name="BrowseVideoImageOverlayButton" Content="Choose (Transparent PNG)" Padding="14,6"
+                                                Click="BrowseVideoImageOverlayButton_Click" />
+                                        <Button Content="Clear" Padding="14,6" Margin="8,0,0,0" Click="ClearVideoImageOverlayButton_Click" />
+                                    </StackPanel>
+                                    <TextBlock x:Name="SelectedVideoImageOverlayText" Text="No overlay selected." Style="{StaticResource Row}"
+                                               Foreground="{StaticResource MutedBrush}" Margin="0,6,0,0" />
+
+                                    <Grid Margin="0,14,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="12" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="Before recording" Style="{StaticResource Row}" Margin="0,0,0,4" />
+                                            <Button x:Name="BrowseVideoBeforeClipButton" Content="Choose (MP4)" Padding="14,6" HorizontalAlignment="Left"
+                                                    Click="BrowseVideoBeforeClipButton_Click" />
+                                            <TextBlock x:Name="SelectedVideoBeforeClipText" Text="No clip selected." Style="{StaticResource Row}"
+                                                       Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="After recording" Style="{StaticResource Row}" Margin="0,0,0,4" />
+                                            <Button x:Name="BrowseVideoAfterClipButton" Content="Choose (MP4)" Padding="14,6" HorizontalAlignment="Left"
+                                                    Click="BrowseVideoAfterClipButton_Click" />
+                                            <TextBlock x:Name="SelectedVideoAfterClipText" Text="No clip selected." Style="{StaticResource Row}"
+                                                       Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Grid>
+                                    <TextBlock Text="Max 15 secs each." Style="{StaticResource Row}"
+                                               Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,4,0,0" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
                 </StackPanel>
 
                 <!-- ===== Camera Settings, see dslrBooth's own Camera Settings

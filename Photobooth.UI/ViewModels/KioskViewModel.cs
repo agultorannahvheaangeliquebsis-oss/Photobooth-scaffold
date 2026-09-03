@@ -1810,10 +1810,15 @@ public class KioskViewModel : ObservableObject, IDisposable
 
             IsWelcomeIconsGroupVisible = settings.Screen.BoothIconsEnabled;
             IsWelcomeIconLabelsVisible = settings.Screen.BoothIconLabelsEnabled;
-            IsWelcomePhotoIconVisible = settings.Screen.WelcomePhotoIconEnabled;
-            IsWelcomeGifIconVisible = settings.Screen.WelcomeGifIconEnabled;
-            IsWelcomeBoomerangIconVisible = settings.Screen.WelcomeBoomerangIconEnabled;
-            IsWelcomeVideoIconVisible = settings.Screen.WelcomeVideoIconEnabled;
+            // Both flags gate each tile: WelcomeXIconEnabled is the Welcome-
+            // screen layout/visibility choice (ScreenTemplateEditorWindow's
+            // Welcome Icons group), Capture.X.Enabled is Capture Settings'
+            // own per-mode on/off switch -- a mode turned off there has no
+            // Welcome tile to tap regardless of the layout toggle.
+            IsWelcomePhotoIconVisible = settings.Screen.WelcomePhotoIconEnabled && settings.Capture.Photo.Enabled;
+            IsWelcomeGifIconVisible = settings.Screen.WelcomeGifIconEnabled && settings.Capture.Gif.Enabled;
+            IsWelcomeBoomerangIconVisible = settings.Screen.WelcomeBoomerangIconEnabled && settings.Capture.Boomerang.Enabled;
+            IsWelcomeVideoIconVisible = settings.Screen.WelcomeVideoIconEnabled && settings.Capture.Video.Enabled;
             WelcomeIconsOrientation = settings.Screen.WelcomeIconsLayout == IconGroupLayout.ColumnLayout
                 ? Orientation.Vertical : Orientation.Horizontal;
             WelcomeIconsPositionXPercent = settings.Screen.WelcomeIconsPositionXPercent;

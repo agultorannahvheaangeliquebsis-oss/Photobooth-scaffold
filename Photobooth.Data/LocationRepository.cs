@@ -72,7 +72,16 @@ public class LocationRepository
                    SharingIconsGroupEnabled, SharingIconsPositionXPercent, SharingIconsPositionYPercent,
                    SharingIconsLayout, SharingIconsAlignment,
                    PoseStripBackgroundOpacityPercent, PoseStripActiveBorderColorHex, PoseStripShowPlaceholderNumbers,
-                   PaymentTiming, CameraDeviceName, SaveMirroredPhotos
+                   PaymentTiming, CameraDeviceName, SaveMirroredPhotos,
+                   PhotoEnabled, PhotoBeforePhoto1Seconds, PhotoBeforeOtherPhotosSeconds, PhotoReviewSeconds,
+                   GifEnabled, GifSize, GifBeforePhoto1Seconds, GifBeforeOtherPhotosSeconds, GifPhotoReviewSeconds,
+                   GifReverseGif, GifImageOverlayPath,
+                   BoomerangEnabled, BoomerangSize, BoomerangCountdownSeconds, BoomerangFrameDelayMs,
+                   BoomerangRecordingDurationSeconds, BoomerangImageOverlayPath,
+                   VideoEnabled, VideoOrientationDegrees, VideoSize, VideoOutputQualityPercent, VideoType,
+                   VideoNumberOfClips, VideoCountdownBeforeClip1Seconds, VideoCountdownBeforeOtherClipsSeconds,
+                   VideoRecordOnMotionEnabled, VideoSoundtrackMp3Path, VideoImageOverlayPath,
+                   VideoBeforeRecordingClipPath, VideoAfterRecordingClipPath
             FROM Location ORDER BY LocationId;
             """,
             connection);
@@ -100,7 +109,31 @@ public class LocationRepository
                     reader.IsDBNull(13) ? null : reader.GetString(13),
                     reader.GetString(14)),
                 reader.GetString(15),
-                new CaptureSettings(reader.GetString(16), reader.GetBoolean(17), reader.GetInt32(18), reader.GetInt32(19), reader.GetInt32(20)),
+                new CaptureSettings(reader.GetString(16))
+                {
+                    Photo = new PhotoCaptureSettings(
+                        reader.GetBoolean(133), reader.GetInt32(134), reader.GetInt32(135), reader.GetInt32(136), reader.GetBoolean(17)),
+                    Gif = new GifCaptureSettings(
+                        reader.GetBoolean(137), reader.GetString(138), reader.GetInt32(139), reader.GetInt32(140), reader.GetInt32(141),
+                        reader.GetInt32(19), reader.GetBoolean(142), reader.GetInt32(18))
+                    {
+                        ImageOverlayPath = reader.IsDBNull(143) ? null : reader.GetString(143),
+                    },
+                    Boomerang = new BoomerangCaptureSettings(
+                        reader.GetBoolean(144), reader.GetString(145), reader.GetInt32(146), reader.GetInt32(147), reader.GetInt32(148))
+                    {
+                        ImageOverlayPath = reader.IsDBNull(149) ? null : reader.GetString(149),
+                    },
+                    Video = new VideoCaptureSettings(
+                        reader.GetBoolean(150), reader.GetInt32(151), reader.GetString(152), reader.GetInt32(153), reader.GetString(154),
+                        reader.GetInt32(155), reader.GetInt32(156), reader.GetInt32(157), reader.GetBoolean(158), reader.GetInt32(20))
+                    {
+                        SoundtrackMp3Path = reader.IsDBNull(159) ? null : reader.GetString(159),
+                        ImageOverlayPath = reader.IsDBNull(160) ? null : reader.GetString(160),
+                        BeforeRecordingClipPath = reader.IsDBNull(161) ? null : reader.GetString(161),
+                        AfterRecordingClipPath = reader.IsDBNull(162) ? null : reader.GetString(162),
+                    },
+                },
                 new ScreenSettings(
                     reader.GetBoolean(21), reader.GetBoolean(22), reader.GetBoolean(23), reader.GetInt32(24),
                     reader.GetBoolean(25), reader.GetInt32(26), reader.IsDBNull(27) ? null : reader.GetString(27),
@@ -475,6 +508,22 @@ public class LocationRepository
             UPDATE Location SET
                 CaptureMode = @CaptureMode, AlsoCreateGif = @AlsoCreateGif, GifFrameCount = @GifFrameCount,
                 GifFrameDelayMs = @GifFrameDelayMs, VideoDurationSeconds = @VideoDurationSeconds,
+                PhotoEnabled = @PhotoEnabled, PhotoBeforePhoto1Seconds = @PhotoBeforePhoto1Seconds,
+                PhotoBeforeOtherPhotosSeconds = @PhotoBeforeOtherPhotosSeconds, PhotoReviewSeconds = @PhotoReviewSeconds,
+                GifEnabled = @GifEnabled, GifSize = @GifSize, GifBeforePhoto1Seconds = @GifBeforePhoto1Seconds,
+                GifBeforeOtherPhotosSeconds = @GifBeforeOtherPhotosSeconds, GifPhotoReviewSeconds = @GifPhotoReviewSeconds,
+                GifReverseGif = @GifReverseGif, GifImageOverlayPath = @GifImageOverlayPath,
+                BoomerangEnabled = @BoomerangEnabled, BoomerangSize = @BoomerangSize,
+                BoomerangCountdownSeconds = @BoomerangCountdownSeconds, BoomerangFrameDelayMs = @BoomerangFrameDelayMs,
+                BoomerangRecordingDurationSeconds = @BoomerangRecordingDurationSeconds,
+                BoomerangImageOverlayPath = @BoomerangImageOverlayPath,
+                VideoEnabled = @VideoEnabled, VideoOrientationDegrees = @VideoOrientationDegrees, VideoSize = @VideoSize,
+                VideoOutputQualityPercent = @VideoOutputQualityPercent, VideoType = @VideoType,
+                VideoNumberOfClips = @VideoNumberOfClips, VideoCountdownBeforeClip1Seconds = @VideoCountdownBeforeClip1Seconds,
+                VideoCountdownBeforeOtherClipsSeconds = @VideoCountdownBeforeOtherClipsSeconds,
+                VideoRecordOnMotionEnabled = @VideoRecordOnMotionEnabled, VideoSoundtrackMp3Path = @VideoSoundtrackMp3Path,
+                VideoImageOverlayPath = @VideoImageOverlayPath,
+                VideoBeforeRecordingClipPath = @VideoBeforeRecordingClipPath, VideoAfterRecordingClipPath = @VideoAfterRecordingClipPath,
                 BoothIconsEnabled = @BoothIconsEnabled, ShowLiveView = @ShowLiveView,
                 MirrorLiveView = @MirrorLiveView, SaveMirroredPhotos = @SaveMirroredPhotos, LiveViewRotation = @LiveViewRotation,
                 EnableWebcams = @EnableWebcams, WebcamResolutionQuality = @WebcamResolutionQuality,
@@ -531,10 +580,40 @@ public class LocationRepository
             """,
             connection);
         command.Parameters.AddWithValue("@CaptureMode", capture.Mode);
-        command.Parameters.AddWithValue("@AlsoCreateGif", capture.AlsoCreateGif);
-        command.Parameters.AddWithValue("@GifFrameCount", capture.FrameCount);
-        command.Parameters.AddWithValue("@GifFrameDelayMs", capture.FrameDelayMs);
-        command.Parameters.AddWithValue("@VideoDurationSeconds", capture.VideoDurationSeconds);
+        command.Parameters.AddWithValue("@AlsoCreateGif", capture.Photo.AlsoCreateGif);
+        command.Parameters.AddWithValue("@GifFrameCount", capture.Gif.FrameCount);
+        command.Parameters.AddWithValue("@GifFrameDelayMs", capture.Gif.FrameDelayMs);
+        command.Parameters.AddWithValue("@VideoDurationSeconds", capture.Video.ClipDurationSeconds);
+        command.Parameters.AddWithValue("@PhotoEnabled", capture.Photo.Enabled);
+        command.Parameters.AddWithValue("@PhotoBeforePhoto1Seconds", capture.Photo.BeforePhoto1Seconds);
+        command.Parameters.AddWithValue("@PhotoBeforeOtherPhotosSeconds", capture.Photo.BeforeOtherPhotosSeconds);
+        command.Parameters.AddWithValue("@PhotoReviewSeconds", capture.Photo.PhotoReviewSeconds);
+        command.Parameters.AddWithValue("@GifEnabled", capture.Gif.Enabled);
+        command.Parameters.AddWithValue("@GifSize", capture.Gif.Size);
+        command.Parameters.AddWithValue("@GifBeforePhoto1Seconds", capture.Gif.BeforePhoto1Seconds);
+        command.Parameters.AddWithValue("@GifBeforeOtherPhotosSeconds", capture.Gif.BeforeOtherPhotosSeconds);
+        command.Parameters.AddWithValue("@GifPhotoReviewSeconds", capture.Gif.PhotoReviewSeconds);
+        command.Parameters.AddWithValue("@GifReverseGif", capture.Gif.ReverseGif);
+        command.Parameters.AddWithValue("@GifImageOverlayPath", (object?)capture.Gif.ImageOverlayPath ?? DBNull.Value);
+        command.Parameters.AddWithValue("@BoomerangEnabled", capture.Boomerang.Enabled);
+        command.Parameters.AddWithValue("@BoomerangSize", capture.Boomerang.Size);
+        command.Parameters.AddWithValue("@BoomerangCountdownSeconds", capture.Boomerang.CountdownSeconds);
+        command.Parameters.AddWithValue("@BoomerangFrameDelayMs", capture.Boomerang.FrameDelayMs);
+        command.Parameters.AddWithValue("@BoomerangRecordingDurationSeconds", capture.Boomerang.RecordingDurationSeconds);
+        command.Parameters.AddWithValue("@BoomerangImageOverlayPath", (object?)capture.Boomerang.ImageOverlayPath ?? DBNull.Value);
+        command.Parameters.AddWithValue("@VideoEnabled", capture.Video.Enabled);
+        command.Parameters.AddWithValue("@VideoOrientationDegrees", capture.Video.OrientationDegrees);
+        command.Parameters.AddWithValue("@VideoSize", capture.Video.Size);
+        command.Parameters.AddWithValue("@VideoOutputQualityPercent", capture.Video.OutputQualityPercent);
+        command.Parameters.AddWithValue("@VideoType", capture.Video.Type);
+        command.Parameters.AddWithValue("@VideoNumberOfClips", capture.Video.NumberOfClips);
+        command.Parameters.AddWithValue("@VideoCountdownBeforeClip1Seconds", capture.Video.CountdownBeforeClip1Seconds);
+        command.Parameters.AddWithValue("@VideoCountdownBeforeOtherClipsSeconds", capture.Video.CountdownBeforeOtherClipsSeconds);
+        command.Parameters.AddWithValue("@VideoRecordOnMotionEnabled", capture.Video.RecordOnMotionEnabled);
+        command.Parameters.AddWithValue("@VideoSoundtrackMp3Path", (object?)capture.Video.SoundtrackMp3Path ?? DBNull.Value);
+        command.Parameters.AddWithValue("@VideoImageOverlayPath", (object?)capture.Video.ImageOverlayPath ?? DBNull.Value);
+        command.Parameters.AddWithValue("@VideoBeforeRecordingClipPath", (object?)capture.Video.BeforeRecordingClipPath ?? DBNull.Value);
+        command.Parameters.AddWithValue("@VideoAfterRecordingClipPath", (object?)capture.Video.AfterRecordingClipPath ?? DBNull.Value);
         command.Parameters.AddWithValue("@BoothIconsEnabled", screen.BoothIconsEnabled);
         command.Parameters.AddWithValue("@ShowLiveView", screen.ShowLiveView);
         command.Parameters.AddWithValue("@MirrorLiveView", screen.MirrorLiveView);

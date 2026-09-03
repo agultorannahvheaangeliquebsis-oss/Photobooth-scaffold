@@ -1201,7 +1201,13 @@ public class BoothStateMachineTests
         var filter = new MockPhotoFilterService();
         var gifComposer = new MockGifComposerService();
         var settings = new MockBoothSettingsProvider();
-        settings.Settings = settings.Settings with { Capture = new CaptureSettings(Mode: "GIF", FrameCount: 3, FrameDelayMs: 10) };
+        settings.Settings = settings.Settings with
+        {
+            Capture = new CaptureSettings(Mode: "GIF")
+            {
+                Gif = new GifCaptureSettings(FrameCount: 3, FrameDelayMs: 1000, BeforePhoto1Seconds: 0, BeforeOtherPhotosSeconds: 0),
+            },
+        };
         var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), gifComposer, new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
         var machine = new BoothStateMachine(services, mode: "event");
 
@@ -1214,10 +1220,10 @@ public class BoothStateMachineTests
 
         Assert.Equal(3, gifComposer.LastFrameCount);
         Assert.False(gifComposer.LastReversed);
-        // Playback speed is independent of the capture-time FrameDelayMs (10ms above) --
-        // GIF mode's sequence is forward-only, so 3000ms / 3 frames = 1000ms/frame, a fixed
-        // ~3s total loop matching a standard Boomerang-style clip length regardless of how
-        // fast the burst itself ran.
+        // GifCaptureSettings.FrameDelayMs is the composed GIF's own playback
+        // speed, passed straight through to ComposeAsync -- each frame's
+        // capture is paced by its own BeforePhoto1/BeforeOtherPhotosSeconds
+        // countdown instead (zeroed above to keep this test fast).
         Assert.Equal(1000, gifComposer.LastFrameDelayMs);
         Assert.NotNull(machine.LastCapturedImagePath);
         Assert.Contains("_gif", machine.LastCapturedImagePath);
@@ -1251,7 +1257,15 @@ public class BoothStateMachineTests
         var filter = new MockPhotoFilterService();
         var gifComposer = new MockGifComposerService();
         var settings = new MockBoothSettingsProvider();
-        settings.Settings = settings.Settings with { Capture = new CaptureSettings(Mode: "Boomerang", FrameCount: 4, FrameDelayMs: 10) };
+        // RecordingDurationSeconds*1000/FrameDelayMs = 1000/250 = 4 derived frames
+        // (see BoothStateMachine.RunCaptureBranchAsync's Boomerang branch).
+        settings.Settings = settings.Settings with
+        {
+            Capture = new CaptureSettings(Mode: "Boomerang")
+            {
+                Boomerang = new BoomerangCaptureSettings(CountdownSeconds: 0, FrameDelayMs: 250, RecordingDurationSeconds: 1),
+            },
+        };
         var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), gifComposer, new MockBoothVideoService(), new MockVirtualAttendantService(), new MockSurveyService());
         var machine = new BoothStateMachine(services, mode: "event");
 
@@ -1259,10 +1273,10 @@ public class BoothStateMachineTests
 
         Assert.Equal(4, gifComposer.LastFrameCount);
         Assert.True(gifComposer.LastReversed);
-        // Boomerang's sequence is forward + reversed-minus-both-ends: 2*4-2 = 6 frames, so
-        // 3000ms / 6 = 500ms/frame -- same fixed ~3s total loop target as GIF mode, despite
-        // this test's much faster 10ms capture-time FrameDelayMs.
-        Assert.Equal(500, gifComposer.LastFrameDelayMs);
+        // Boomerang plays back at the same rate it shot -- FrameDelayMs passes
+        // straight through to ComposeAsync as both the capture pacing and the
+        // composed clip's own playback speed.
+        Assert.Equal(250, gifComposer.LastFrameDelayMs);
         Assert.NotNull(machine.LastCapturedImagePath);
         Assert.Contains("_boomerang", machine.LastCapturedImagePath);
     }
@@ -1282,7 +1296,13 @@ public class BoothStateMachineTests
         var filter = new MockPhotoFilterService();
         var boothVideo = new MockBoothVideoService();
         var settings = new MockBoothSettingsProvider();
-        settings.Settings = settings.Settings with { Capture = new CaptureSettings(Mode: "Video", VideoDurationSeconds: 1) };
+        settings.Settings = settings.Settings with
+        {
+            Capture = new CaptureSettings(Mode: "Video")
+            {
+                Video = new VideoCaptureSettings(ClipDurationSeconds: 1, CountdownBeforeClip1Seconds: 0),
+            },
+        };
         var services = new BoothServices(camera, printer, cloudUpload, sessions, paymentService, uploadQueue, consent, email, branding, filter, settings, new MockFrameLibraryService(), new MockFrameSelectionService(), new MockFrameOverlayService(), new MockFeedbackService(), new MockGuestbookPromptService(), new MockVideoGuestbookService(), new MockGifComposerService(), boothVideo, new MockVirtualAttendantService(), new MockSurveyService());
         var machine = new BoothStateMachine(services, mode: "event");
 
