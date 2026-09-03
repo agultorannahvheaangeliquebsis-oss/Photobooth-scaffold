@@ -579,6 +579,7 @@ public partial class PrintTemplateEditorWindow : UserControl
                     FontSizeSlider.Value = element.FontSizePercent;
                     BoldCheckBox.IsChecked = element.Bold;
                     ElementColorBox.Text = element.ColorHex;
+                    ElementColorSwatch.Background = HexToBrush(element.ColorHex);
                     break;
 
                 case PrintTemplateElementKind.Logo:
@@ -590,6 +591,7 @@ public partial class PrintTemplateEditorWindow : UserControl
                 case PrintTemplateElementKind.Shape:
                     ShapePropertiesPanel.Visibility = Visibility.Visible;
                     ShapeColorBox.Text = element.ColorHex;
+                    ShapeColorSwatch.Background = HexToBrush(element.ColorHex);
                     break;
 
                 case PrintTemplateElementKind.QrCode:
@@ -686,6 +688,7 @@ public partial class PrintTemplateEditorWindow : UserControl
         }
 
         _elements[_selectedIndex] = _elements[_selectedIndex] with { ColorHex = ElementColorBox.Text };
+        ElementColorSwatch.Background = HexToBrush(ElementColorBox.Text);
         RefreshVisualContent(_selectedIndex);
         RefreshPreview();
     }
@@ -698,8 +701,27 @@ public partial class PrintTemplateEditorWindow : UserControl
         }
 
         _elements[_selectedIndex] = _elements[_selectedIndex] with { ColorHex = ShapeColorBox.Text };
+        ShapeColorSwatch.Background = HexToBrush(ShapeColorBox.Text);
         RefreshVisualContent(_selectedIndex);
         RefreshPreview();
+    }
+
+    private void ElementColorSwatch_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        string? hex = ColorPickerHelper.PickColorHex(Window.GetWindow(this), ElementColorBox.Text);
+        if (hex != null)
+        {
+            ElementColorBox.Text = hex;
+        }
+    }
+
+    private void ShapeColorSwatch_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        string? hex = ColorPickerHelper.PickColorHex(Window.GetWindow(this), ShapeColorBox.Text);
+        if (hex != null)
+        {
+            ShapeColorBox.Text = hex;
+        }
     }
 
     private void SessionDataFieldCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)

@@ -669,7 +669,16 @@
                         <Slider x:Name="FontSizeSlider" Minimum="0.02" Maximum="0.15" ValueChanged="FontSizeSlider_ValueChanged" />
                         <CheckBox x:Name="BoldCheckBox" Content="B" FontWeight="Bold" HorizontalAlignment="Left" Margin="0,8,0,0" ToolTip="Bold" Click="BoldCheckBox_Click" />
                         <TextBlock Text="Color (hex)" Style="{StaticResource EditorLabel}" />
-                        <TextBox x:Name="ElementColorBox" TextChanged="ElementColorBox_TextChanged" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="ElementColorSwatch" Grid.Column="0" Width="30" Height="30" CornerRadius="7"
+                                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Margin="0,0,8,0"
+                                    Cursor="Hand" ToolTip="Pick a color" MouseLeftButtonDown="ElementColorSwatch_MouseLeftButtonDown" />
+                            <TextBox x:Name="ElementColorBox" Grid.Column="1" TextChanged="ElementColorBox_TextChanged" />
+                        </Grid>
                     </StackPanel>
 
                     <StackPanel x:Name="LogoPropertiesPanel" Visibility="Collapsed">
@@ -679,7 +688,16 @@
 
                     <StackPanel x:Name="ShapePropertiesPanel" Visibility="Collapsed">
                         <TextBlock Text="Fill color (hex)" Style="{StaticResource EditorSectionHeader}" />
-                        <TextBox x:Name="ShapeColorBox" TextChanged="ShapeColorBox_TextChanged" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="ShapeColorSwatch" Grid.Column="0" Width="30" Height="30" CornerRadius="7"
+                                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Margin="0,0,8,0"
+                                    Cursor="Hand" ToolTip="Pick a color" MouseLeftButtonDown="ShapeColorSwatch_MouseLeftButtonDown" />
+                            <TextBox x:Name="ShapeColorBox" Grid.Column="1" TextChanged="ShapeColorBox_TextChanged" />
+                        </Grid>
                     </StackPanel>
 
                     <StackPanel x:Name="QrCodePropertiesPanel" Visibility="Collapsed">

@@ -206,25 +206,35 @@
         <Setter Property="Padding" Value="20,10" />
     </Style>
 
-    <!-- Idle-screen capture-mode tile (Photo / GIF / Boomerang / Video).
+    <!-- Idle-screen capture-mode tile (Photo / GIF / Boomerang / Video) -
+         a circular icon badge; the label (when enabled) renders as a
+         separate sibling TextBlock below it rather than inside, since a
+         circle this size can't fit both an icon and multi-word text. See
+         KioskWindow.xaml/ScreenTemplateEditorWindow.xaml for the wrapping
+         StackPanel that pairs each badge with its label.
          Selection is expressed through Tag ("selected") rather than a
          ToggleButton, so the ViewModel can drive all four from one enum
          property via EnumToBooleanConverter instead of four separate bools. -->
     <Style x:Key="KioskModeTile" TargetType="Button">
         <Setter Property="FontFamily" Value="{StaticResource KioskFont}" />
-        <Setter Property="Width" Value="210" />
-        <Setter Property="Height" Value="170" />
+        <Setter Property="Width" Value="160" />
+        <Setter Property="Height" Value="160" />
         <Setter Property="Margin" Value="10" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Foreground" Value="{StaticResource KioskInkBrush}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
+                    <!-- CornerRadius deliberately exceeds any real half-width/
+                         height this tile is used at (WPF caps rendered corner
+                         radius to half the shorter side), so as long as an
+                         instance sets equal Width/Height it renders as a true
+                         circle regardless of that size. -->
                     <Border x:Name="Bd"
                             Background="{StaticResource KioskSurfaceBrush}"
                             BorderBrush="{StaticResource KioskLineBrush}"
                             BorderThickness="2"
-                            CornerRadius="12"
+                            CornerRadius="999"
                             RenderTransformOrigin="0.5,0.5">
                         <Border.RenderTransform>
                             <ScaleTransform x:Name="Scale" ScaleX="1" ScaleY="1" />

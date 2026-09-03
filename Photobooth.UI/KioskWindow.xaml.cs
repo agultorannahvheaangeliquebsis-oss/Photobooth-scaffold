@@ -234,6 +234,14 @@ public partial class KioskWindow : Window
         }
     }
 
+    /// <summary>LoadedBehavior=Manual doesn't autoplay, so each time a new
+    /// Source resolves (WelcomeBackgroundVideo binding change or first load)
+    /// this kicks off playback from the start.</summary>
+    private void WelcomeBackgroundMediaElement_MediaOpened(object sender, RoutedEventArgs e)
+    {
+        WelcomeBackgroundMediaElement.Play();
+    }
+
     /// <summary>WelcomeBackgroundMediaElement has no built-in repeat, so each
     /// MediaEnded just rewinds and replays it -- same "muted attract loop"
     /// role AttendantMediaElement plays for cues, but this one never stops

@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using Photobooth.Core;
 using Photobooth.Data;
@@ -436,6 +437,35 @@ public partial class AdminWindow : Window
         {
             // Invalid/partial hex while typing -- leave the swatch showing
             // whatever it last successfully parsed rather than crashing.
+        }
+    }
+
+    /// <summary>Opens the native color picker for whichever theme swatch was
+    /// clicked; a confirmed color is written into its paired TextBox, which
+    /// then runs through ThemeColorBox_TextChanged as usual.</summary>
+    private void ThemeColorSwatch_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not Border swatch)
+        {
+            return;
+        }
+
+        TextBox? box = swatch.Name switch
+        {
+            nameof(AccentColorSwatch) => AccentColorBox,
+            nameof(CanvasColorSwatch) => CanvasColorBox,
+            nameof(InkColorSwatch) => InkColorBox,
+            _ => null,
+        };
+        if (box is null)
+        {
+            return;
+        }
+
+        string? hex = ColorPickerHelper.PickColorHex(this, box.Text);
+        if (hex != null)
+        {
+            box.Text = hex;
         }
     }
 

@@ -690,30 +690,30 @@
                                 MouseLeftButtonUp="IconGroup_MouseLeftButtonUp"
                                 Tag="Welcome">
                             <StackPanel x:Name="WelcomeIconsStackPanel" Orientation="Horizontal" IsHitTestVisible="False">
-                                <Button x:Name="WelcomeIconPhotoTile" Style="{StaticResource KioskModeTile}" Width="66" Height="54" Margin="3" IsHitTestVisible="False">
-                                    <StackPanel>
-                                        <TextBlock Text="&#xE722;" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
-                                        <TextBlock x:Name="WelcomeIconPhotoLabel" Text="PHOTO" FontFamily="{StaticResource KioskFont}" FontSize="8" FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,4,0,0" />
-                                    </StackPanel>
-                                </Button>
-                                <Button x:Name="WelcomeIconGifTile" Style="{StaticResource KioskModeTile}" Width="66" Height="54" Margin="3" IsHitTestVisible="False">
-                                    <StackPanel>
-                                        <TextBlock Text="&#xE786;" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
-                                        <TextBlock x:Name="WelcomeIconGifLabel" Text="GIF" FontFamily="{StaticResource KioskFont}" FontSize="8" FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,4,0,0" />
-                                    </StackPanel>
-                                </Button>
-                                <Button x:Name="WelcomeIconBoomerangTile" Style="{StaticResource KioskModeTile}" Width="66" Height="54" Margin="3" IsHitTestVisible="False">
-                                    <StackPanel>
-                                        <TextBlock Text="&#xE8EE;" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
-                                        <TextBlock x:Name="WelcomeIconBoomerangLabel" Text="BOOMERANG" FontFamily="{StaticResource KioskFont}" FontSize="6.5" FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,4,0,0" />
-                                    </StackPanel>
-                                </Button>
-                                <Button x:Name="WelcomeIconVideoTile" Style="{StaticResource KioskModeTile}" Width="66" Height="54" Margin="3" IsHitTestVisible="False">
-                                    <StackPanel>
-                                        <TextBlock Text="&#xE714;" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
-                                        <TextBlock x:Name="WelcomeIconVideoLabel" Text="VIDEO" FontFamily="{StaticResource KioskFont}" FontSize="8" FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,4,0,0" />
-                                    </StackPanel>
-                                </Button>
+                                <StackPanel x:Name="WelcomeIconPhotoTile" Margin="3" IsHitTestVisible="False">
+                                    <Button Style="{StaticResource KioskModeTile}" Width="50" Height="50" Margin="0" IsHitTestVisible="False">
+                                        <TextBlock Text="&#xE722;" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Button>
+                                    <TextBlock x:Name="WelcomeIconPhotoLabel" Text="PHOTO" FontFamily="{StaticResource KioskFont}" FontSize="8" FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,4,0,0" />
+                                </StackPanel>
+                                <StackPanel x:Name="WelcomeIconGifTile" Margin="3" IsHitTestVisible="False">
+                                    <Button Style="{StaticResource KioskModeTile}" Width="50" Height="50" Margin="0" IsHitTestVisible="False">
+                                        <TextBlock Text="&#xE786;" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Button>
+                                    <TextBlock x:Name="WelcomeIconGifLabel" Text="GIF" FontFamily="{StaticResource KioskFont}" FontSize="8" FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,4,0,0" />
+                                </StackPanel>
+                                <StackPanel x:Name="WelcomeIconBoomerangTile" Margin="3" IsHitTestVisible="False">
+                                    <Button Style="{StaticResource KioskModeTile}" Width="50" Height="50" Margin="0" IsHitTestVisible="False">
+                                        <TextBlock Text="&#xE8EE;" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Button>
+                                    <TextBlock x:Name="WelcomeIconBoomerangLabel" Text="BOOMERANG" FontFamily="{StaticResource KioskFont}" FontSize="6.5" FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,4,0,0" />
+                                </StackPanel>
+                                <StackPanel x:Name="WelcomeIconVideoTile" Margin="3" IsHitTestVisible="False">
+                                    <Button Style="{StaticResource KioskModeTile}" Width="50" Height="50" Margin="0" IsHitTestVisible="False">
+                                        <TextBlock Text="&#xE714;" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Button>
+                                    <TextBlock x:Name="WelcomeIconVideoLabel" Text="VIDEO" FontFamily="{StaticResource KioskFont}" FontSize="8" FontWeight="SemiBold" Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,4,0,0" />
+                                </StackPanel>
                             </StackPanel>
                         </Border>
                     </Canvas>
@@ -763,23 +763,26 @@
                          Strip Settings section (see LoadPoseStripGroup), edge-docked
                          same as the real KioskWindow strip (not free-drag like the
                          Cancel button/icon groups above). Slot 2 shown "active" to
-                         demo the border highlight against the sample countdown "2". -->
+                         demo the border highlight against the sample countdown "2".
+                         No container background: PoseStripBackgroundOpacityPercent
+                         tints each slot itself (set in LoadPoseStripGroup), same as
+                         KioskWindow's own strip. -->
                     <Border x:Name="CaptureChromePoseStrip" CornerRadius="8" Margin="14" Padding="6" IsHitTestVisible="False">
                         <UniformGrid x:Name="CaptureChromePoseStripItems" Rows="1" Columns="4">
-                            <Border x:Name="CaptureChromePoseSlot1" Width="26" Height="26" Margin="3" CornerRadius="4" Background="#33FFFFFF">
-                                <TextBlock x:Name="CaptureChromePoseNumber1" Text="1" FontFamily="{StaticResource KioskFont}" FontSize="11" FontWeight="SemiBold"
+                            <Border x:Name="CaptureChromePoseSlot1" Width="64" Height="40" Margin="5" CornerRadius="6">
+                                <TextBlock x:Name="CaptureChromePoseNumber1" Text="1" FontFamily="{StaticResource KioskFont}" FontSize="18" FontWeight="SemiBold"
                                            Foreground="{StaticResource KioskMutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Border>
-                            <Border x:Name="CaptureChromePoseSlot2" Width="26" Height="26" Margin="3" CornerRadius="4" Background="#33FFFFFF">
-                                <TextBlock x:Name="CaptureChromePoseNumber2" Text="2" FontFamily="{StaticResource KioskFont}" FontSize="11" FontWeight="SemiBold"
+                            <Border x:Name="CaptureChromePoseSlot2" Width="64" Height="40" Margin="5" CornerRadius="6">
+                                <TextBlock x:Name="CaptureChromePoseNumber2" Text="2" FontFamily="{StaticResource KioskFont}" FontSize="18" FontWeight="SemiBold"
                                            Foreground="{StaticResource KioskMutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Border>
-                            <Border x:Name="CaptureChromePoseSlot3" Width="26" Height="26" Margin="3" CornerRadius="4" Background="#33FFFFFF">
-                                <TextBlock x:Name="CaptureChromePoseNumber3" Text="3" FontFamily="{StaticResource KioskFont}" FontSize="11" FontWeight="SemiBold"
+                            <Border x:Name="CaptureChromePoseSlot3" Width="64" Height="40" Margin="5" CornerRadius="6">
+                                <TextBlock x:Name="CaptureChromePoseNumber3" Text="3" FontFamily="{StaticResource KioskFont}" FontSize="18" FontWeight="SemiBold"
                                            Foreground="{StaticResource KioskMutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Border>
-                            <Border x:Name="CaptureChromePoseSlot4" Width="26" Height="26" Margin="3" CornerRadius="4" Background="#33FFFFFF">
-                                <TextBlock x:Name="CaptureChromePoseNumber4" Text="4" FontFamily="{StaticResource KioskFont}" FontSize="11" FontWeight="SemiBold"
+                            <Border x:Name="CaptureChromePoseSlot4" Width="64" Height="40" Margin="5" CornerRadius="6">
+                                <TextBlock x:Name="CaptureChromePoseNumber4" Text="4" FontFamily="{StaticResource KioskFont}" FontSize="18" FontWeight="SemiBold"
                                            Foreground="{StaticResource KioskMutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Border>
                         </UniformGrid>
@@ -971,7 +974,8 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <Border x:Name="TextColorSwatch" Grid.Column="0" Width="30" Height="30" CornerRadius="7"
-                                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Margin="0,0,8,0" />
+                                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Margin="0,0,8,0"
+                                    Cursor="Hand" ToolTip="Pick a color" MouseLeftButtonDown="TextColorSwatch_MouseLeftButtonDown" />
                             <TextBox x:Name="ElementColorBox" Grid.Column="1" TextChanged="ElementColorBox_TextChanged" />
                         </Grid>
                     </StackPanel>
@@ -993,7 +997,8 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <Border x:Name="ShapeColorSwatch" Grid.Column="0" Width="30" Height="30" CornerRadius="7"
-                                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Margin="0,0,8,0" />
+                                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Margin="0,0,8,0"
+                                    Cursor="Hand" ToolTip="Pick a color" MouseLeftButtonDown="ShapeColorSwatch_MouseLeftButtonDown" />
                             <TextBox x:Name="ShapeColorBox" Grid.Column="1" TextChanged="ElementColorBox_TextChanged" />
                         </Grid>
                     </StackPanel>
@@ -1029,7 +1034,8 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <Border x:Name="WelcomeBackgroundColorSwatch" Grid.Column="0" Width="30" Height="30" CornerRadius="7"
-                                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Margin="0,0,8,0" />
+                                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Margin="0,0,8,0"
+                                    Cursor="Hand" ToolTip="Pick a color" MouseLeftButtonDown="WelcomeBackgroundColorSwatch_MouseLeftButtonDown" />
                             <TextBox x:Name="WelcomeBackgroundColorBox" Grid.Column="1" TextChanged="WelcomeBackgroundColorBox_TextChanged" />
                         </Grid>
                         <Grid Margin="0,0,0,10">
@@ -1164,7 +1170,8 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <Border x:Name="CaptureBackgroundColorSwatch" Grid.Column="0" Width="30" Height="30" CornerRadius="7"
-                                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Margin="0,0,8,0" />
+                                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Margin="0,0,8,0"
+                                    Cursor="Hand" ToolTip="Pick a color" MouseLeftButtonDown="CaptureBackgroundColorSwatch_MouseLeftButtonDown" />
                             <TextBox x:Name="CaptureBackgroundColorBox" Grid.Column="1" TextChanged="CaptureBackgroundColorBox_TextChanged" />
                         </Grid>
                         <Grid Margin="0,0,0,10">
@@ -1210,7 +1217,8 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <Border x:Name="CountdownColorSwatch" Grid.Column="0" Width="30" Height="30" CornerRadius="7"
-                                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Margin="0,0,8,0" />
+                                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Margin="0,0,8,0"
+                                    Cursor="Hand" ToolTip="Pick a color" MouseLeftButtonDown="CountdownColorSwatch_MouseLeftButtonDown" />
                             <TextBox x:Name="CountdownColorBox" Grid.Column="1" TextChanged="CountdownColorBox_TextChanged" />
                         </Grid>
 
@@ -1279,7 +1287,8 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <Border x:Name="PoseStripActiveBorderColorSwatch" Grid.Column="0" Width="30" Height="30" CornerRadius="7"
-                                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Margin="0,0,8,0" />
+                                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Margin="0,0,8,0"
+                                    Cursor="Hand" ToolTip="Pick a color" MouseLeftButtonDown="PoseStripActiveBorderColorSwatch_MouseLeftButtonDown" />
                             <TextBox x:Name="PoseStripActiveBorderColorBox" Grid.Column="1" TextChanged="PoseStripActiveBorderColorBox_TextChanged" />
                         </Grid>
                         <TextBlock Text="Highlights whichever slot is the pose currently being captured." Style="{StaticResource EditorLabel}"
@@ -1311,7 +1320,8 @@
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <Border x:Name="SharingBackgroundColorSwatch" Grid.Column="0" Width="30" Height="30" CornerRadius="7"
-                                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Margin="0,0,8,0" />
+                                    BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Margin="0,0,8,0"
+                                    Cursor="Hand" ToolTip="Pick a color" MouseLeftButtonDown="SharingBackgroundColorSwatch_MouseLeftButtonDown" />
                             <TextBox x:Name="SharingBackgroundColorBox" Grid.Column="1" TextChanged="SharingBackgroundColorBox_TextChanged" />
                         </Grid>
                         <Grid Margin="0,0,0,10">

@@ -69,13 +69,15 @@
 
             <!-- ScreenSettings.StartScreenVideoPath: an optional muted,
                  looping video layered on top of WelcomeBackgroundImage/Brush.
-                 LoadedBehavior=Play autoplays as soon as the Source binding
-                 resolves; looping itself has no XAML equivalent, so
-                 KioskWindow's WelcomeBackgroundMediaElement_MediaEnded
-                 restarts it from the code-behind. -->
+                 LoadedBehavior/UnloadedBehavior=Manual: looping requires an
+                 explicit Play() call from WelcomeBackgroundMediaElement_MediaEnded,
+                 which WPF only permits when both behaviors are Manual, so
+                 playback is instead kick-started by
+                 WelcomeBackgroundMediaElement_MediaOpened. -->
             <MediaElement x:Name="WelcomeBackgroundMediaElement" Source="{Binding WelcomeBackgroundVideo}"
                           Stretch="UniformToFill" Volume="0" IsHitTestVisible="False"
-                          LoadedBehavior="Play" UnloadedBehavior="Stop"
+                          LoadedBehavior="Manual" UnloadedBehavior="Manual"
+                          MediaOpened="WelcomeBackgroundMediaElement_MediaOpened"
                           MediaEnded="WelcomeBackgroundMediaElement_MediaEnded"
                           Visibility="{Binding WelcomeBackgroundVideo, Converter={StaticResource NullToVisibility}}" />
 
@@ -179,57 +181,53 @@
             <StackPanel x:Name="WelcomeIconsGroup" Orientation="{Binding WelcomeIconsOrientation}"
                         Visibility="{Binding IsWelcomeIconsGroupVisible, Converter={StaticResource BoolToVisibility}}">
 
-                <Button Style="{StaticResource KioskModeTile}"
-                        Command="{Binding SelectModeCommand}" CommandParameter="Photo"
-                        Tag="{Binding SelectedCaptureMode, Converter={StaticResource ModeTag}, ConverterParameter=Photo}"
-                        Visibility="{Binding IsWelcomePhotoIconVisible, Converter={StaticResource BoolToVisibility}}">
-                    <StackPanel>
+                <StackPanel Margin="10" Visibility="{Binding IsWelcomePhotoIconVisible, Converter={StaticResource BoolToVisibility}}">
+                    <Button Style="{StaticResource KioskModeTile}" Margin="0"
+                            Command="{Binding SelectModeCommand}" CommandParameter="Photo"
+                            Tag="{Binding SelectedCaptureMode, Converter={StaticResource ModeTag}, ConverterParameter=Photo}">
                         <TextBlock Text="&#xE722;" FontFamily="Segoe MDL2 Assets" FontSize="52"
-                                   Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
-                        <TextBlock Text="PHOTO" FontFamily="{StaticResource KioskFont}" FontSize="22" FontWeight="SemiBold"
-                                   Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,16,0,0"
-                                   Visibility="{Binding IsWelcomeIconLabelsVisible, Converter={StaticResource BoolToVisibility}}" />
-                    </StackPanel>
-                </Button>
+                                   Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Button>
+                    <TextBlock Text="PHOTO" FontFamily="{StaticResource KioskFont}" FontSize="22" FontWeight="SemiBold"
+                               Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,10,0,0"
+                               Visibility="{Binding IsWelcomeIconLabelsVisible, Converter={StaticResource BoolToVisibility}}" />
+                </StackPanel>
 
-                <Button Style="{StaticResource KioskModeTile}"
-                        Command="{Binding SelectModeCommand}" CommandParameter="GIF"
-                        Tag="{Binding SelectedCaptureMode, Converter={StaticResource ModeTag}, ConverterParameter=GIF}"
-                        Visibility="{Binding IsWelcomeGifIconVisible, Converter={StaticResource BoolToVisibility}}">
-                    <StackPanel>
+                <StackPanel Margin="10" Visibility="{Binding IsWelcomeGifIconVisible, Converter={StaticResource BoolToVisibility}}">
+                    <Button Style="{StaticResource KioskModeTile}" Margin="0"
+                            Command="{Binding SelectModeCommand}" CommandParameter="GIF"
+                            Tag="{Binding SelectedCaptureMode, Converter={StaticResource ModeTag}, ConverterParameter=GIF}">
                         <TextBlock Text="&#xE786;" FontFamily="Segoe MDL2 Assets" FontSize="52"
-                                   Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
-                        <TextBlock Text="GIF" FontFamily="{StaticResource KioskFont}" FontSize="22" FontWeight="SemiBold"
-                                   Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,16,0,0"
-                                   Visibility="{Binding IsWelcomeIconLabelsVisible, Converter={StaticResource BoolToVisibility}}" />
-                    </StackPanel>
-                </Button>
+                                   Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Button>
+                    <TextBlock Text="GIF" FontFamily="{StaticResource KioskFont}" FontSize="22" FontWeight="SemiBold"
+                               Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,10,0,0"
+                               Visibility="{Binding IsWelcomeIconLabelsVisible, Converter={StaticResource BoolToVisibility}}" />
+                </StackPanel>
 
-                <Button Style="{StaticResource KioskModeTile}"
-                        Command="{Binding SelectModeCommand}" CommandParameter="Boomerang"
-                        Tag="{Binding SelectedCaptureMode, Converter={StaticResource ModeTag}, ConverterParameter=Boomerang}"
-                        Visibility="{Binding IsWelcomeBoomerangIconVisible, Converter={StaticResource BoolToVisibility}}">
-                    <StackPanel>
+                <StackPanel Margin="10" Visibility="{Binding IsWelcomeBoomerangIconVisible, Converter={StaticResource BoolToVisibility}}">
+                    <Button Style="{StaticResource KioskModeTile}" Margin="0"
+                            Command="{Binding SelectModeCommand}" CommandParameter="Boomerang"
+                            Tag="{Binding SelectedCaptureMode, Converter={StaticResource ModeTag}, ConverterParameter=Boomerang}">
                         <TextBlock Text="&#xE8EE;" FontFamily="Segoe MDL2 Assets" FontSize="52"
-                                   Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
-                        <TextBlock Text="BOOMERANG" FontFamily="{StaticResource KioskFont}" FontSize="22" FontWeight="SemiBold"
-                                   Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,16,0,0"
-                                   Visibility="{Binding IsWelcomeIconLabelsVisible, Converter={StaticResource BoolToVisibility}}" />
-                    </StackPanel>
-                </Button>
+                                   Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Button>
+                    <TextBlock Text="BOOMERANG" FontFamily="{StaticResource KioskFont}" FontSize="22" FontWeight="SemiBold"
+                               Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,10,0,0"
+                               Visibility="{Binding IsWelcomeIconLabelsVisible, Converter={StaticResource BoolToVisibility}}" />
+                </StackPanel>
 
-                <Button Style="{StaticResource KioskModeTile}"
-                        Command="{Binding SelectModeCommand}" CommandParameter="Video"
-                        Tag="{Binding SelectedCaptureMode, Converter={StaticResource ModeTag}, ConverterParameter=Video}"
-                        Visibility="{Binding IsWelcomeVideoIconVisible, Converter={StaticResource BoolToVisibility}}">
-                    <StackPanel>
+                <StackPanel Margin="10" Visibility="{Binding IsWelcomeVideoIconVisible, Converter={StaticResource BoolToVisibility}}">
+                    <Button Style="{StaticResource KioskModeTile}" Margin="0"
+                            Command="{Binding SelectModeCommand}" CommandParameter="Video"
+                            Tag="{Binding SelectedCaptureMode, Converter={StaticResource ModeTag}, ConverterParameter=Video}">
                         <TextBlock Text="&#xE714;" FontFamily="Segoe MDL2 Assets" FontSize="52"
-                                   Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" />
-                        <TextBlock Text="VIDEO" FontFamily="{StaticResource KioskFont}" FontSize="22" FontWeight="SemiBold"
-                                   Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,16,0,0"
-                                   Visibility="{Binding IsWelcomeIconLabelsVisible, Converter={StaticResource BoolToVisibility}}" />
-                    </StackPanel>
-                </Button>
+                                   Foreground="{StaticResource KioskAccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Button>
+                    <TextBlock Text="VIDEO" FontFamily="{StaticResource KioskFont}" FontSize="22" FontWeight="SemiBold"
+                               Foreground="{StaticResource KioskInkBrush}" HorizontalAlignment="Center" Margin="0,10,0,0"
+                               Visibility="{Binding IsWelcomeIconLabelsVisible, Converter={StaticResource BoolToVisibility}}" />
+                </StackPanel>
             </StackPanel>
             </Grid>
         </Canvas>
@@ -343,8 +341,7 @@
             <Border Visibility="{Binding IsPoseThumbnailStripVisible, Converter={StaticResource BoolToVisibility}}"
                     HorizontalAlignment="{Binding PoseStripHorizontalAlignment}"
                     VerticalAlignment="{Binding PoseStripVerticalAlignment}"
-                    Background="{Binding PoseStripBackgroundBrush}"
-                    CornerRadius="10" Margin="24" Padding="8">
+                    Margin="24" Padding="8">
                 <ItemsControl ItemsSource="{Binding PoseThumbnails}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -353,14 +350,14 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border Width="64" Height="64" Margin="4" CornerRadius="6" ClipToBounds="True"
-                                    Background="#22FFFFFF"
+                            <Border Width="160" Height="100" Margin="6" CornerRadius="10" ClipToBounds="True"
+                                    Background="{Binding DataContext.PoseStripBackgroundBrush, RelativeSource={RelativeSource AncestorType=Window}}"
                                     BorderThickness="{Binding ActiveBorderThickness}"
                                     BorderBrush="{Binding DataContext.PoseStripActiveBorderBrush, RelativeSource={RelativeSource AncestorType=Window}}">
                                 <Grid>
                                     <Image Source="{Binding ImageSource}" Stretch="UniformToFill"
                                            Visibility="{Binding HasImage, Converter={StaticResource BoolToVisibility}}" />
-                                    <TextBlock Text="{Binding Number}" FontFamily="{StaticResource KioskFont}" FontSize="22" FontWeight="SemiBold"
+                                    <TextBlock Text="{Binding Number}" FontFamily="{StaticResource KioskFont}" FontSize="36" FontWeight="SemiBold"
                                                Foreground="{StaticResource KioskMutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"
                                                Visibility="{Binding ShowNumber, Converter={StaticResource BoolToVisibility}}" />
                                 </Grid>
@@ -407,8 +404,7 @@
             <Border Visibility="{Binding IsPoseThumbnailStripVisible, Converter={StaticResource BoolToVisibility}}"
                     HorizontalAlignment="{Binding PoseStripHorizontalAlignment}"
                     VerticalAlignment="{Binding PoseStripVerticalAlignment}"
-                    Background="{Binding PoseStripBackgroundBrush}"
-                    CornerRadius="10" Margin="24" Padding="8">
+                    Margin="24" Padding="8">
                 <ItemsControl ItemsSource="{Binding PoseThumbnails}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -417,14 +413,14 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border Width="64" Height="64" Margin="4" CornerRadius="6" ClipToBounds="True"
-                                    Background="#22FFFFFF"
+                            <Border Width="160" Height="100" Margin="6" CornerRadius="10" ClipToBounds="True"
+                                    Background="{Binding DataContext.PoseStripBackgroundBrush, RelativeSource={RelativeSource AncestorType=Window}}"
                                     BorderThickness="{Binding ActiveBorderThickness}"
                                     BorderBrush="{Binding DataContext.PoseStripActiveBorderBrush, RelativeSource={RelativeSource AncestorType=Window}}">
                                 <Grid>
                                     <Image Source="{Binding ImageSource}" Stretch="UniformToFill"
                                            Visibility="{Binding HasImage, Converter={StaticResource BoolToVisibility}}" />
-                                    <TextBlock Text="{Binding Number}" FontFamily="{StaticResource KioskFont}" FontSize="22" FontWeight="SemiBold"
+                                    <TextBlock Text="{Binding Number}" FontFamily="{StaticResource KioskFont}" FontSize="36" FontWeight="SemiBold"
                                                Foreground="{StaticResource KioskMutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"
                                                Visibility="{Binding ShowNumber, Converter={StaticResource BoolToVisibility}}" />
                                 </Grid>

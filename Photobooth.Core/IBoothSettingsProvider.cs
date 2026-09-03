@@ -246,10 +246,11 @@ public record ScreenSettings(
     /// PoseStripPosition) is shown at all.</summary>
     public bool PhotoThumbnailsEnabled { get; init; } = true;
 
-    /// <summary>0-100 background opacity for the thumbnail strip's backing
-    /// panel (see PhotoThumbnailsEnabled/PoseStripPosition above) -- 0 leaves
-    /// just the slot images/numbers floating over the live feed, 100 is a
-    /// fully opaque panel.</summary>
+    /// <summary>0-100 background opacity for each thumbnail slot's own
+    /// backing chip (see PhotoThumbnailsEnabled/PoseStripPosition above) --
+    /// 0 leaves just the slot images/numbers floating over the live feed
+    /// with no chip behind them, 100 is a fully opaque chip. There is no
+    /// separate background behind the strip as a whole.</summary>
     public int PoseStripBackgroundOpacityPercent { get; init; } = 45;
 
     /// <summary>#RRGGBB border drawn around whichever slot is the pose

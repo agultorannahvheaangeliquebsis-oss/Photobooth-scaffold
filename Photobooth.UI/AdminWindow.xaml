@@ -495,17 +495,20 @@
                     <StackPanel Orientation="Horizontal" Margin="0,4">
                         <TextBlock Text="Accent color (hex):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="150" />
                         <TextBox x:Name="AccentColorBox" Width="90" Margin="0,0,8,0" TextChanged="ThemeColorBox_TextChanged" />
-                        <Border x:Name="AccentColorSwatch" Width="20" Height="20" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" />
+                        <Border x:Name="AccentColorSwatch" Width="20" Height="20" BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
+                                Cursor="Hand" ToolTip="Pick a color" MouseLeftButtonDown="ThemeColorSwatch_MouseLeftButtonDown" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,4">
                         <TextBlock Text="Canvas color (hex):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="150" />
                         <TextBox x:Name="CanvasColorBox" Width="90" Margin="0,0,8,0" TextChanged="ThemeColorBox_TextChanged" />
-                        <Border x:Name="CanvasColorSwatch" Width="20" Height="20" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" />
+                        <Border x:Name="CanvasColorSwatch" Width="20" Height="20" BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
+                                Cursor="Hand" ToolTip="Pick a color" MouseLeftButtonDown="ThemeColorSwatch_MouseLeftButtonDown" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,4">
                         <TextBlock Text="Ink color (hex):" Style="{StaticResource Row}" VerticalAlignment="Center" Width="150" />
                         <TextBox x:Name="InkColorBox" Width="90" Margin="0,0,8,0" TextChanged="ThemeColorBox_TextChanged" />
-                        <Border x:Name="InkColorSwatch" Width="20" Height="20" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" />
+                        <Border x:Name="InkColorSwatch" Width="20" Height="20" BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
+                                Cursor="Hand" ToolTip="Pick a color" MouseLeftButtonDown="ThemeColorSwatch_MouseLeftButtonDown" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,4">
                         <TextBlock Text="Event/brand name:" Style="{StaticResource Row}" VerticalAlignment="Center" Width="150" />

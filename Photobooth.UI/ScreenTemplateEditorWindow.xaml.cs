@@ -757,12 +757,13 @@ public partial class ScreenTemplateEditorWindow : UserControl
         };
 
         byte alpha = (byte)(Math.Clamp(_screenSettings.PoseStripBackgroundOpacityPercent, 0, 100) * 255 / 100);
-        CaptureChromePoseStrip.Background = new SolidColorBrush(Color.FromArgb(alpha, 0, 0, 0));
+        var slotBackground = new SolidColorBrush(Color.FromArgb(alpha, 255, 255, 255));
 
         Brush activeBorderBrush = HexToBrush(_screenSettings.PoseStripActiveBorderColorHex);
         Border[] slots = { CaptureChromePoseSlot1, CaptureChromePoseSlot2, CaptureChromePoseSlot3, CaptureChromePoseSlot4 };
         for (int i = 0; i < slots.Length; i++)
         {
+            slots[i].Background = slotBackground;
             slots[i].BorderBrush = activeBorderBrush;
             slots[i].BorderThickness = i == 1 ? new Thickness(2) : new Thickness(0);
         }
@@ -1237,6 +1238,26 @@ public partial class ScreenTemplateEditorWindow : UserControl
             return Brushes.Black;
         }
     }
+
+    /// <summary>Opens the native color picker seeded with box's current hex and,
+    /// if the user confirms a color, writes it back -- box's own TextChanged
+    /// handler then does the usual swatch/model update.</summary>
+    private void OpenColorPicker(TextBox box)
+    {
+        string? hex = ColorPickerHelper.PickColorHex(Window.GetWindow(this), box.Text);
+        if (hex != null)
+        {
+            box.Text = hex;
+        }
+    }
+
+    private void TextColorSwatch_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => OpenColorPicker(ElementColorBox);
+    private void ShapeColorSwatch_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => OpenColorPicker(ShapeColorBox);
+    private void WelcomeBackgroundColorSwatch_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => OpenColorPicker(WelcomeBackgroundColorBox);
+    private void CaptureBackgroundColorSwatch_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => OpenColorPicker(CaptureBackgroundColorBox);
+    private void CountdownColorSwatch_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => OpenColorPicker(CountdownColorBox);
+    private void PoseStripActiveBorderColorSwatch_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => OpenColorPicker(PoseStripActiveBorderColorBox);
+    private void SharingBackgroundColorSwatch_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => OpenColorPicker(SharingBackgroundColorBox);
 
     private void ElementTextBox_TextChanged(object sender, TextChangedEventArgs e)
     {

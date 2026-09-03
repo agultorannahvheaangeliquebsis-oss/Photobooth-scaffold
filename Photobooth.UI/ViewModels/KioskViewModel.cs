@@ -770,7 +770,8 @@ public class KioskViewModel : ObservableObject, IDisposable
     private Brush _poseStripBackgroundBrush = CreateFrozenPoseStripDefaultBrush();
 
     /// <summary>ScreenSettings.PoseStripBackgroundOpacityPercent, converted to
-    /// a black brush with that alpha -- the strip's own backing panel.</summary>
+    /// a white brush with that alpha -- each thumbnail slot's own backing
+    /// chip (not one big panel behind the whole strip).</summary>
     public Brush PoseStripBackgroundBrush { get => _poseStripBackgroundBrush; private set => SetProperty(ref _poseStripBackgroundBrush, value); }
 
     private Brush _poseStripActiveBorderBrush = HexToBrush("#2ED9A0");
@@ -1829,7 +1830,7 @@ public class KioskViewModel : ObservableObject, IDisposable
                 _ => (HorizontalAlignment.Stretch, VerticalAlignment.Bottom, Orientation.Horizontal),
             };
             byte poseStripAlpha = (byte)(Math.Clamp(settings.Screen.PoseStripBackgroundOpacityPercent, 0, 100) * 255 / 100);
-            var poseStripBackgroundBrush = new SolidColorBrush(Color.FromArgb(poseStripAlpha, 0, 0, 0));
+            var poseStripBackgroundBrush = new SolidColorBrush(Color.FromArgb(poseStripAlpha, 255, 255, 255));
             poseStripBackgroundBrush.Freeze();
             PoseStripBackgroundBrush = poseStripBackgroundBrush;
             PoseStripActiveBorderBrush = HexToBrush(settings.Screen.PoseStripActiveBorderColorHex);
@@ -1942,7 +1943,7 @@ public class KioskViewModel : ObservableObject, IDisposable
     /// moment the window shows, before ReloadSettingsAsync replaces it.</summary>
     private static Brush CreateFrozenPoseStripDefaultBrush()
     {
-        var brush = new SolidColorBrush(Color.FromArgb(115, 0, 0, 0));
+        var brush = new SolidColorBrush(Color.FromArgb(115, 255, 255, 255));
         brush.Freeze();
         return brush;
     }
