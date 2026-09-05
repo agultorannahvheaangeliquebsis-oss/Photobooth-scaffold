@@ -45,6 +45,13 @@ public enum KioskScreen
     /// <summary>Admin-authored questions, answered or skipped.</summary>
     Survey,
 
+    /// <summary>The guest's own photo, composited through the real print
+    /// template, shown BEFORE anything prints or is charged for -- with Retake
+    /// and "Looks good". Distinct from <see cref="Review"/>, which is the
+    /// post-print sharing beat: the two look similar but mean opposite things,
+    /// and a retake only costs nothing on this one.</summary>
+    Preview,
+
     /// <summary>Review and share: template preview, QR, email/SMS, print, done timer.</summary>
     Review,
 

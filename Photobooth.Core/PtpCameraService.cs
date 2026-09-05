@@ -1,6 +1,3 @@
-using System.IO.Pipes;
-using System.Text;
-
 namespace Photobooth.Core;
 
 /// <summary>
@@ -10,33 +7,27 @@ namespace Photobooth.Core;
 /// separate net48/x86 process instead of here). Swaps in for
 /// MockCameraService at the composition root once the bridge host is
 /// running and a D3500 is attached.
+///
+/// The pipe round trip itself goes through <see cref="CameraBridgeClient"/>,
+/// which serializes it against live view and device listing -- see that
+/// class for why sharing one gate matters.
 /// </summary>
 public class PtpCameraService : ICameraService
 {
-    public const string PipeName = "PhotoboothCameraBridge";
-    private readonly TimeSpan _connectTimeout;
+    public const string PipeName = CameraBridgeClient.PipeName;
+
+    private readonly CameraBridgeClient _bridge;
 
     public PtpCameraService(TimeSpan? connectTimeout = null)
     {
-        _connectTimeout = connectTimeout ?? TimeSpan.FromSeconds(3);
+        _bridge = new CameraBridgeClient(connectTimeout);
     }
 
     /// <summary>Quick, synchronous check for whether Photobooth.CameraBridge.Host
     /// is already listening, so a caller can decide whether it still needs to be
     /// launched instead of connecting twice.</summary>
-    public static bool IsBridgeHostRunning(int timeoutMs = 200)
-    {
-        try
-        {
-            using var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut);
-            pipe.Connect(timeoutMs);
-            return true;
-        }
-        catch (TimeoutException)
-        {
-            return false;
-        }
-    }
+    public static bool IsBridgeHostRunning(int timeoutMs = 200) =>
+        CameraBridgeClient.IsBridgeHostRunning(timeoutMs);
 
     /// <summary>How many times a bridge-reported (not connect-timeout) capture
     /// failure gets retried before giving up, and how long to wait between
@@ -78,35 +69,25 @@ public class PtpCameraService : ICameraService
 
     private async Task<string> CaptureOnceAsync(CancellationToken ct)
     {
-        using var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+        BridgeResponse response = await _bridge.SendAsync("CAPTURE", ct);
 
-        try
-        {
-            await pipe.ConnectAsync((int)_connectTimeout.TotalMilliseconds, ct);
-        }
-        catch (TimeoutException)
+        if (!response.Connected)
         {
             throw new BridgeUnreachableException(
                 "Could not connect to Photobooth.CameraBridge.Host -- is the bridge process running?");
         }
 
-        var writer = new StreamWriter(pipe, Encoding.ASCII) { AutoFlush = true };
-        var reader = new StreamReader(pipe, Encoding.ASCII);
-
-        await writer.WriteLineAsync("CAPTURE");
-        string? response = await reader.ReadLineAsync(ct);
-
-        if (response is null)
+        if (response.Line is null)
         {
             throw new BridgeReportedCaptureErrorException("Bridge closed the pipe without responding to CAPTURE.");
         }
 
-        if (response.StartsWith("OK ", StringComparison.Ordinal))
+        if (response.Line.StartsWith("OK ", StringComparison.Ordinal))
         {
-            return response.Substring(3);
+            return response.Line.Substring(3);
         }
 
-        throw new BridgeReportedCaptureErrorException($"Camera bridge reported an error: {response}");
+        throw new BridgeReportedCaptureErrorException($"Camera bridge reported an error: {response.Line}");
     }
 
     /// <summary>The bridge process couldn't be reached at all (connect timeout) --

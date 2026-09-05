@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Serilog;
 
 namespace Photobooth.Core;
 
@@ -93,9 +94,33 @@ public class FileSystemPendingUploadQueue : IPendingUploadQueue
             return new List<PendingUpload>();
         }
 
-        await using FileStream stream = File.OpenRead(_queueFilePath);
-        List<PendingUpload>? pending = await JsonSerializer.DeserializeAsync<List<PendingUpload>>(stream, cancellationToken: ct);
-        return pending ?? new List<PendingUpload>();
+        try
+        {
+            await using FileStream stream = File.OpenRead(_queueFilePath);
+            List<PendingUpload>? pending = await JsonSerializer.DeserializeAsync<List<PendingUpload>>(stream, cancellationToken: ct);
+            return pending ?? new List<PendingUpload>();
+        }
+        catch (JsonException ex)
+        {
+            // A corrupt queue file used to be permanent: every read threw, so
+            // Enqueue, DequeueAll and the app-startup flush all failed from
+            // then on, and no guest whose upload had failed ever got their
+            // photo again. One bad file should cost one backlog, not the
+            // feature -- so move it aside (keeping it for diagnosis rather
+            // than deleting evidence) and carry on with an empty queue.
+            string quarantine = _queueFilePath + ".corrupt";
+            Log.Warning(ex, "Pending upload queue at {QueueFile} was unreadable; moving it to {Quarantine} and starting a fresh queue", _queueFilePath, quarantine);
+            try
+            {
+                File.Move(_queueFilePath, quarantine, overwrite: true);
+            }
+            catch (Exception moveEx)
+            {
+                Log.Warning(moveEx, "Couldn't quarantine the corrupt upload queue at {QueueFile}", _queueFilePath);
+            }
+
+            return new List<PendingUpload>();
+        }
     }
 
     private async Task WriteAsync(List<PendingUpload> pending, CancellationToken ct)
@@ -106,7 +131,18 @@ public class FileSystemPendingUploadQueue : IPendingUploadQueue
             Directory.CreateDirectory(directory);
         }
 
-        await using FileStream stream = File.Create(_queueFilePath);
-        await JsonSerializer.SerializeAsync(stream, pending, cancellationToken: ct);
+        // Write-then-replace rather than writing over the live file. File.Create
+        // truncates in place, so a power cut mid-write -- the exact thing a
+        // kiosk faces, and the exact thing this queue exists to survive -- left
+        // a half-written JSON file behind. See ReadAsync for what that used to
+        // cost. A temp file that's fully written and only then moved into place
+        // means the live file is always either the old contents or the new ones.
+        string temporaryPath = _queueFilePath + ".tmp";
+        await using (FileStream stream = File.Create(temporaryPath))
+        {
+            await JsonSerializer.SerializeAsync(stream, pending, cancellationToken: ct);
+        }
+
+        File.Move(temporaryPath, _queueFilePath, overwrite: true);
     }
 }

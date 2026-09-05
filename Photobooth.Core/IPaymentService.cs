@@ -31,4 +31,22 @@ public interface IPaymentService
 
     /// <summary>Waits for the payment started by InitiateAsync to be confirmed, declined, or time out. In production this polls the gateway (see GatewayPaymentService); the mocks just simulate guest confirmation time.</summary>
     Task<PaymentResult> WaitForConfirmationAsync(string reference, decimal amount, CancellationToken ct = default);
+
+    /// <summary>
+    /// Abandons the attempt for <paramref name="reference"/>: the guest walked
+    /// away and BoothStateMachine has stopped awaiting the confirmation (see
+    /// WithGuestIdleTimeoutAsync, which times out but can't itself cancel a
+    /// call already in flight).
+    ///
+    /// A default no-op, because for most implementations there is genuinely
+    /// nothing to release -- a polling gateway's loop is already bounded by its
+    /// own MaxPollDuration, and the mocks resolve on a timer. It matters for
+    /// ManualConfirmPaymentService, which parks a TaskCompletionSource nothing
+    /// else will ever complete: without this the entry leaks for the life of
+    /// the process and stays confirmable long after its session is over.
+    /// Implementations must treat an unknown reference as a no-op.
+    /// </summary>
+    void CancelPending(string reference)
+    {
+    }
 }

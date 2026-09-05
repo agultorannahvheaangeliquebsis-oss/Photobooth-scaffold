@@ -109,6 +109,16 @@ public class BoothStateMachine
     /// <summary>Fires when the background upload for the current session's photo finishes -- may land during Reviewing, Printing, or Complete, whichever is showing when the network call happens to finish.</summary>
     public event Action<Uri>? PhotoUploaded;
 
+    /// <summary>Fires when the printer reports it can't produce a print right
+    /// now -- out of paper or ribbon, offline, jammed (see PrinterStatus).
+    /// Deliberately NOT an ErrorOccurred/Error-state failure: the guest's photo
+    /// was captured, composited and uploaded, so the session itself is fine and
+    /// completes normally. This is an attendant-facing condition that outlives
+    /// the session it was noticed in -- the next guest's print will fail the
+    /// same way until someone reloads the printer -- so the UI shows it as a
+    /// standing alert rather than a screen the booth resets away from.</summary>
+    public event Action<string>? PrinterProblemDetected;
+
     /// <summary>Fires once per SetState when the Virtual Attendant has a clip configured
     /// for that stage -- MainWindow plays it alongside whatever screen is already
     /// showing. Purely additive: never gates or delays a state transition, and a
@@ -155,6 +165,57 @@ public class BoothStateMachine
         await delayTask; // throws if ct was cancelled instead of the timeout genuinely elapsing
         _ = guestTask.ContinueWith(t => t.Exception, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
         return fallback;
+    }
+
+    /// <summary>Backs <see cref="SkipCurrentDwell"/>: the guest-decision half of
+    /// whichever timed dwell is currently on screen, or null when no skippable
+    /// dwell is running.</summary>
+    private TaskCompletionSource<bool>? _dwellSkip;
+
+    /// <summary>
+    /// The guest tapped the button that ends the dwell they're currently
+    /// looking at -- Review's "Looks good", or the sharing screen's "I'm done".
+    /// A no-op at any other point in the session, so a stray tap (or a remote
+    /// control call arriving a beat late) can't skip a step the guest isn't on.
+    ///
+    /// Before this existed, both buttons were purely decorative: the dwell was
+    /// a bare Task.Delay inside RunSessionAsync, and the UI's own handler only
+    /// reset a countdown bar. A guest tapping "I'm done" still waited out the
+    /// full FinalScreenTimeoutSeconds (30s by default), and so did the queue
+    /// behind them.
+    /// </summary>
+    public void SkipCurrentDwell() => _dwellSkip?.TrySetResult(true);
+
+    /// <summary>
+    /// Waits out a guest-facing dwell, ending early if the guest says they're
+    /// finished (see <see cref="SkipCurrentDwell"/>). Cancellation behaves
+    /// exactly as the plain Task.Delay this replaced: WhenAny itself never
+    /// throws, so the token is rechecked afterward to keep the
+    /// OperationCanceledException every caller upstream already expects.
+    /// </summary>
+    private async Task DwellAsync(TimeSpan duration, CancellationToken ct)
+    {
+        if (duration <= TimeSpan.Zero)
+        {
+            // Nothing to wait for -- and deliberately no window in which a
+            // stray SkipCurrentDwell could land on a dwell that isn't showing.
+            ct.ThrowIfCancellationRequested();
+            return;
+        }
+
+        var skip = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _dwellSkip = skip;
+        try
+        {
+            await Task.WhenAny(skip.Task, Task.Delay(duration, ct));
+            ct.ThrowIfCancellationRequested();
+        }
+        finally
+        {
+            // Only clear it if it's still ours: a later dwell may already have
+            // published its own by the time a cancelled one unwinds.
+            Interlocked.CompareExchange(ref _dwellSkip, null, skip);
+        }
     }
 
     private void SetState(BoothState state)
@@ -223,7 +284,7 @@ public class BoothStateMachine
         // (dropped venue WiFi, Cloudinary hiccup) -- fire-and-forget so a
         // backlog doesn't have to wait for a dedicated retry timer, just the
         // next guest walking up. Never allowed to block or fail this session.
-        _ = RetryQueuedUploadsAsync(ct);
+        _ = FlushQueuedUploadsInBackgroundAsync(ct);
 
         try
         {
@@ -238,6 +299,11 @@ public class BoothStateMachine
             LastPhotoUrl = null;
             PaymentQrPng = null;
             PaymentInstructions = null;
+            // Cleared with the rest of the payment fields, which it wasn't
+            // before: a stale reference left the attendant's "Payment Received"
+            // button pointing at the *previous* session's attempt until the next
+            // payment gate happened to overwrite it.
+            PaymentReference = null;
             LastSelectedTemplate = null;
 
             // GIF/Boomerang/Video: none of the three produce a printable
@@ -287,7 +353,22 @@ public class BoothStateMachine
             // suite blast radius of a new default overriding a deliberately
             // zeroed setting" reasoning the Photo per-pose countdown above
             // documents.
-            await Task.Delay(TimeSpan.FromSeconds(settings.Screen.ReviewSeconds), ct); // guest sees the shot before it prints
+            //
+            // With ShowRetakeButton on, this stops being a "look at your shot"
+            // beat and becomes a genuinely interactive state -- the guest is
+            // deciding whether to keep it, and this is the last point in the
+            // session where a retake is still free (nothing has printed and, in
+            // vendo mode, nothing has been charged yet). So it gets the same
+            // shared guest-idle timeout every other interactive state gets,
+            // because ReviewSeconds (2s by default) is nowhere near long enough
+            // to read a photo and decide. With the button off nothing changes:
+            // the dwell is exactly ReviewSeconds, including the deliberate 0
+            // some setups (and the test suite) use to skip it entirely.
+            bool guestCanRetake = settings.Screen.ShowRetakeButton && !isNonPrintableCapture;
+            TimeSpan reviewDwell = guestCanRetake
+                ? _guestIdleTimeout
+                : TimeSpan.FromSeconds(settings.Screen.ReviewSeconds);
+            await DwellAsync(reviewDwell, ct); // guest sees the shot before it prints
 
             // The old sticker-overlay frame picker used to run here, after
             // Reviewing -- it's been retired in favor of the print-layout-
@@ -370,7 +451,17 @@ public class BoothStateMachine
             // (see isNonPrintableCapture above). Was a stored-but-never-read
             // admin setting before this -- AdminWindow already saved/
             // validated it, nothing downstream ever checked it.
-            if (!isNonPrintableCapture && _printsThisEvent < settings.PrintOptions.PrintLimitPerEvent)
+            // PrintOptions.PrintAutomatically was saved, validated by AdminWindow
+            // and never read by anything -- so a booth explicitly configured
+            // "don't print automatically" (a share-only event) printed anyway,
+            // on every session, burning a full roll of media. Same class of
+            // stored-but-unread setting PrintLimitPerEvent used to be, and the
+            // same fix: read it here, at the one place that decides whether a
+            // print happens. Guests can still reprint by hand from the sharing
+            // screen when PrintOptions.ShowPrintButton is on.
+            if (!isNonPrintableCapture
+                && settings.PrintOptions.PrintAutomatically
+                && _printsThisEvent < settings.PrintOptions.PrintLimitPerEvent)
             {
                 // A template with a QrCode element needs a real upload URL to
                 // encode -- give the still-in-flight upload a bounded chance to
@@ -385,9 +476,25 @@ public class BoothStateMachine
 
                 SetState(BoothState.Printing);
                 var printContext = new PrintRenderContext(LastPhotoUrl, settings.Theme.EventName, DateTime.Now);
-                await _services.Printer.PrintAsync(LastCapturedImagePaths, effectiveTemplate, printContext, ct);
-                await _services.Sessions.RecordPrintAsync(sessionId.Value, LastCapturedImagePath, ct);
-                _printsThisEvent++;
+                try
+                {
+                    await _services.Printer.PrintAsync(LastCapturedImagePaths, effectiveTemplate, printContext, ct);
+                    await _services.Sessions.RecordPrintAsync(sessionId.Value, LastCapturedImagePath, ct);
+                    _printsThisEvent++;
+                }
+                catch (PrinterUnavailableException ex)
+                {
+                    // A printer that's out of paper/ribbon or offline is not a
+                    // failed session: the photo exists, it's been composited,
+                    // and it's already uploading for the QR code and email. So
+                    // the guest continues to the sharing screen with a working
+                    // way to get their photo, and the attendant gets a standing
+                    // alert instead. No Print row and no _printsThisEvent bump
+                    // either -- nothing came out on paper, so nothing should be
+                    // counted against the event's print limit.
+                    Log.Warning(ex, "Print skipped for session {SessionId}: {Problem}", sessionId.Value, ex.Message);
+                    PrinterProblemDetected?.Invoke(ex.Message);
+                }
             }
 
             if (_mode != "vendo")
@@ -410,7 +517,10 @@ public class BoothStateMachine
             // sharing via email/SMS actually gets that long before the booth
             // moves on to Guestbook/Feedback/Survey.
             int dwellSeconds = settings.Screen.SkipSharingScreen ? 1 : settings.Screen.FinalScreenTimeoutSeconds;
-            await Task.Delay(TimeSpan.FromSeconds(dwellSeconds), ct);
+            // Skippable: "I'm done" ends this immediately (see SkipCurrentDwell).
+            // FinalScreenTimeoutSeconds is the walk-away fallback, not a floor
+            // every guest has to sit through.
+            await DwellAsync(TimeSpan.FromSeconds(dwellSeconds), ct);
 
             await RunPostSessionPromptsAsync(sessionId.Value, settings, ct);
         }
@@ -422,7 +532,19 @@ public class BoothStateMachine
             {
                 // The session token is canceled here, so cleanup must use an
                 // independent token or the database update would be skipped.
-                await _services.Sessions.AbandonAsync(activeSessionId, CancellationToken.None);
+                try
+                {
+                    await _services.Sessions.AbandonAsync(activeSessionId, CancellationToken.None);
+                }
+                catch (Exception abandonEx)
+                {
+                    // Best-effort, same reasoning as the FailAsync guard below:
+                    // this runs on the way out of a session that's already over,
+                    // and letting it throw would turn a clean cancel into an
+                    // unobserved task fault on the fire-and-forget caller.
+                    Log.Warning(abandonEx, "Couldn't mark session {SessionId} as abandoned", activeSessionId);
+                }
+
                 LastSessionId = null;
             }
         }
@@ -432,9 +554,33 @@ public class BoothStateMachine
             SetState(BoothState.Error);
             if (sessionId.HasValue)
             {
-                await _services.Sessions.FailAsync(sessionId.Value, ct);
+                // CancellationToken.None, same reasoning the
+                // OperationCanceledException handler above already documents
+                // for its own AbandonAsync -- and it matters more here, because
+                // the common way to reach this handler is a failure that
+                // happened *because* the token was cancelled (a cancelled print,
+                // a cancelled effects pass). Passing ct made FailAsync throw out
+                // of the catch block itself, so the Session row was left
+                // non-terminal forever, the error screen never showed, and the
+                // exception surfaced as an unobserved task fault on the
+                // fire-and-forget caller instead.
+                try
+                {
+                    await _services.Sessions.FailAsync(sessionId.Value, CancellationToken.None);
+                }
+                catch (Exception failEx)
+                {
+                    // Best-effort: the DB being unreachable is often the very
+                    // thing that failed the session. Logged rather than
+                    // swallowed so it doesn't hide behind the original error.
+                    Log.Warning(failEx, "Couldn't mark session {SessionId} as failed", sessionId.Value);
+                }
             }
-            await Task.Delay(3000, ct); // show the error briefly before resetting
+
+            // Also CancellationToken.None: this is the beat that lets the guest
+            // read what went wrong, and it's the last thing standing between the
+            // error and the finally below resetting to Idle.
+            await Task.Delay(3000, CancellationToken.None); // show the error briefly before resetting
         }
         finally
         {
@@ -606,8 +752,26 @@ public class BoothStateMachine
             // RecordOnMotionEnabled round out real multi-clip dslrBooth
             // parity but aren't consumed yet -- see VideoCaptureSettings.
             await _services.BoothVideo.StartRecordingAsync(ct);
-            await Task.Delay(TimeSpan.FromSeconds(video.ClipDurationSeconds), ct);
-            BoothVideoRecording recording = await _services.BoothVideo.StopRecordingAsync(ct);
+            BoothVideoRecording recording;
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(video.ClipDurationSeconds), ct);
+            }
+            finally
+            {
+                // CancellationToken.None, and a finally rather than a plain
+                // sequence: a guest tapping Cancel mid-clip cancelled the delay
+                // above, so StopRecordingAsync was never reached at all. ffmpeg
+                // kept recording with nobody left to stop it -- the mp4's moov
+                // atom never got written (unplayable file), it held the webcam
+                // and mic for the rest of the app run, and every later Video
+                // session threw "a recording is already in progress". Stopping
+                // a recording is cleanup, so it must not itself be cancellable,
+                // same reasoning the OperationCanceledException handler in
+                // RunSessionAsync gives for its own AbandonAsync call.
+                recording = await _services.BoothVideo.StopRecordingAsync(CancellationToken.None);
+            }
+
             LastCapturedImagePath = recording.FilePath;
             LastCapturedImagePaths = new[] { LastCapturedImagePath };
         }
@@ -784,9 +948,17 @@ public class BoothStateMachine
         PaymentQrPng = prompt.QrCodePng;
         PaymentReference = reference;
         SetState(state);
+        // The cancelGuest callback every other guest-interactive call site
+        // passes, and this one didn't: on a genuine idle timeout the abandoned
+        // WaitForConfirmationAsync never completed, so its pending attempt sat
+        // in ManualConfirmPaymentService's dictionary for the life of the
+        // process -- and stayed confirmable, so an attendant tapping "Payment
+        // Received" a beat too late resolved a session that had already failed,
+        // with no Payment row for money they'd actually collected.
         PaymentResult result = await WithGuestIdleTimeoutAsync(
             _services.Payment.WaitForConfirmationAsync(reference, VendoPricePerPrint, ct),
-            new PaymentResult(false, "timeout", null), ct);
+            new PaymentResult(false, "timeout", null), ct,
+            () => _services.Payment.CancelPending(reference));
         if (!result.Success)
         {
             throw new InvalidOperationException("Payment was not completed.");
@@ -834,8 +1006,14 @@ public class BoothStateMachine
                 }
                 finally
                 {
-                    GuestbookRecording recording = await _services.VideoGuestbook.StopRecordingAsync(ct);
-                    await _services.Sessions.RecordGuestbookVideoAsync(sessionId, recording.FilePath, recording.Duration, ct);
+                    // CancellationToken.None for both, same reasoning the Video
+                    // branch's own finally gives: stopping ffmpeg is cleanup and
+                    // must not be skippable by the very cancellation that makes
+                    // it necessary, and a recording that did happen still needs
+                    // its row written or the file is orphaned on disk with
+                    // nothing pointing at it.
+                    GuestbookRecording recording = await _services.VideoGuestbook.StopRecordingAsync(CancellationToken.None);
+                    await _services.Sessions.RecordGuestbookVideoAsync(sessionId, recording.FilePath, recording.Duration, CancellationToken.None);
                 }
             }
         }
@@ -991,6 +1169,51 @@ public class BoothStateMachine
     /// reproduced as a duplicate guest email via Photobooth.ConsoleDemo
     /// before this existed).
     /// </summary>
+    /// <summary>
+    /// Books a guest-initiated reprint (the sharing screen's Print button)
+    /// against the same event-wide budget the automatic print uses, returning
+    /// false when that budget is already spent.
+    ///
+    /// Reprints used to bypass <see cref="_printsThisEvent"/> entirely -- they
+    /// went straight to IPrinterService from the ViewModel and only incremented
+    /// a separate display-only counter -- so PrintLimitPerEvent undercounted
+    /// real media consumption by however many reprints an event's guests asked
+    /// for, which on a busy booth is most of them.
+    /// </summary>
+    public bool TryCountManualPrint(int printLimitPerEvent)
+    {
+        if (_printsThisEvent >= printLimitPerEvent)
+        {
+            return false;
+        }
+
+        _printsThisEvent++;
+        return true;
+    }
+
+    /// <summary>Wraps <see cref="RetryQueuedUploadsAsync"/> for the
+    /// fire-and-forget call at the top of every session. That call had no
+    /// try/catch at all, so a queue that couldn't even be read (see
+    /// FileSystemPendingUploadQueue) surfaced as an unobserved task exception
+    /// and nothing else -- the one failure mode that most needed to be
+    /// visible was the one that logged nothing.</summary>
+    private async Task FlushQueuedUploadsInBackgroundAsync(CancellationToken ct)
+    {
+        try
+        {
+            await RetryQueuedUploadsAsync(ct);
+        }
+        catch (OperationCanceledException)
+        {
+            // The session ended while retries were in flight. Whatever is left
+            // stays queued for the next guest, which is the point of the queue.
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Background flush of the pending upload queue failed");
+        }
+    }
+
     public async Task RetryQueuedUploadsAsync(CancellationToken ct = default)
     {
         IReadOnlyList<PendingUpload> claimed = await _services.UploadQueue.DequeueAllAsync(ct);

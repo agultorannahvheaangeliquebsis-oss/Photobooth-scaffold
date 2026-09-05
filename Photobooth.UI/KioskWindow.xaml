@@ -654,6 +654,63 @@
             </StackPanel>
         </Grid>
 
+        <!-- ================= [9b] PREVIEW (BEFORE PRINTING) ================= -->
+        <!-- The guest's own photo, composited through the very same
+             PrintCompositor geometry the printer draws with, shown while
+             BoothState.Reviewing is running. Deliberately NOT the sharing
+             screen: nothing has printed and (in vendo mode) nothing has been
+             charged yet, so this is the one point where Retake still costs
+             nothing. Reuses SharingBackground* so a booth that has themed its
+             sharing screen doesn't get an unstyled slab here. -->
+        <Grid x:Name="PreviewScreen"
+              Style="{StaticResource KioskScreenRoot}"
+              Background="{Binding SharingBackgroundBrush}"
+              Visibility="{Binding CurrentScreenState, Converter={StaticResource ScreenVisibility}, ConverterParameter=Preview}">
+            <Image Source="{Binding SharingBackgroundImage}" Stretch="UniformToFill"
+                   Visibility="{Binding SharingBackgroundImage, Converter={StaticResource NullToVisibility}}" />
+
+            <Grid Margin="72,80,72,64">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Text="How does this look?" Style="{StaticResource KioskH1}"
+                           HorizontalAlignment="Center" />
+
+                <!-- Same white card as the sharing screen's, for the same
+                     reason: it should read as the piece of paper the guest is
+                     about to be handed. -->
+                <Border Grid.Row="1" Background="White" CornerRadius="12" Padding="20" Margin="0,28,0,0"
+                        VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <Grid MinWidth="320" MinHeight="240" MaxHeight="620">
+                        <Image Source="{Binding TemplatePreview}" Stretch="Uniform"
+                               Visibility="{Binding TemplatePreview, Converter={StaticResource NullToVisibility}}" />
+                        <TextBlock Text="{Binding PreviewUnavailableReason}"
+                                   FontFamily="{StaticResource KioskFont}" FontSize="22" Foreground="#6E706F"
+                                   TextAlignment="Center" TextWrapping="Wrap"
+                                   VerticalAlignment="Center" HorizontalAlignment="Center"
+                                   Visibility="{Binding PreviewUnavailableReason, Converter={StaticResource NullToVisibility}}" />
+                    </Grid>
+                </Border>
+
+                <!-- "Looks good" always shows: it's the guest's way past the
+                     dwell whether or not Retake is offered. Retake follows
+                     ScreenSettings.ShowRetakeButton, same toggle as the sharing
+                     screen's. -->
+                <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,32,0,0">
+                    <Button Style="{StaticResource KioskGhostButton}" Content="RETAKE"
+                            MinWidth="260" Margin="0,0,20,0"
+                            Visibility="{Binding IsRetakeVisible, Converter={StaticResource BoolToVisibility}}"
+                            Command="{Binding RetakeCommand}" />
+                    <Button Style="{StaticResource KioskPrimaryButton}" Content="LOOKS GOOD"
+                            MinWidth="260"
+                            Command="{Binding ContinueFromPreviewCommand}" />
+                </StackPanel>
+            </Grid>
+        </Grid>
+
         <!-- ====================== [10] REVIEW &amp; SHARE ====================== -->
         <Grid x:Name="ReviewScreen"
               Style="{StaticResource KioskScreenRoot}"
@@ -868,10 +925,33 @@
         <MediaElement x:Name="AttendantMediaElement" Width="0" Height="0" Volume="1"
                       LoadedBehavior="Manual" UnloadedBehavior="Manual" />
 
+        <!-- =================== CHROME: PRINTER ALERT ====================
+             Attendant-facing, and deliberately outside the screen switcher: a
+             printer that's out of paper stays out of paper across sessions, so
+             this has to survive the reset to Idle that clears every guest-facing
+             field. Bottom-centre rather than over the guest's photo, and it
+             never blocks the flow, since the session it was raised in completed
+             normally (see BoothStateMachine.PrinterProblemDetected). -->
+        <Border HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,28"
+                Background="#B33A2B" CornerRadius="10" Padding="22,14" MaxWidth="820"
+                Visibility="{Binding HasPrinterAlert, Converter={StaticResource BoolToVisibility}}">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{Binding PrinterAlert}"
+                           FontFamily="{StaticResource KioskFont}" FontSize="17" FontWeight="SemiBold"
+                           Foreground="White" TextWrapping="Wrap" VerticalAlignment="Center" />
+                <TextBlock Text="Photos are still being saved and shared."
+                           FontFamily="{StaticResource KioskFont}" FontSize="15"
+                           Foreground="#F3D9D5" Margin="14,0,0,0" VerticalAlignment="Center" />
+                <Button Content="DISMISS" Style="{StaticResource KioskCompactButton}"
+                        Margin="20,0,0,0" MinHeight="40" MinWidth="120"
+                        Command="{Binding DismissPrinterAlertCommand}" />
+            </StackPanel>
+        </Border>
+
         <!-- ====================== CHROME: BRAND BAR ====================== -->
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,40,0,0"
                     IsHitTestVisible="False"
-                    Visibility="{Binding CurrentScreenState, Converter={StaticResource ScreenVisibility}, ConverterParameter='Countdown,Capture,Processing,Review'}">
+                    Visibility="{Binding CurrentScreenState, Converter={StaticResource ScreenVisibility}, ConverterParameter='Countdown,Capture,Processing,Preview,Review'}">
             <Image Source="{Binding BrandLogo}" Height="30" Margin="0,0,12,0"
                    Visibility="{Binding BrandLogo, Converter={StaticResource NullToVisibility}}" />
             <TextBlock Text="{Binding EventName}" FontFamily="{StaticResource KioskFont}"

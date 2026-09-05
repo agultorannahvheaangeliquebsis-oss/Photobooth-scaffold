@@ -105,6 +105,17 @@ public class GatewayPaymentService : IPaymentService
             QrCodeGenerator.GeneratePng(checkoutUrl.ToString()));
     }
 
+    /// <summary>Forwards to whichever provider actually owns this reference,
+    /// mirroring WaitForConfirmationAsync's own routing: the manual attempt if
+    /// there is one, and either way drop the intent mapping so an abandoned
+    /// PayMongo attempt doesn't keep its entry in
+    /// <see cref="_intentIdsByReference"/>.</summary>
+    public void CancelPending(string reference)
+    {
+        _manual.CancelPending(reference);
+        _intentIdsByReference.TryRemove(reference, out _);
+    }
+
     public async Task<PaymentResult> WaitForConfirmationAsync(string reference, decimal amount, CancellationToken ct = default)
     {
         if (_manual.HasPending(reference))

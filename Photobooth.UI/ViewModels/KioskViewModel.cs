@@ -157,6 +157,8 @@ public class KioskViewModel : ObservableObject, IDisposable
         SendEmailCommand = new AsyncRelayCommand(SendEmailAsync, () => CanSendEmail);
         SendSmsCommand = new AsyncRelayCommand(SendSmsAsync, () => CanSendSms);
         DoneCommand = new RelayCommand(FinishSharing);
+        DismissPrinterAlertCommand = new RelayCommand(() => PrinterAlert = null);
+        ContinueFromPreviewCommand = new RelayCommand(() => _stateMachine.SkipCurrentDwell());
         OpenAdminCommand = new RelayCommand(Admin.Open);
         CancelSessionCommand = new RelayCommand(CancelSession);
         RetakeCommand = new RelayCommand(RetakeSession);
@@ -245,6 +247,15 @@ public class KioskViewModel : ObservableObject, IDisposable
             Admin.ErrorsThisRun++;
         });
         _stateMachine.PhotoUploaded += url => OnUi(() => ApplyUploadedPhoto(url));
+        _stateMachine.PrinterProblemDetected += problem => OnUi(() =>
+        {
+            // Deliberately not routed through ErrorMessage: that's guest-facing
+            // and gets cleared at the next Idle, and this condition outlives the
+            // session -- it stays wrong until someone physically reloads the
+            // printer.
+            PrinterAlert = problem;
+            Log.Warning("Printer problem reported to the attendant: {Problem}", problem);
+        });
         _stateMachine.AttendantCueChanged += clip => OnUi(() => AttendantCueRequested?.Invoke(clip));
 
         _filterSelection = filterSelection;
@@ -1351,6 +1362,16 @@ public class KioskViewModel : ObservableObject, IDisposable
     public AsyncRelayCommand SendSmsCommand { get; }
     public RelayCommand DoneCommand { get; }
     public RelayCommand CancelSessionCommand { get; }
+
+    /// <summary>Attendant's "got it" on the printer alert banner -- clears it so
+    /// they can tell a stale alert from a fresh one after reloading the
+    /// printer. The next failed print raises it again.</summary>
+    public RelayCommand DismissPrinterAlertCommand { get; }
+
+    /// <summary>Preview screen's "Looks good" -- ends the review dwell early and
+    /// lets the session move on to printing, instead of making a guest who has
+    /// already decided wait out the rest of the timeout.</summary>
+    public RelayCommand ContinueFromPreviewCommand { get; }
     public RelayCommand RetakeCommand { get; }
     public RelayCommand ShareOnTwitterCommand { get; }
     public RelayCommand OpenAdminCommand { get; }
@@ -1386,6 +1407,11 @@ public class KioskViewModel : ObservableObject, IDisposable
     private CancellationTokenSource? _sessionCts;
     private bool _retakeRequested;
 
+    /// <summary>The in-flight <see cref="RunSessionAsync"/>, so <see cref="Dispose"/>
+    /// can wait for a cancelled session to actually finish unwinding rather
+    /// than just asking it to stop and walking away.</summary>
+    private Task? _sessionTask;
+
     private void StartSession()
     {
         if (!CanStartSession)
@@ -1399,7 +1425,7 @@ public class KioskViewModel : ObservableObject, IDisposable
         StartSessionCommand.RaiseCanExecuteChanged();
         Admin.SessionsThisRun++;
 
-        _ = RunSessionAsync();
+        _sessionTask = RunSessionAsync();
     }
 
     /// <summary>ScreenSettings.SessionTriggerF13/SessionTriggerKeys -- called
@@ -1493,6 +1519,17 @@ public class KioskViewModel : ObservableObject, IDisposable
             return;
         }
 
+        // Books this reprint against PrintOptions.PrintLimitPerEvent, which it
+        // used to bypass entirely -- reprints only ever moved a display-only
+        // counter, so the event-wide limit undercounted real media use by
+        // however many reprints guests asked for. PrintsRemaining below is the
+        // separate per-session budget; both have to allow the print.
+        if (!_stateMachine.TryCountManualPrint(_settings.PrintOptions.PrintLimitPerEvent))
+        {
+            ShareStatus = "The print limit for this event has been reached.";
+            return;
+        }
+
         IsPrinting = true;
         ShareStatus = "Sending to printer...";
         try
@@ -1508,6 +1545,10 @@ public class KioskViewModel : ObservableObject, IDisposable
             Admin.PrintsThisSession++;
             Admin.PrintsThisEvent++;
             ShareStatus = "Printing -- your photo is on its way.";
+
+            // A print that actually got through means whatever the alert was
+            // warning about has been dealt with.
+            PrinterAlert = null;
         }
         finally
         {
@@ -1591,6 +1632,12 @@ public class KioskViewModel : ObservableObject, IDisposable
         ShareSecondsRemaining = 0;
         _shareTimer.Stop();
         ShareStatus = null;
+
+        // The part that actually ends the sharing screen. Without this the
+        // button only reset the countdown bar above, and the guest still waited
+        // out the state machine's full FinalScreenTimeoutSeconds (30s by
+        // default) -- as did everyone queued behind them.
+        _stateMachine.SkipCurrentDwell();
     }
 
     private void TickShareTimer()
@@ -1614,7 +1661,8 @@ public class KioskViewModel : ObservableObject, IDisposable
         UpdateFlash(state);
         IsCancelButtonVisible = _settings.Screen.ShowCancelButton
             && (CurrentScreenState == KioskScreen.Countdown || CurrentScreenState == KioskScreen.Capture);
-        IsRetakeVisible = _settings.Screen.ShowRetakeButton && CurrentScreenState == KioskScreen.Review;
+        IsRetakeVisible = _settings.Screen.ShowRetakeButton
+            && CurrentScreenState is KioskScreen.Preview or KioskScreen.Review;
 
         if (state == BoothState.Idle)
         {
@@ -1711,7 +1759,16 @@ public class KioskViewModel : ObservableObject, IDisposable
         BoothState.Setup or BoothState.Idle => KioskScreen.Idle,
         BoothState.Countdown => KioskScreen.Countdown,
         BoothState.Capturing => KioskScreen.Capture,
-        BoothState.Consent or BoothState.Reviewing or BoothState.Printing => KioskScreen.Processing,
+        BoothState.Consent or BoothState.Printing => KioskScreen.Processing,
+
+        // Reviewing is the guest's look at their own photo before it prints --
+        // it used to collapse into Processing (a spinner reading "Processing
+        // your photo strip..."), which meant the guest never actually saw the
+        // shot the state's own comment promised them, and the Retake button --
+        // gated on KioskScreen.Review -- was only reachable from Complete,
+        // i.e. after the print had already spooled and, in vendo mode, after
+        // they'd paid. See KioskScreen.Preview.
+        BoothState.Reviewing => KioskScreen.Preview,
         BoothState.FilterPicker => KioskScreen.FilterPicker,
         BoothState.FramePicker => KioskScreen.FramePicker,
         BoothState.PrePayment or BoothState.Payment => KioskScreen.Payment,
@@ -1848,7 +1905,8 @@ public class KioskViewModel : ObservableObject, IDisposable
             IsAdminLocked = settings.IsLocked;
             IsCancelButtonVisible = settings.Screen.ShowCancelButton
                 && (CurrentScreenState == KioskScreen.Countdown || CurrentScreenState == KioskScreen.Capture);
-            IsRetakeVisible = settings.Screen.ShowRetakeButton && CurrentScreenState == KioskScreen.Review;
+            IsRetakeVisible = settings.Screen.ShowRetakeButton
+            && CurrentScreenState is KioskScreen.Preview or KioskScreen.Review;
 
             IsWelcomeIconsGroupVisible = settings.Screen.BoothIconsEnabled;
             IsWelcomeIconLabelsVisible = settings.Screen.BoothIconLabelsEnabled;
@@ -2014,6 +2072,17 @@ public class KioskViewModel : ObservableObject, IDisposable
             _liveViewTimer.Stop();
             // Release the camera's live view mode before the still capture
             // fires -- on a tethered body the two can't both own the sensor.
+            //
+            // Still fire-and-forget, but no longer a race: every bridge command
+            // now queues behind one shared gate (see CameraBridgeClient), so a
+            // poll that's still in flight, this stop, and the capture that
+            // follows are serialized instead of three clients fighting over a
+            // single-instance pipe -- which used to make the loser hit a connect
+            // timeout and fail the guest's session with "is the bridge process
+            // running?". Ordering holds because ApplyState reaches here via
+            // OnUi's blocking Dispatcher.Invoke, so this call has already
+            // claimed its place in the queue before the session thread gets as
+            // far as CaptureAsync.
             _ = _liveView.StopAsync();
         }
     }
@@ -2127,6 +2196,28 @@ public class KioskViewModel : ObservableObject, IDisposable
             _liveViewFetchInProgress = false;
         }
     }
+
+    private string? _printerAlert;
+
+    /// <summary>Standing attendant-facing notice that the printer needs
+    /// attention (see BoothStateMachine.PrinterProblemDetected). Survives the
+    /// return to Idle on purpose, unlike every other per-guest field
+    /// ResetForNextGuest clears -- an empty paper tray is still empty for the
+    /// next guest, and the whole point is that it stays visible until someone
+    /// deals with it.</summary>
+    public string? PrinterAlert
+    {
+        get => _printerAlert;
+        private set
+        {
+            if (SetProperty(ref _printerAlert, value))
+            {
+                RaisePropertyChanged(nameof(HasPrinterAlert));
+            }
+        }
+    }
+
+    public bool HasPrinterAlert => !string.IsNullOrEmpty(PrinterAlert);
 
     private void ApplyUploadedPhoto(Uri url)
     {
@@ -2349,6 +2440,20 @@ public class KioskViewModel : ObservableObject, IDisposable
 
     private void OnUi(Action action)
     {
+        // Every BoothStateMachine event and every Ui*Service callback funnels
+        // through here, so this one check is what stops a still-unwinding
+        // session from driving a disposed ViewModel: without it, a session that
+        // was mid-flight when the window closed kept calling Dispatcher.Invoke
+        // on a shutting-down dispatcher, which either throws onto the session
+        // thread or blocks it against a message loop that will never pump
+        // again. It's also what makes Dispose's bounded wait below safe -- the
+        // session can finish its cleanup without needing the UI thread, which
+        // is busy waiting for it.
+        if (_disposed)
+        {
+            return;
+        }
+
         if (_dispatcher.CheckAccess())
         {
             action();
@@ -2359,6 +2464,19 @@ public class KioskViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// Tears the kiosk down: stops the session, then the timers, then the
+    /// things they drive. Order matters -- the session is cancelled first so
+    /// its own cleanup (the Session row's terminal status, stopping ffmpeg,
+    /// releasing the camera's live view) still has services to run against,
+    /// and <see cref="_disposed"/> is set before any of it so no late event
+    /// can marshal onto a dispatcher that's on its way out (see OnUi).
+    ///
+    /// Alt+F4 mid-session used to leave all of that running: the token was
+    /// never cancelled, so the session kept capturing, printing and uploading
+    /// against a torn-down UI, and its database row stayed non-terminal
+    /// forever.
+    /// </summary>
     public void Dispose()
     {
         if (_disposed)
@@ -2368,12 +2486,47 @@ public class KioskViewModel : ObservableObject, IDisposable
         _disposed = true;
         BoothSettingsChanged.Changed -= OnSettingsChanged;
 
+        CancellationTokenSource? sessionCts = _sessionCts;
+        Task? sessionTask = _sessionTask;
+        try
+        {
+            sessionCts?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Raced RunSessionAsync's own finally, which already disposed it --
+            // meaning the session is already over, which is what we wanted.
+        }
+
         _liveViewTimer.Stop();
         _flashTimer.Stop();
         _shareTimer.Stop();
         _gifPreviewTimer.Stop();
         _ = _liveView.StopAsync();
         _remoteControl?.Dispose();
+
+        // Bounded: give the cancelled session a moment to run its cleanup, but
+        // never let a wedged one hold the window open. Safe to block the UI
+        // thread here precisely because OnUi is already a no-op by this point,
+        // so nothing the session still has to do needs this thread.
+        if (sessionTask is not null && !sessionTask.IsCompleted)
+        {
+            try
+            {
+                sessionTask.Wait(TimeSpan.FromSeconds(3));
+            }
+            catch (Exception ex)
+            {
+                // A faulted session on the way out is worth a line in the log,
+                // but never worth throwing from Dispose.
+                Log.Warning(ex, "Session did not unwind cleanly during shutdown");
+            }
+        }
+
+        sessionCts?.Dispose();
+        _sessionCts = null;
+        _sessionTask = null;
+        _settingsReloadGate.Dispose();
         GC.SuppressFinalize(this);
     }
 }

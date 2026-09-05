@@ -1,6 +1,3 @@
-using System.IO.Pipes;
-using System.Text;
-
 namespace Photobooth.Core;
 
 /// <summary>
@@ -10,50 +7,37 @@ namespace Photobooth.Core;
 /// on a single line -- simpler than mixing binary reads with the
 /// StreamReader used for every other command, at the cost of ~33% overhead,
 /// which is fine for a low-fps preview.
+///
+/// Shares <see cref="CameraBridgeClient"/>'s gate with capture and device
+/// listing, so a poll that's still in flight when the countdown ends can no
+/// longer make the guest's capture time out on the pipe -- see that class.
 /// </summary>
 public class PtpLiveViewService : ILiveViewService
 {
-    private const string PipeName = "PhotoboothCameraBridge";
-    private readonly TimeSpan _connectTimeout;
+    private readonly CameraBridgeClient _bridge;
 
     public PtpLiveViewService(TimeSpan? connectTimeout = null)
     {
-        _connectTimeout = connectTimeout ?? TimeSpan.FromSeconds(3);
+        _bridge = new CameraBridgeClient(connectTimeout);
     }
 
     public async Task<byte[]?> GetFrameAsync(CancellationToken ct = default)
     {
-        string? response = await SendCommandAsync("LIVEVIEW", ct);
-        if (response is null || !response.StartsWith("OK ", StringComparison.Ordinal))
+        BridgeResponse response = await _bridge.SendAsync("LIVEVIEW", ct);
+        // An empty payload is treated as "no frame right now", same as an ERR
+        // or an unreachable bridge -- ILiveViewService's contract says a null
+        // frame means "keep showing the last one", which is the right thing to
+        // do for a bare "OK" too rather than handing the UI a zero-byte image.
+        if (!response.IsOk || response.Payload.Length == 0)
         {
             return null;
         }
 
-        return Convert.FromBase64String(response.Substring(3));
+        return Convert.FromBase64String(response.Payload);
     }
 
     public async Task StopAsync(CancellationToken ct = default)
     {
-        await SendCommandAsync("LIVEVIEW_STOP", ct);
-    }
-
-    private async Task<string?> SendCommandAsync(string command, CancellationToken ct)
-    {
-        using var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
-
-        try
-        {
-            await pipe.ConnectAsync((int)_connectTimeout.TotalMilliseconds, ct);
-        }
-        catch (TimeoutException)
-        {
-            return null;
-        }
-
-        var writer = new StreamWriter(pipe, Encoding.ASCII) { AutoFlush = true };
-        var reader = new StreamReader(pipe, Encoding.ASCII);
-
-        await writer.WriteLineAsync(command);
-        return await reader.ReadLineAsync(ct);
+        await _bridge.SendAsync("LIVEVIEW_STOP", ct);
     }
 }

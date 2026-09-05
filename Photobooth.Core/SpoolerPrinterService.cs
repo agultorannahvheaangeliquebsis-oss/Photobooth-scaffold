@@ -52,6 +52,18 @@ public class SpoolerPrinterService : IPrinterService
                         $"Set {EnvVarName} to an installed printer's exact name, or install/attach the booth printer.");
                 }
 
+                // Pre-flight the spooler's own status. Print() below only means
+                // "handed to the spooler", so without this an out-of-paper or
+                // offline printer swallowed every job silently while the booth
+                // kept cheerfully telling guests their photo was on its way --
+                // see PrinterStatus for why that's the classic unattended-booth
+                // failure. Checked before spooling rather than after so the job
+                // doesn't pile up in a queue that will need clearing by hand.
+                if (PrinterStatus.DescribeProblem(document.PrinterSettings.PrinterName) is string problem)
+                {
+                    throw new PrinterUnavailableException(problem);
+                }
+
                 // PaperSize.Width/Height are in hundredths of an inch, per the
                 // PrintDocument API -- so a 2x6 strip template becomes a 200x600
                 // custom paper size, same units as System.Windows.Forms uses.
@@ -60,6 +72,14 @@ public class SpoolerPrinterService : IPrinterService
 
                 document.PrintPage += (_, e) => Draw(images, e, template, context);
                 document.Print();
+
+                // And once more afterward: a printer can go offline or run out
+                // between the check above and the job actually reaching it, and
+                // that job is the one the guest is standing there waiting for.
+                if (PrinterStatus.DescribeProblem(document.PrinterSettings.PrinterName) is string postSpoolProblem)
+                {
+                    throw new PrinterUnavailableException(postSpoolProblem);
+                }
             }
             finally
             {

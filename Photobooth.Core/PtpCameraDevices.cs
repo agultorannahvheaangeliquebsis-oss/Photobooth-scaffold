@@ -1,6 +1,3 @@
-using System.IO.Pipes;
-using System.Text;
-
 namespace Photobooth.Core;
 
 /// <summary>
@@ -11,15 +8,19 @@ namespace Photobooth.Core;
 /// PtpLiveViewService already talk to. Kept separate from those two: this is
 /// an admin-only device-listing/selection concern with no role in
 /// BoothStateMachine's own capture/live-view path.
+///
+/// Shares <see cref="CameraBridgeClient"/>'s gate with capture and live view,
+/// so an admin opening the Camera Settings picker can no longer land a
+/// LIST_CAMERAS on the pipe in the middle of a guest's capture -- see that
+/// class.
 /// </summary>
 public class PtpCameraDevices
 {
-    private const string PipeName = "PhotoboothCameraBridge";
-    private readonly TimeSpan _connectTimeout;
+    private readonly CameraBridgeClient _bridge;
 
     public PtpCameraDevices(TimeSpan? connectTimeout = null)
     {
-        _connectTimeout = connectTimeout ?? TimeSpan.FromSeconds(3);
+        _bridge = new CameraBridgeClient(connectTimeout);
     }
 
     /// <summary>Every camera the bridge currently sees, by display name (see
@@ -29,13 +30,13 @@ public class PtpCameraDevices
     /// yet" rather than an error.</summary>
     public async Task<List<string>> ListAsync(CancellationToken ct = default)
     {
-        string? response = await SendCommandAsync("LIST_CAMERAS", ct);
-        if (response is null || !response.StartsWith("OK", StringComparison.Ordinal))
+        BridgeResponse response = await _bridge.SendAsync("LIST_CAMERAS", ct);
+        if (!response.IsOk)
         {
             return new List<string>();
         }
 
-        string payload = response.Length > 3 ? response.Substring(3) : string.Empty;
+        string payload = response.Payload;
         return payload.Length == 0
             ? new List<string>()
             : payload.Split('|').ToList();
@@ -47,27 +48,8 @@ public class PtpCameraDevices
     /// device by that name (e.g. it was unplugged since the last list).</summary>
     public async Task<bool> SelectAsync(string deviceName, CancellationToken ct = default)
     {
-        string? response = await SendCommandAsync($"SELECT_CAMERA {deviceName}", ct);
-        return response is not null && response.StartsWith("OK", StringComparison.Ordinal);
+        BridgeResponse response = await _bridge.SendAsync($"SELECT_CAMERA {deviceName}", ct);
+        return response.IsOk;
     }
 
-    private async Task<string?> SendCommandAsync(string command, CancellationToken ct)
-    {
-        using var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
-
-        try
-        {
-            await pipe.ConnectAsync((int)_connectTimeout.TotalMilliseconds, ct);
-        }
-        catch (TimeoutException)
-        {
-            return null;
-        }
-
-        var writer = new StreamWriter(pipe, Encoding.ASCII) { AutoFlush = true };
-        var reader = new StreamReader(pipe, Encoding.ASCII);
-
-        await writer.WriteLineAsync(command);
-        return await reader.ReadLineAsync(ct);
-    }
 }

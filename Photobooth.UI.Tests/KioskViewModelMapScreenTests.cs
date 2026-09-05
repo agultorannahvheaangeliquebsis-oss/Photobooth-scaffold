@@ -17,7 +17,9 @@ public class KioskViewModelMapScreenTests
     [InlineData(BoothState.Countdown, KioskScreen.Countdown)]
     [InlineData(BoothState.Capturing, KioskScreen.Capture)]
     [InlineData(BoothState.Consent, KioskScreen.Processing)]
-    [InlineData(BoothState.Reviewing, KioskScreen.Processing)]
+    // Reviewing is the guest's own pre-print look at their photo (Preview),
+    // not a spinner -- see KioskScreen.Preview.
+    [InlineData(BoothState.Reviewing, KioskScreen.Preview)]
     [InlineData(BoothState.Printing, KioskScreen.Processing)]
     [InlineData(BoothState.FilterPicker, KioskScreen.FilterPicker)]
     [InlineData(BoothState.FramePicker, KioskScreen.FramePicker)]

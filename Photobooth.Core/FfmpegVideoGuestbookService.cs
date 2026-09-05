@@ -98,44 +98,68 @@ public class FfmpegVideoGuestbookService : IVideoGuestbookService
 
         Process process = _process;
         string path = _currentPath;
+        Stopwatch stopwatch = _stopwatch;
+        TimeSpan duration = TimeSpan.Zero;
 
-        // ffmpeg's documented graceful-stop signal: writing "q" to stdin lets
-        // it finalize the mp4's moov atom before exiting. Killing the
-        // process outright risks a corrupt/unplayable file.
+        // Everything below runs inside try/finally so the fields are reclaimed
+        // on EVERY exit path, thrown or not. Before this, a cancelled ct made
+        // WaitForExitAsync below throw straight out of this method (the catch
+        // filter deliberately excluded caller cancellation), leaving _process
+        // non-null forever -- so one cancelled session left ffmpeg holding the
+        // webcam and mic for the rest of the app run, and every later
+        // guestbook recording failed with "already in progress".
         try
         {
-            await process.StandardInput.WriteAsync("q");
-            await process.StandardInput.FlushAsync();
-        }
-        catch (Exception)
-        {
-            // Best-effort -- if stdin is already closed/broken, fall through
-            // to the bounded wait below and let the timeout's Kill() clean up.
-        }
-
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeoutCts.CancelAfter(TimeSpan.FromSeconds(10));
-        try
-        {
-            await process.WaitForExitAsync(timeoutCts.Token);
-        }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-        {
-            // ffmpeg didn't exit gracefully in time -- force it rather than
-            // leave a recording process running past the guestbook screen.
-            if (!process.HasExited)
+            // ffmpeg's documented graceful-stop signal: writing "q" to stdin lets
+            // it finalize the mp4's moov atom before exiting. Killing the
+            // process outright risks a corrupt/unplayable file.
+            try
             {
-                process.Kill();
+                await process.StandardInput.WriteAsync("q");
+                await process.StandardInput.FlushAsync();
+            }
+            catch (Exception)
+            {
+                // Best-effort -- if stdin is already closed/broken, fall through
+                // to the bounded wait below and let the timeout's Kill() clean up.
+            }
+
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(10));
+            try
+            {
+                await process.WaitForExitAsync(timeoutCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // Two ways to land here, and both want the same thing: ffmpeg
+                // didn't finish its graceful stop in time, or the caller
+                // cancelled while we were waiting for it. Either way the
+                // process must not outlive this call -- a still-running ffmpeg
+                // owns the capture devices exclusively.
+                if (!process.HasExited)
+                {
+                    try
+                    {
+                        process.Kill();
+                    }
+                    catch (Exception)
+                    {
+                        // Raced its own exit between HasExited and Kill.
+                    }
+                }
             }
         }
+        finally
+        {
+            stopwatch.Stop();
+            duration = stopwatch.Elapsed;
 
-        _stopwatch.Stop();
-        TimeSpan duration = _stopwatch.Elapsed;
-
-        process.Dispose();
-        _process = null;
-        _currentPath = null;
-        _stopwatch = null;
+            process.Dispose();
+            _process = null;
+            _currentPath = null;
+            _stopwatch = null;
+        }
 
         return new GuestbookRecording(path, duration);
     }

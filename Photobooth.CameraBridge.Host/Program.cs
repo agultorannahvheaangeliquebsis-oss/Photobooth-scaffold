@@ -389,7 +389,7 @@ namespace Photobooth.CameraBridge.Host
 
             var eventArgs = _pendingCapture.Task.Result;
             Directory.CreateDirectory("captures");
-            string path = Path.GetFullPath(Path.Combine("captures", $"nikon_{DateTime.Now:yyyyMMdd_HHmmss}.jpg"));
+            string path = Path.GetFullPath(Path.Combine("captures", NextCaptureFileName()));
 
             // A real PTP camera hands back a device handle that Transfer()
             // pulls the file through over PTP. The UVC webcam used as a
@@ -426,6 +426,31 @@ namespace Photobooth.CameraBridge.Host
             }
 
             return $"OK {path}";
+        }
+
+        /// <summary>A capture file name that is unique per shot, not per second.
+        ///
+        /// This used to be `nikon_{DateTime.Now:yyyyMMdd_HHmmss}.jpg`, which
+        /// silently broke every burst mode: Boomerang's defaults derive 20
+        /// frames at 50ms apart (see BoomerangCaptureSettings), so all 20
+        /// captures resolved to one or two file names and overwrote each other.
+        /// The state machine then handed IGifComposerService 20 references to
+        /// the same file and got a "boomerang" that was a still image played
+        /// forwards and backwards. Photo mode with CountdownSeconds: 0 and a
+        /// multi-pose template collided the same way.
+        ///
+        /// Milliseconds alone aren't enough of a guarantee -- two captures can
+        /// land in the same millisecond on a fast webcam path, and the clock can
+        /// step backwards -- so a short counter is appended. Kept sortable and
+        /// human-readable, since an attendant browsing the captures folder after
+        /// an event is a real use (see AdminWindow's Event folder section).
+        /// </summary>
+        private static int _captureSequence;
+
+        private static string NextCaptureFileName()
+        {
+            int sequence = Interlocked.Increment(ref _captureSequence);
+            return string.Format("nikon_{0:yyyyMMdd_HHmmss_fff}_{1:D4}.jpg", DateTime.Now, sequence % 10000);
         }
 
         /// <summary>Triggers one CapturePhoto() cycle and returns the raw image

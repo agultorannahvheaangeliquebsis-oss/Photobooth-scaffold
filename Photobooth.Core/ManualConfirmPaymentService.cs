@@ -74,6 +74,19 @@ public class ManualConfirmPaymentService : IPaymentService
         }
     }
 
+    /// <summary>The guest walked away and BoothStateMachine has stopped waiting
+    /// (see IPaymentService.CancelPending). Resolves the parked attempt as a
+    /// failure and, crucially, drops it -- so a later stray "Payment Received"
+    /// tap finds nothing to confirm, and the entry doesn't accumulate for the
+    /// life of the process.</summary>
+    public void CancelPending(string reference)
+    {
+        if (_pendingByReference.TryRemove(reference, out TaskCompletionSource<bool>? tcs))
+        {
+            tcs.TrySetResult(false);
+        }
+    }
+
     /// <summary>Attendant tapped "Declined/Cancel" (guest changed their mind,
     /// walked away, or paid the wrong amount) -- unblocks
     /// WaitForConfirmationAsync for this reference with failure, same
